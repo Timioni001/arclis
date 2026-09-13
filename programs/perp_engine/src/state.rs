@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use crate::errors::PerpError;
 
 // Fixed-point scales. Prices and USDC amounts use 6 decimals to match USDC.
@@ -15,6 +16,10 @@ pub const MIN_MARGIN_RATIO_BPS_CEIL: u16 = 5_000; // 50%
 pub const MAX_FUNDING_RATE_BPS_PER_INTERVAL: i128 = 50; // 0.5% cap per funding interval
 pub const LIQUIDATOR_REWARD_BPS: u128 = 500; // 5% of remaining collateral to the liquidator
 
+// Oracle kinds a Market can be created with.
+pub const ORACLE_KIND_MOCK: u8 = 0;
+pub const ORACLE_KIND_PYTH: u8 = 1;
+
 #[account]
 pub struct GlobalConfig {
     pub authority: Pubkey,
@@ -29,10 +34,12 @@ impl GlobalConfig {
     pub const SIZE: usize = 8 + 32 + 32 + 2 + 1 + 1;
 }
 
-/// Self-contained price account a keeper pushes updates to.
-/// Swap the read path in `read_oracle_price` for a real Pyth/Switchboard
-/// deserializer once you wire up a production feed; the account shape
-/// (price, confidence, timestamp) is deliberately Pyth-compatible.
+/// Local/devnet-testing oracle a keeper authority pushes updates to. This
+/// exists so the engine can be exercised end to end without depending on a
+/// live Pyth feed being reliably available on devnet during the hackathon.
+/// It is NOT the production oracle path - see PriceUpdateV2 usage below and
+/// ORACLE_KIND_PYTH. Its single-writer trust model should be called out to
+/// judges as a testing convenience, not presented as production-grade.
 #[account]
 pub struct PriceOracle {
     pub authority: Pubkey,
@@ -50,7 +57,14 @@ impl PriceOracle {
 
 #[account]
 pub struct Market {
-    pub oracle: Pubkey,
+    /// ORACLE_KIND_MOCK or ORACLE_KIND_PYTH.
+    pub oracle_kind: u8,
+    /// For ORACLE_KIND_MOCK: the PriceOracle PDA's own pubkey, as bytes.
+    /// For ORACLE_KIND_PYTH: the Pyth price feed id (see
+    /// https://docs.pyth.network/price-feeds/price-feeds for the full list,
+    /// e.g. Equity.US.AAPL/USD). This is also what the Market PDA itself is
+    /// seeded from, so every market is uniquely keyed by its oracle.
+    pub oracle_ref: [u8; 32],
     pub vault: Pubkey,
     pub vault_bump: u8,
     pub max_leverage: u8,
@@ -69,7 +83,7 @@ pub struct Market {
 impl Market {
     pub const SEED: &'static [u8] = b"market";
     pub const VAULT_SEED: &'static [u8] = b"vault";
-    pub const SIZE: usize = 8 + 32 + 32 + 1 + 1 + 2 + 8 + 8 + 16 + 8 + 8 + 1 + 1;
+    pub const SIZE: usize = 8 + 1 + 32 + 32 + 1 + 1 + 2 + 8 + 8 + 16 + 8 + 8 + 1 + 1;
 
     /// Net open interest skew in bps, positive when longs dominate.
     pub fn skew_bps(&self) -> Result<i128> {
@@ -167,15 +181,63 @@ impl Position {
     }
 }
 
-/// Reads and validates a PriceOracle account, enforcing staleness.
-/// Isolated here so swapping in a real Pyth feed only touches this one function.
-pub fn read_oracle_price(oracle: &Account<PriceOracle>, now: i64) -> Result<u64> {
-    require!(oracle.price > 0, PerpError::InvalidOraclePrice);
-    require!(
-        now.checked_sub(oracle.last_update_ts)
+/// Converts a Pyth price (mantissa + exponent, e.g. 17160106530699 * 10^-8)
+/// into our PRICE_SCALE (1e6) fixed-point u64.
+pub fn pyth_price_to_fixed6(price: i64, exponent: i32) -> Result<u64> {
+    require!(price > 0, PerpError::InvalidOraclePrice);
+    let price = price as i128;
+    let shift = 6i32.checked_add(exponent).ok_or(PerpError::MathOverflow)?;
+    let scaled: i128 = if shift >= 0 {
+        price
+            .checked_mul(10i128.pow(shift as u32))
             .ok_or(PerpError::MathOverflow)?
-            <= MAX_ORACLE_STALENESS_SECS,
-        PerpError::StaleOracle
-    );
-    Ok(oracle.price)
+    } else {
+        price
+            .checked_div(10i128.pow((-shift) as u32))
+            .ok_or(PerpError::MathOverflow)?
+    };
+    require!(scaled > 0, PerpError::InvalidOraclePrice);
+    require!(scaled <= u64::MAX as i128, PerpError::MathOverflow);
+    Ok(scaled as u64)
+}
+
+/// Reads the mark price for a market from whichever oracle it was created
+/// with. Exactly one of `mock_oracle` / `pyth_update` should be Some,
+/// matching market.oracle_kind - the caller wires up the right one from an
+/// Option<Account<...>> in their instruction's Accounts struct.
+pub fn read_price(
+    market: &Market,
+    mock_oracle: Option<&Account<PriceOracle>>,
+    pyth_update: Option<&Account<PriceUpdateV2>>,
+    now: i64,
+) -> Result<u64> {
+    match market.oracle_kind {
+        ORACLE_KIND_MOCK => {
+            let oracle = mock_oracle.ok_or(PerpError::OracleMismatch)?;
+            require!(
+                oracle.key().to_bytes() == market.oracle_ref,
+                PerpError::OracleMismatch
+            );
+            require!(oracle.price > 0, PerpError::InvalidOraclePrice);
+            require!(
+                now.checked_sub(oracle.last_update_ts)
+                    .ok_or(PerpError::MathOverflow)?
+                    <= MAX_ORACLE_STALENESS_SECS,
+                PerpError::StaleOracle
+            );
+            Ok(oracle.price)
+        }
+        ORACLE_KIND_PYTH => {
+            let update = pyth_update.ok_or(PerpError::OracleMismatch)?;
+            let price = update
+                .get_price_no_older_than(
+                    &Clock::get()?,
+                    MAX_ORACLE_STALENESS_SECS as u64,
+                    &market.oracle_ref,
+                )
+                .map_err(|_| error!(PerpError::StaleOracle))?;
+            pyth_price_to_fixed6(price.price, price.exponent)
+        }
+        _ => Err(error!(PerpError::OracleMismatch)),
+    }
 }
