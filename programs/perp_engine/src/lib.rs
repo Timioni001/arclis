@@ -16,7 +16,9 @@ declare_id!("PerpEng1ne11111111111111111111111111111111");
 ///   model to get wrong under hackathon time pressure.
 /// - `create_market` is permissionless: any oracle-backed asset can be
 ///   listed by anyone, which is what makes this a general engine rather
-///   than a hardcoded stock list.
+///   than a hardcoded stock list. It supports two oracle kinds: a real
+///   Pyth price feed (production path, see state::ORACLE_KIND_PYTH) or a
+///   mock keeper-fed oracle (devnet testing path, ORACLE_KIND_MOCK).
 /// - Custody is program-owned (users deposit into a market vault the
 ///   program controls), not team-controlled - there is no admin
 ///   withdrawal instruction anywhere in this program. The only ways
@@ -34,6 +36,7 @@ pub mod perp_engine {
         instructions::initialize_global_config::handler(ctx, fee_bps)
     }
 
+    /// Mock oracle, devnet testing only - see state::ORACLE_KIND_MOCK.
     pub fn initialize_price_oracle(
         ctx: Context<InitializePriceOracle>,
         symbol: [u8; 16],
@@ -42,6 +45,7 @@ pub mod perp_engine {
         instructions::price_oracle::initialize_price_oracle(ctx, symbol, initial_price)
     }
 
+    /// Mock oracle, devnet testing only - see state::ORACLE_KIND_MOCK.
     pub fn update_price_oracle(
         ctx: Context<UpdatePriceOracle>,
         price: u64,
@@ -52,34 +56,55 @@ pub mod perp_engine {
 
     pub fn create_market(
         ctx: Context<CreateMarket>,
+        oracle_kind: u8,
+        oracle_ref: [u8; 32],
         max_leverage: u8,
         min_margin_ratio_bps: u16,
         funding_interval_secs: i64,
     ) -> Result<()> {
-        instructions::create_market::handler(ctx, max_leverage, min_margin_ratio_bps, funding_interval_secs)
+        instructions::create_market::handler(
+            ctx,
+            oracle_kind,
+            oracle_ref,
+            max_leverage,
+            min_margin_ratio_bps,
+            funding_interval_secs,
+        )
     }
 
     pub fn deposit_collateral(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
         instructions::deposit_collateral::handler(ctx, amount)
     }
 
-    pub fn withdraw_collateral(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
-        instructions::withdraw_collateral::handler(ctx, amount)
+    pub fn withdraw_collateral(
+        ctx: Context<WithdrawCollateral>,
+        oracle_ref: [u8; 32],
+        amount: u64,
+    ) -> Result<()> {
+        instructions::withdraw_collateral::handler(ctx, oracle_ref, amount)
     }
 
-    pub fn open_position(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
-        instructions::open_position::handler(ctx, size_delta)
+    pub fn open_position(
+        ctx: Context<OpenPosition>,
+        oracle_ref: [u8; 32],
+        size_delta: i64,
+    ) -> Result<()> {
+        instructions::open_position::handler(ctx, oracle_ref, size_delta)
     }
 
-    pub fn close_position(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
-        instructions::close_position::handler(ctx, reduce_size)
+    pub fn close_position(
+        ctx: Context<ClosePosition>,
+        oracle_ref: [u8; 32],
+        reduce_size: u64,
+    ) -> Result<()> {
+        instructions::close_position::handler(ctx, oracle_ref, reduce_size)
     }
 
     pub fn crank_funding(ctx: Context<CrankFunding>) -> Result<()> {
         instructions::crank_funding::handler(ctx)
     }
 
-    pub fn liquidate(ctx: Context<Liquidate>) -> Result<()> {
-        instructions::liquidate::handler(ctx)
+    pub fn liquidate(ctx: Context<Liquidate>, oracle_ref: [u8; 32]) -> Result<()> {
+        instructions::liquidate::handler(ctx, oracle_ref)
     }
 }
