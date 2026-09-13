@@ -1,21 +1,25 @@
 use anchor_lang::prelude::*;
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use crate::errors::PerpError;
-use crate::state::{read_oracle_price, Market, PriceOracle, Position, PRICE_SCALE};
+use crate::state::{read_price, Market, PriceOracle, Position, PRICE_SCALE};
 
 #[derive(Accounts)]
+#[instruction(oracle_ref: [u8; 32], size_delta: i64)]
 pub struct OpenPosition<'info> {
     pub owner: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [Market::SEED, oracle.key().as_ref()],
+        seeds = [Market::SEED, oracle_ref.as_ref()],
         bump = market.bump,
         constraint = !market.paused @ PerpError::MarketPaused
     )]
     pub market: Account<'info, Market>,
 
-    #[account(address = market.oracle @ PerpError::OracleMismatch)]
-    pub oracle: Account<'info, PriceOracle>,
+    /// Required when market.oracle_kind == ORACLE_KIND_MOCK.
+    pub mock_oracle: Option<Account<'info, PriceOracle>>,
+    /// Required when market.oracle_kind == ORACLE_KIND_PYTH.
+    pub pyth_price_update: Option<Account<'info, PriceUpdateV2>>,
 
     #[account(
         mut,
@@ -31,13 +35,20 @@ pub struct OpenPosition<'info> {
 /// direction in one call is disallowed on purpose - close first, then open
 /// the other way - so entry price accounting never has to net two directions
 /// in the same transaction.
-pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
+pub fn handler(ctx: Context<OpenPosition>, oracle_ref: [u8; 32], size_delta: i64) -> Result<()> {
     require!(size_delta != 0, PerpError::ZeroSize);
+    let _ = oracle_ref; // used only for PDA derivation above
 
     let now = Clock::get()?.unix_timestamp;
-    let mark_price = read_oracle_price(&ctx.accounts.oracle, now)?;
 
     let market = &mut ctx.accounts.market;
+    let mark_price = read_price(
+        market,
+        ctx.accounts.mock_oracle.as_ref(),
+        ctx.accounts.pyth_price_update.as_ref(),
+        now,
+    )?;
+
     let position = &mut ctx.accounts.position;
 
     if position.size != 0 {
@@ -83,7 +94,7 @@ pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
     position.last_update_ts = now;
 
     // Update market open interest on the side that grew.
-    let added_abs = (size_delta.unsigned_abs()) as u64;
+    let added_abs = size_delta.unsigned_abs();
     if size_delta > 0 {
         market.open_interest_long = market
             .open_interest_long
