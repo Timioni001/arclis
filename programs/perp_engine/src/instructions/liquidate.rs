@@ -1,12 +1,14 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use crate::errors::PerpError;
-use crate::state::{read_oracle_price, Market, PriceOracle, Position, BPS_SCALE, LIQUIDATOR_REWARD_BPS};
+use crate::state::{read_price, Market, PriceOracle, Position, BPS_SCALE, LIQUIDATOR_REWARD_BPS};
 
 /// Anyone can call this against any undercollateralized position. There is
 /// no privileged liquidator role on purpose - permissionless liquidation is
 /// what keeps bad debt from accumulating instead of waiting on one keeper.
 #[derive(Accounts)]
+#[instruction(oracle_ref: [u8; 32])]
 pub struct Liquidate<'info> {
     pub liquidator: Signer<'info>,
 
@@ -15,13 +17,13 @@ pub struct Liquidate<'info> {
 
     #[account(
         mut,
-        seeds = [Market::SEED, oracle.key().as_ref()],
+        seeds = [Market::SEED, oracle_ref.as_ref()],
         bump = market.bump
     )]
     pub market: Account<'info, Market>,
 
-    #[account(address = market.oracle @ PerpError::OracleMismatch)]
-    pub oracle: Account<'info, PriceOracle>,
+    pub mock_oracle: Option<Account<'info, PriceOracle>>,
+    pub pyth_price_update: Option<Account<'info, PriceUpdateV2>>,
 
     #[account(
         mut,
@@ -39,11 +41,17 @@ pub struct Liquidate<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
+pub fn handler(ctx: Context<Liquidate>, oracle_ref: [u8; 32]) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    let mark_price = read_oracle_price(&ctx.accounts.oracle, now)?;
 
     let market = &mut ctx.accounts.market;
+    let mark_price = read_price(
+        market,
+        ctx.accounts.mock_oracle.as_ref(),
+        ctx.accounts.pyth_price_update.as_ref(),
+        now,
+    )?;
+
     let position = &mut ctx.accounts.position;
     require!(position.size != 0, PerpError::InsufficientPositionSize);
 
@@ -95,9 +103,8 @@ pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
     position.last_update_ts = now;
 
     if reward > 0 {
-        let oracle_key = ctx.accounts.oracle.key();
         let market_bump = market.bump;
-        let seeds: &[&[u8]] = &[Market::SEED, oracle_key.as_ref(), &[market_bump]];
+        let seeds: &[&[u8]] = &[Market::SEED, oracle_ref.as_ref(), &[market_bump]];
 
         token::transfer(
             CpiContext::new_with_signer(
