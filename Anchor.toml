@@ -2,17 +2,17 @@
 anchor_version = "0.30.1"
 
 [features]
-seeds = false
+resolution = true
 skip-lint = false
 
 [programs.devnet]
-perp_engine = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+perp_engine = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
 
 [registry]
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "devnet"
+cluster = "Devnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
