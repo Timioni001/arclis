@@ -1,23 +1,21 @@
 use anchor_lang::prelude::*;
-use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use crate::errors::PerpError;
-use crate::state::{read_price, Market, PriceOracle, Position};
+use crate::state::{read_oracle_price, Market, PriceOracle, Position};
 
 #[derive(Accounts)]
-#[instruction(oracle_ref: [u8; 32], reduce_size: u64)]
 pub struct ClosePosition<'info> {
     pub owner: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [Market::SEED, oracle_ref.as_ref()],
+        seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
         constraint = !market.paused @ PerpError::MarketPaused
     )]
     pub market: Account<'info, Market>,
 
-    pub mock_oracle: Option<Account<'info, PriceOracle>>,
-    pub pyth_price_update: Option<Account<'info, PriceUpdateV2>>,
+    #[account(address = market.oracle @ PerpError::OracleMismatch)]
+    pub oracle: Account<'info, PriceOracle>,
 
     #[account(
         mut,
@@ -28,35 +26,22 @@ pub struct ClosePosition<'info> {
     pub position: Account<'info, Position>,
 }
 
-/// reduce_size is the unsigned amount of base size to close, always <= the
-/// position's current absolute size. Realized PnL and funding are settled
-/// into position.collateral; the user withdraws via withdraw_collateral
-/// separately, keeping the token transfer surface in one place.
-pub fn handler(ctx: Context<ClosePosition>, oracle_ref: [u8; 32], reduce_size: u64) -> Result<()> {
+pub fn handler(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
     require!(reduce_size > 0, PerpError::ZeroSize);
-    let _ = oracle_ref;
 
     let now = Clock::get()?.unix_timestamp;
+    let mark_price = read_oracle_price(&ctx.accounts.oracle, now)?;
 
     let market = &mut ctx.accounts.market;
-    let mark_price = read_price(
-        market,
-        ctx.accounts.mock_oracle.as_ref(),
-        ctx.accounts.pyth_price_update.as_ref(),
-        now,
-    )?;
-
     let position = &mut ctx.accounts.position;
 
     require!(position.size != 0, PerpError::InsufficientPositionSize);
     let abs_size = position.size.unsigned_abs();
     require!(reduce_size <= abs_size, PerpError::InsufficientPositionSize);
 
-    // Settle funding on the full position first.
     let funding_owed = position.funding_owed(market.cumulative_funding_index)?;
     apply_funding(position, funding_owed)?;
 
-    // Realize PnL proportional to the fraction of the position being closed.
     let total_pnl = position.unrealized_pnl(mark_price)?;
     let realized_pnl = total_pnl
         .checked_mul(reduce_size as i128)
