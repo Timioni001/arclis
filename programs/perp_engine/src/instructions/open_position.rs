@@ -1,25 +1,21 @@
 use anchor_lang::prelude::*;
-use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use crate::errors::PerpError;
-use crate::state::{read_price, Market, PriceOracle, Position, PRICE_SCALE};
+use crate::state::{read_oracle_price, Market, PriceOracle, Position, PRICE_SCALE};
 
 #[derive(Accounts)]
-#[instruction(oracle_ref: [u8; 32], size_delta: i64)]
 pub struct OpenPosition<'info> {
     pub owner: Signer<'info>,
 
     #[account(
         mut,
-        seeds = [Market::SEED, oracle_ref.as_ref()],
+        seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
         constraint = !market.paused @ PerpError::MarketPaused
     )]
     pub market: Account<'info, Market>,
 
-    /// Required when market.oracle_kind == ORACLE_KIND_MOCK.
-    pub mock_oracle: Option<Account<'info, PriceOracle>>,
-    /// Required when market.oracle_kind == ORACLE_KIND_PYTH.
-    pub pyth_price_update: Option<Account<'info, PriceUpdateV2>>,
+    #[account(address = market.oracle @ PerpError::OracleMismatch)]
+    pub oracle: Account<'info, PriceOracle>,
 
     #[account(
         mut,
@@ -35,20 +31,13 @@ pub struct OpenPosition<'info> {
 /// direction in one call is disallowed on purpose - close first, then open
 /// the other way - so entry price accounting never has to net two directions
 /// in the same transaction.
-pub fn handler(ctx: Context<OpenPosition>, oracle_ref: [u8; 32], size_delta: i64) -> Result<()> {
+pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
     require!(size_delta != 0, PerpError::ZeroSize);
-    let _ = oracle_ref; // used only for PDA derivation above
 
     let now = Clock::get()?.unix_timestamp;
+    let mark_price = read_oracle_price(&ctx.accounts.oracle, now)?;
 
     let market = &mut ctx.accounts.market;
-    let mark_price = read_price(
-        market,
-        ctx.accounts.mock_oracle.as_ref(),
-        ctx.accounts.pyth_price_update.as_ref(),
-        now,
-    )?;
-
     let position = &mut ctx.accounts.position;
 
     if position.size != 0 {
@@ -56,8 +45,6 @@ pub fn handler(ctx: Context<OpenPosition>, oracle_ref: [u8; 32], size_delta: i64
         require!(same_direction, PerpError::InsufficientPositionSize);
     }
 
-    // Settle funding accrued so far into collateral before changing size,
-    // so the new entry_funding_index always starts from a clean slate.
     let funding_owed = position.funding_owed(market.cumulative_funding_index)?;
     settle_funding(position, funding_owed)?;
 
@@ -66,7 +53,6 @@ pub fn handler(ctx: Context<OpenPosition>, oracle_ref: [u8; 32], size_delta: i64
         .checked_add(size_delta as i128)
         .ok_or(PerpError::MathOverflow)?;
 
-    // Weighted-average entry price across the old and new size.
     let old_notional = old_size
         .checked_abs()
         .ok_or(PerpError::MathOverflow)?
@@ -93,7 +79,6 @@ pub fn handler(ctx: Context<OpenPosition>, oracle_ref: [u8; 32], size_delta: i64
     position.entry_funding_index = market.cumulative_funding_index;
     position.last_update_ts = now;
 
-    // Update market open interest on the side that grew.
     let added_abs = size_delta.unsigned_abs();
     if size_delta > 0 {
         market.open_interest_long = market
@@ -107,7 +92,6 @@ pub fn handler(ctx: Context<OpenPosition>, oracle_ref: [u8; 32], size_delta: i64
             .ok_or(PerpError::MathOverflow)?;
     }
 
-    // Leverage check: notional / equity must stay within the market's cap.
     let notional = (new_abs_size as u128)
         .checked_mul(mark_price as u128)
         .ok_or(PerpError::MathOverflow)?
@@ -126,8 +110,6 @@ fn settle_funding(position: &mut Position, funding_owed: i128) -> Result<()> {
         return Ok(());
     }
     if funding_owed > 0 {
-        // Position owes funding: reduce collateral, floor at zero (a large
-        // unpaid funding bill should already have been caught by liquidation).
         let owed = funding_owed as u64;
         position.collateral = position.collateral.saturating_sub(owed);
     } else {
