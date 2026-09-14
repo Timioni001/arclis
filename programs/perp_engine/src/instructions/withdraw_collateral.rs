@@ -1,23 +1,21 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
-use pyth_solana_receiver_sdk::price_update::PriceUpdateV2;
 use crate::errors::PerpError;
-use crate::state::{read_price, Market, PriceOracle, Position, BPS_SCALE, PRICE_SCALE};
+use crate::state::{read_oracle_price, Market, PriceOracle, Position, BPS_SCALE, PRICE_SCALE};
 
 #[derive(Accounts)]
-#[instruction(oracle_ref: [u8; 32])]
 pub struct WithdrawCollateral<'info> {
     pub owner: Signer<'info>,
 
     #[account(
-        seeds = [Market::SEED, oracle_ref.as_ref()],
+        seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
         constraint = !market.paused @ PerpError::MarketPaused
     )]
     pub market: Account<'info, Market>,
 
-    pub mock_oracle: Option<Account<'info, PriceOracle>>,
-    pub pyth_price_update: Option<Account<'info, PriceUpdateV2>>,
+    #[account(address = market.oracle @ PerpError::OracleMismatch)]
+    pub oracle: Account<'info, PriceOracle>,
 
     #[account(
         mut,
@@ -39,29 +37,21 @@ pub struct WithdrawCollateral<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-pub fn handler(ctx: Context<WithdrawCollateral>, oracle_ref: [u8; 32], amount: u64) -> Result<()> {
+pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
     require!(amount > 0, PerpError::InsufficientCollateral);
-    let _ = oracle_ref;
-
     let position = &mut ctx.accounts.position;
     require!(position.collateral >= amount, PerpError::InsufficientCollateral);
 
     let now = Clock::get()?.unix_timestamp;
-    let market = &ctx.accounts.market;
-    let mark_price = read_price(
-        market,
-        ctx.accounts.mock_oracle.as_ref(),
-        ctx.accounts.pyth_price_update.as_ref(),
-        now,
-    )?;
+    let mark_price = read_oracle_price(&ctx.accounts.oracle, now)?;
 
-    // Simulate the withdrawal against margin requirements before moving funds.
     let post_withdraw_collateral = position
         .collateral
         .checked_sub(amount)
         .ok_or(PerpError::MathOverflow)?;
 
     if position.size != 0 {
+        let market = &ctx.accounts.market;
         let notional = (position.size.unsigned_abs() as u128)
             .checked_mul(mark_price as u128)
             .ok_or(PerpError::MathOverflow)?
@@ -88,10 +78,9 @@ pub fn handler(ctx: Context<WithdrawCollateral>, oracle_ref: [u8; 32], amount: u
         );
     }
 
-    // The vault's token authority is the Market PDA itself (see create_market),
-    // so we sign the CPI with the market's own seeds, not the vault's.
-    let market_bump = market.bump;
-    let seeds: &[&[u8]] = &[Market::SEED, oracle_ref.as_ref(), &[market_bump]];
+    let oracle_key = ctx.accounts.oracle.key();
+    let market_bump = ctx.accounts.market.bump;
+    let seeds: &[&[u8]] = &[Market::SEED, oracle_key.as_ref(), &[market_bump]];
 
     token::transfer(
         CpiContext::new_with_signer(
