@@ -11,7 +11,11 @@
     "test:dbc": "ts-mocha -p ./tsconfig.json -t 20000 'tests/dbc/**/*.test.ts'",
     "test:integration": "anchor test",
     "dbc:plan": "ts-node scripts/dbc-plan.ts",
-    "dbc:monitor": "ts-node scripts/dbc-monitor.ts"
+    "dbc:monitor": "ts-node scripts/dbc-monitor.ts",
+    "app:dev": "npm --prefix app run dev",
+    "app:build": "npm --prefix app run build",
+    "app:test": "npm --prefix app test",
+    "idl": "python3 scripts/build-idl.py"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",

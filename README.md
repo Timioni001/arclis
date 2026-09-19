@@ -42,6 +42,9 @@ Four pieces:
   the hedge survives the agent's own keeper going down.
 - **`src/dbc/`** — launch and monitoring tooling for Meteora DBC pools whose
   quote token is a tokenized stock.
+- **`app/`** — the interface. React + TypeScript, built to
+  [`DESIGN.md`](DESIGN.md), with the read-model maths ported from Rust and
+  cross-checked against it.
 
 Start with **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** if you are
 building against this — every account, instruction and PDA seed, plus the read
@@ -58,6 +61,8 @@ account, not a ticker.
 | Compiles (`cargo check`) | **yes**, clean |
 | Rust unit tests (`cargo test --lib`) | **114 passing** — PnL, funding, margin, liquidation, sessions, splits, treasury hedging, pool NAV and the loss waterfall |
 | DBC tests (`npm run test:dbc`) | **37 passing** — against the real Meteora SDK, no network |
+| App tests (`npm run app:test`) | **34 passing** — TypeScript read model vs the Rust |
+| IDL (`npm run idl`) | **generated** — 24 instructions, committed under `idl/` |
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
 | `anchor build` | **not run here** — no Solana toolchain in the authoring environment |
 | `anchor test` | **not run here** — the suite in `tests/` is written but unverified |
@@ -87,6 +92,10 @@ bash scripts/verify.sh         # runs all four levels, prints a summary
 cargo test --lib      # fast: the on-chain arithmetic, no validator needed
 npm install
 npm run test:dbc      # DBC launch planning + real SDK config build, no network
+
+npm --prefix app install
+npm run app:dev       # the interface, at http://localhost:5173
+npm run app:test      # read-model maths, cross-checked against the Rust
 
 anchor build          # the on-chain program (see BUILD.md for toolchain)
 anchor test           # integration, against a local validator

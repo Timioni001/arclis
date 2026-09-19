@@ -72,6 +72,26 @@ else
   skip "DBC tests" "Node not installed — run scripts/setup-ubuntu.sh"
 fi
 
+section "The app — does the interface build and agree with the program?"
+if command -v node >/dev/null 2>&1 && [ -d app/node_modules ]; then
+  OUT=$(npm --prefix app test 2>&1)
+  if echo "$OUT" | grep -qE "Tests +[0-9]+ passed" && ! echo "$OUT" | grep -q "failed"; then
+    # Vitest prints "Test Files  1 passed" before "Tests  34 passed"; take the
+    # second, which is the assertion count rather than the file count.
+    pass "app read-model tests ($(echo "$OUT" | grep -oE 'Tests +[0-9]+ passed' | grep -oE '[0-9]+ passed'))"
+  else
+    fail "app read-model tests"
+    echo "$OUT" | tail -5 | sed 's/^/        /'
+  fi
+  if npm --prefix app run build >/tmp/arclis-app.log 2>&1; then
+    pass "app builds"
+  else
+    fail "app build  — full log: /tmp/arclis-app.log"
+  fi
+else
+  skip "app tests" "dependencies not installed — run: npm --prefix app install"
+fi
+
 section "The on-chain program — does it compile for Solana?"
 if command -v anchor >/dev/null 2>&1; then
   echo "        (first build takes several minutes)"
