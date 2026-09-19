@@ -59,7 +59,16 @@ repository's git history.
 
 ## Quick start
 
+**New here, or not a developer?** Read
+**[`QUICKSTART.md`](QUICKSTART.md)** — it installs the toolchain with one
+script and checks everything with one more.
+
+For everyone else:
+
 ```bash
+bash scripts/setup-ubuntu.sh   # one-time toolchain install (Ubuntu/Debian)
+bash scripts/verify.sh         # runs all four levels, prints a summary
+
 cargo test --lib      # fast: the on-chain arithmetic, no validator needed
 npm install
 npm run test:dbc      # DBC launch planning + real SDK config build, no network
