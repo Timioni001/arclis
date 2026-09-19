@@ -2,10 +2,25 @@
 
 **On-chain access to public markets.**
 
-Tokenized equities already trade on Solana. What is missing is everything that
-makes them usable: an oracle that knows a stock market closes at 4pm, halts on
-news and splits four-for-one overnight; a venue that can price them around the
-clock; and capital willing to take the other side.
+> **Tokenized stocks already trade on Solana. They just don't *behave* like
+> stocks once they get there.** Arclis is the layer that makes them behave.
+
+Every DeFi primitive on Solana assumes four things: the asset trades
+continuously, its price always exists, its supply is never restated, and someone
+is on the other side. A stock violates all four — it trades 19% of the week,
+halts on news, splits four-for-one overnight, and has no counterparty unless one
+is funded.
+
+None of those failures show up in a demo. They show up at 4pm on a Friday, on an
+ex-date, or the first time a market goes one-way.
+
+See all three in thirty seconds, with nothing installed but Rust:
+
+```bash
+cargo run --example stock_hazards
+```
+
+The full argument is in **[`docs/PITCH.md`](docs/PITCH.md)**.
 
 Arclis is that layer. The first thing built on it is an agent treasury: an AI
 agent launches its token on a Meteora Dynamic Bonding Curve quoted in a
