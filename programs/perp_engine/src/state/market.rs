@@ -1,7 +1,8 @@
 use anchor_lang::prelude::*;
+use std::cmp::Ordering;
 
 use crate::errors::PerpError;
-use crate::math::funding;
+use crate::math::{corporate_actions, funding};
 
 /// One market == one oracle plus a risk configuration plus a vault.
 ///
@@ -197,6 +198,61 @@ impl Market {
             .insurance_balance
             .checked_sub(amount)
             .ok_or(PerpError::MathOverflow)?;
+        Ok(())
+    }
+
+    /// Rescale the market's aggregate state for a corporate action.
+    ///
+    /// Open interest and the funding index are sums over positions, so unlike
+    /// the positions themselves they cannot be normalised lazily - there is
+    /// nothing to normalise them *against* later. They are rewritten here, in
+    /// the same instruction that moves the oracle, so the aggregates and the
+    /// price never disagree.
+    pub fn apply_split(&mut self, from_factor: u64, to_factor: u64) -> Result<()> {
+        self.open_interest_long = corporate_actions::rescale_base_amount(
+            self.open_interest_long,
+            from_factor,
+            to_factor,
+        )?;
+        self.open_interest_short = corporate_actions::rescale_base_amount(
+            self.open_interest_short,
+            from_factor,
+            to_factor,
+        )?;
+        self.max_open_interest =
+            corporate_actions::rescale_base_amount(self.max_open_interest, from_factor, to_factor)?;
+        self.cumulative_funding_index = corporate_actions::rescale_funding_index(
+            self.cumulative_funding_index,
+            from_factor,
+            to_factor,
+        )?;
+        Ok(())
+    }
+
+    /// Reconcile the liability total with a position's realised PnL.
+    ///
+    /// Profit increases what the vault owes the trader; a loss decreases it and
+    /// the freed collateral becomes insurance. A loss larger than the market has
+    /// booked is bad debt, recorded rather than absorbed. Shared by
+    /// `close_position` and treasury rebalancing so the two cannot drift apart.
+    pub fn settle_realized_pnl(&mut self, realized: i128) -> Result<()> {
+        match realized.cmp(&0) {
+            Ordering::Greater => {
+                self.credit_collateral(crate::math::fixed::to_u64(realized)?)?;
+            }
+            Ordering::Less => {
+                let loss = crate::math::fixed::to_u64(
+                    realized.checked_neg().ok_or(PerpError::MathOverflow)?,
+                )?;
+                let bookable = loss.min(self.total_collateral);
+                self.debit_collateral(bookable)?;
+                self.credit_insurance(bookable)?;
+                if loss > bookable {
+                    self.record_bad_debt(loss - bookable)?;
+                }
+            }
+            Ordering::Equal => {}
+        }
         Ok(())
     }
 

@@ -13,8 +13,10 @@ pub mod global_config;
 pub mod market;
 pub mod oracle;
 pub mod position;
+pub mod treasury;
 
 pub use global_config::GlobalConfig;
 pub use market::Market;
 pub use oracle::PriceOracle;
 pub use position::Position;
+pub use treasury::AgentTreasury;

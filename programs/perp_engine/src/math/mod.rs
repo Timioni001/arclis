@@ -8,8 +8,15 @@
 //! The instruction handlers in [`crate::instructions`] are then thin: load
 //! accounts, check authority and staleness, call into here, write results back,
 //! emit an event.
+//!
+//! `session` and `corporate_actions` carry the equity-specific rules — trading
+//! hours, halts, and splits — that separate a perp on a stock from a perp on a
+//! token that trades continuously.
 
+pub mod corporate_actions;
 pub mod fixed;
 pub mod funding;
 pub mod liquidation;
 pub mod pnl;
+pub mod session;
+pub mod treasury;

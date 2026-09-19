@@ -34,6 +34,24 @@ jobs:
       - name: Unit tests
         run: cargo test --lib
 
+  # The TypeScript half of the fast gate: DBC launch planning and the config
+  # builder, both of which run against the real Meteora SDK but touch no
+  # network. Same idea as the Rust unit job - prove the numbers on a laptop
+  # rather than in a signed mainnet transaction.
+  dbc:
+    name: DBC tooling tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:dbc
+
   # Guards the fix documented in BUILD.md. Without this, the next routine
   # `cargo update` silently pulls an edition-2024 crate back into the lock and
   # `anchor build` breaks on a developer machine days later, with an error that
@@ -61,7 +79,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: yarn
+          cache: npm
 
       - name: Install Solana
         run: |
@@ -85,6 +103,6 @@ jobs:
           # length of the job and is thrown away with the runner.
           solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json
 
-      - run: yarn install --frozen-lockfile
+      - run: npm ci
       - run: anchor build
       - run: anchor test

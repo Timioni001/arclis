@@ -49,8 +49,16 @@ pub const BPS_SCALE: i128 = 10_000;
 // Oracle bounds
 // ---------------------------------------------------------------------------
 
-/// Reject any price older than this when opening, closing, or liquidating.
+/// Reject any price older than this while the venue is open.
 pub const MAX_ORACLE_STALENESS_SECS: i64 = 60;
+
+/// How old a closing price may be and still be used to *reduce* risk.
+///
+/// Sized to cover the longest ordinary gap in an equity calendar: a Friday
+/// close into a Tuesday open across a Monday holiday, plus slack. Past this the
+/// close is no longer a defensible mark and the market needs a fresh print
+/// before anyone can even exit. See [`crate::math::session`].
+pub const MAX_CLOSED_SESSION_STALENESS_SECS: i64 = 5 * 86_400;
 
 /// Reject a price whose confidence interval is wider than this fraction of the
 /// price itself. A 2% band on a tokenized equity means the feed is in trouble
@@ -63,6 +71,19 @@ pub const MAX_ORACLE_CONFIDENCE_BPS: i128 = 200;
 /// vault in one transaction, they have to walk the price and eat the
 /// per-update cap each time.
 pub const MAX_ORACLE_DEVIATION_BPS: i128 = 1_000;
+
+// ---------------------------------------------------------------------------
+// Corporate actions
+// ---------------------------------------------------------------------------
+
+/// Scale for the cumulative split factor. `1e9` == "one share is still one
+/// share". See [`crate::math::corporate_actions`].
+pub const SPLIT_FACTOR_SCALE: u64 = 1_000_000_000;
+
+/// Bound on either side of a split ratio. Real splits are single or double
+/// digits; a 1:1000000 would round every position on the book to zero size, so
+/// a fat finger is refused rather than applied.
+pub const MAX_SPLIT_RATIO_COMPONENT: u32 = 1_000;
 
 // ---------------------------------------------------------------------------
 // Market parameter bounds (enforced at create_market)
@@ -125,3 +146,13 @@ pub const MIN_POSITION_NOTIONAL: u64 = 10 * (QUOTE_SCALE as u64); // $10
 /// remaining insurance balance, keeps the permissionless incentive alive in the
 /// one case the percentage model abandons.
 pub const BAD_DEBT_LIQUIDATION_BOUNTY: u64 = QUOTE_SCALE as u64; // $1
+
+// ---------------------------------------------------------------------------
+// Agent treasuries
+// ---------------------------------------------------------------------------
+
+/// Widest drift band a treasury may set before a rebalance is allowed.
+///
+/// A band above this stops being a fee-farming guard and starts being a way to
+/// claim a hedge that is never actually maintained.
+pub const MAX_REBALANCE_TOLERANCE_BPS: u16 = 2_000; // 20%

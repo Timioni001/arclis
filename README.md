@@ -1,22 +1,45 @@
 # perp_engine
 
-A general-purpose, oracle-priced perpetual futures engine for Solana.
-Cash-settled, permissionless to list, permissionless to liquidate, with no admin
-path to user funds.
+**Treasury infrastructure for agents that raise in tokenized stock.**
 
-Built for the Stocklana hackathon, but not hardcoded to stocks: `create_market`
-takes an oracle account, not a ticker. Nothing in the program is
-equity-specific.
+An AI agent launches its token on a Meteora Dynamic Bonding Curve quoted in a
+tokenized stock — contributors pay in AAPLx, not SOL. That leaves the agent
+holding a treasury that is 100% long one company's earnings, which it never
+asked for. This repository is what happens next: the treasury holds the stock it
+raised and shorts the matching perp, turning a levered bet on one company back
+into a stable operating budget that earns funding rather than paying it.
+
+Underneath sits the part nobody builds — an oracle that knows equities close at
+4pm, halt on news, and split four-for-one overnight.
+
+Three pieces:
+
+- **`programs/perp_engine/`** — an oracle-priced perpetual futures engine.
+  Cash-settled, permissionless to list and to liquidate, with no admin path to
+  user funds. Now equity-aware: market sessions, halts, and corporate actions.
+- **Agent treasuries** — hold tokenized stock, maintain a delta hedge against
+  it, publish an honest NAV per agent token. Rebalancing is permissionless, so
+  the hedge survives the agent's own keeper going down.
+- **`src/dbc/`** — launch and monitoring tooling for Meteora DBC pools whose
+  quote token is a tokenized stock.
+
+See **[`docs/HACKATHON.md`](docs/HACKATHON.md)** for how this maps to each
+bounty, and what still needs a mainnet transaction.
+
+Nothing in the program is hardcoded to stocks: `create_market` takes an oracle
+account, not a ticker.
 
 ## Status
 
 | | |
 |---|---|
 | Compiles (`cargo check`) | **yes**, clean |
-| Unit tests (`cargo test --lib`) | **48 passing** — PnL, funding, margin, liquidation |
-| `clippy -D warnings`, `cargo fmt` | **clean** |
+| Rust unit tests (`cargo test --lib`) | **87 passing** — PnL, funding, margin, liquidation, sessions, splits, treasury hedging |
+| DBC tests (`npm run test:dbc`) | **37 passing** — against the real Meteora SDK, no network |
+| `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
 | `anchor build` | **not run here** — no Solana toolchain in the authoring environment |
 | `anchor test` | **not run here** — the suite in `tests/` is written but unverified |
+| Mainnet deployment | **not done** — needs a funded wallet |
 
 The lockfile has been resolved and audited against the exact rustc that
 `anchor build` uses, so the dependency wall that was blocking the build is
@@ -30,9 +53,19 @@ repository's git history.
 ## Quick start
 
 ```bash
-cargo test --lib     # fast: the arithmetic, no validator needed
-anchor build         # the on-chain program (see BUILD.md for toolchain)
-anchor test          # integration, against a local validator
+cargo test --lib      # fast: the on-chain arithmetic, no validator needed
+npm install
+npm run test:dbc      # DBC launch planning + real SDK config build, no network
+
+anchor build          # the on-chain program (see BUILD.md for toolchain)
+anchor test           # integration, against a local validator
+```
+
+Plan a stock-quoted launch (read-only, signs nothing):
+
+```bash
+npx ts-node scripts/dbc-plan.ts --symbol AAPL --price 250 --vol 0.28 \
+    --initial-fdv 5000 --migration-fdv 50000 --session closed
 ```
 
 ## Layout
@@ -48,19 +81,34 @@ programs/perp_engine/src/
     pnl.rs              notional, PnL, funding owed, equity, margin, fees
     funding.rs          skew, funding rate, index delta
     liquidation.rs      the liquidation waterfall
+    session.rs          trading hours and halts: what a frozen price may be used for
+    corporate_actions.rs  splits, via lazy per-position normalisation
+    treasury.rs         delta, target hedge, rebalance sizing, NAV per token
   state/              account layouts, one file each
     global_config.rs    authority + kill switch
-    oracle.rs           keeper-fed price, with staleness/confidence/deviation
+    oracle.rs           keeper-fed price: staleness, confidence, deviation, session, splits
     market.rs           risk config, funding, open interest, solvency accounting
     position.rs         per-trader, per-market
+    treasury.rs         an agent's balance sheet
   instructions/       guards, then math, then writes, then an event
-    guards.rs           the pause and authority checks, in one place
+    guards.rs           pause/authority checks and `sync_position`, in one place
     admin.rs            the complete list of what an authority can do
+    corporate_action.rs splits, applied atomically across oracle and market
+    treasury.rs         open, fund, hedge, draw
     ...
+
+src/dbc/              Meteora DBC tooling for stock-quoted pools
+  plan.ts             USD↔share conversion, drift band, fee schedule, activation advice
+  curve.ts            turns a reviewed plan into Meteora ConfigParameters
+  monitor.ts          live pool health against the underlying
+
 docs/
+  HACKATHON.md        what maps to which bounty, and what still needs mainnet
   FEASIBILITY.md      is this idea viable? (the honest answer)
   NAMING.md           on changing the project name
 scripts/
+  dbc-plan.ts         print and validate a launch plan
+  dbc-monitor.ts      watch a live pool
   audit_msrv.py       guards the lockfile fix; runs in CI
 ```
 
@@ -161,24 +209,33 @@ compiled". It did not compile, and several things were wrong beyond that.
 
 ## Known gaps
 
-Still true, and listed plainly:
+Listed plainly, because a judge will find them anyway:
 
-- **No counterparty pool.** The single most important thing to build next. See
+- **No counterparty pool.** Still the single most important thing to build next.
+  A cash-settled perp with no AMM or order book needs winners' profits to be
+  funded by losers' losses, and nothing enforces that. Insolvency is now
+  *visible and bounded* (`Market::total_collateral`, `bad_debt`, vault balance
+  checks) rather than silent — that is not the same as solved.
   `docs/FEASIBILITY.md` §1.
-- **The oracle is one trusted key.** Bounded by staleness, confidence, and a
-  deviation cap, but not removed. Swap in Pyth before anything holds value.
-- **No market-hours handling.** Equities trade ~32% of the hours a perp is live;
-  weekends, halts, and corporate actions are unhandled. `docs/FEASIBILITY.md` §2.
-- **Bad debt is recorded but not recapitalised.** There is no instruction to pay
-  into the insurance balance.
-- **`anchor build` and `anchor test` are unverified here.**
+- **A weekend gap will outrun the insurance fund.** Sessions stop anyone opening
+  against a frozen price, but a Friday-to-Monday gap still puts leveraged longs
+  underwater before any liquidator can act. Fees now capitalise insurance;
+  there is still no instruction to pay into it directly.
+- **The oracle is one trusted key.** Bounded by staleness, confidence, a
+  per-update deviation cap, and now a session state — but not removed. Swap in
+  Pyth before anything holds value.
+- **Dividends, mergers and delistings are unhandled.** Only splits are.
+- **DBC migration cannot be oracle-gated.** Graduation is permissionless with no
+  oracle hook, so it can fire while the underlying is shut. The monitor warns;
+  nothing can enforce.
+- **`anchor build` and `anchor test` are unverified here**, and nothing is
+  deployed.
 
 ## Next steps
 
 1. `anchor build`, then `anchor test`; fix what the integration suite surfaces.
-2. Rotate the program keypair (`BUILD.md`).
-3. Read [`docs/FEASIBILITY.md`](docs/FEASIBILITY.md) before building further —
-   it argues for pointing this at crypto perps first, which is a positioning
-   decision better made early than late.
-4. Add the LP counterparty vault.
+2. Rotate the program keypair (`BUILD.md`) — its secret key is in git history.
+3. Add the LP counterparty vault.
+4. Add an instruction to capitalise the insurance fund directly.
 5. Swap the keeper oracle for Pyth.
+6. Handle dividends alongside splits.

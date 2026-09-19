@@ -14,6 +14,7 @@
 
 pub mod admin;
 pub mod close_position;
+pub mod corporate_action;
 pub mod crank_funding;
 pub mod create_market;
 pub mod deposit_collateral;
@@ -22,6 +23,7 @@ pub mod initialize_global_config;
 pub mod liquidate;
 pub mod open_position;
 pub mod price_oracle;
+pub mod treasury;
 pub mod withdraw_collateral;
 
 // Glob re-exports are load-bearing here, not stylistic: `#[program]` expands to
@@ -39,6 +41,7 @@ pub mod withdraw_collateral;
 mod reexports {
     pub use super::admin::*;
     pub use super::close_position::*;
+    pub use super::corporate_action::*;
     pub use super::crank_funding::*;
     pub use super::create_market::*;
     pub use super::deposit_collateral::*;
@@ -46,6 +49,7 @@ mod reexports {
     pub use super::liquidate::*;
     pub use super::open_position::*;
     pub use super::price_oracle::*;
+    pub use super::treasury::*;
     pub use super::withdraw_collateral::*;
 }
 pub use reexports::*;
