@@ -43,6 +43,18 @@ else
   skip "stock_hazards demo" "Rust not installed — run scripts/setup-ubuntu.sh"
 fi
 
+section "The IDL — can a client talk to the program?"
+if command -v cargo >/dev/null 2>&1; then
+  if python3 scripts/build-idl.py >/tmp/arclis-idl.log 2>&1; then
+    N=$(python3 -c "import json;print(len(json.load(open('target/idl/arclis.json'))['instructions']))" 2>/dev/null)
+    pass "IDL generated ($N instructions)"
+  else
+    fail "IDL generation  — full log: /tmp/arclis-idl.log"
+  fi
+else
+  skip "IDL generation" "Rust not installed — run scripts/setup-ubuntu.sh"
+fi
+
 section "The launch tooling — does the Meteora config build?"
 if command -v node >/dev/null 2>&1; then
   if [ -d node_modules ]; then

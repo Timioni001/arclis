@@ -1,5 +1,8 @@
 .anchor
 target/
+# ...but the generated IDL is committed under idl/, because a frontend cannot
+# construct a single instruction without it and `anchor build --no-idl` never
+# produces one. Regenerate with: python3 scripts/build-idl.py
 node_modules/
 dist/
 build/

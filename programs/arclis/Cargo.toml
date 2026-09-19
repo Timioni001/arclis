@@ -15,6 +15,13 @@ no-idl = []
 no-log-ix-name = []
 cpi = ["no-entrypoint"]
 default = []
+# Required for `anchor build` to emit target/idl/arclis.json and the TypeScript
+# types the frontend imports. Without it, `anchor build` succeeds but produces
+# no IDL, and `anchor test` and any client fail at "unable to read IDL".
+#
+# anchor-spl must be listed too: this program's accounts include SPL token
+# types, and the IDL generator needs their definitions to resolve.
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
 
 [dependencies]
 anchor-lang = { version = "0.30.1", features = ["init-if-needed"] }

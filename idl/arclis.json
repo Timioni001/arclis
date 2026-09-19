@@ -1,0 +1,3369 @@
+{
+  "address": "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x",
+  "metadata": {
+    "name": "arclis",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "General-purpose oracle-priced perpetuals engine for tokenized stocks on Solana"
+  },
+  "instructions": [
+    {
+      "name": "initialize_global_config",
+      "discriminator": [
+        113,
+        216,
+        122,
+        131,
+        225,
+        209,
+        22,
+        55
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        },
+        {
+          "name": "insurance_fund",
+          "docs": [
+            "Label for off-chain insurance accounting. Insurance value itself lives",
+            "inside each market vault and is tracked by `Market::insurance_balance`,",
+            "so nothing is ever transferred to this address by this program."
+          ]
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "default_fee_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "initialize_price_oracle",
+      "discriminator": [
+        61,
+        200,
+        206,
+        137,
+        205,
+        74,
+        242,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "oracle",
+          "writable": true
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "symbol",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        },
+        {
+          "name": "initial_price",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "update_price_oracle",
+      "discriminator": [
+        144,
+        145,
+        154,
+        112,
+        35,
+        68,
+        134,
+        186
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "oracle",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "price",
+          "type": "u64"
+        },
+        {
+          "name": "confidence",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_market",
+      "discriminator": [
+        103,
+        226,
+        97,
+        235,
+        200,
+        188,
+        251,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        },
+        {
+          "name": "rent"
+        }
+      ],
+      "args": [
+        {
+          "name": "params",
+          "type": {
+            "defined": {
+              "name": "MarketParams"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_market_session",
+      "docs": [
+        "Publish the trading state of the underlying venue: open, closed,",
+        "pre-open, or halted. See `math::session`."
+      ],
+      "discriminator": [
+        52,
+        134,
+        221,
+        38,
+        12,
+        181,
+        135,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "oracle",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "session",
+          "type": {
+            "defined": {
+              "name": "MarketSession"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "apply_corporate_action",
+      "docs": [
+        "Apply a split or reverse split, atomically across the oracle price and",
+        "the market's aggregates. See `math::corporate_actions`."
+      ],
+      "discriminator": [
+        72,
+        217,
+        151,
+        23,
+        156,
+        233,
+        73,
+        79
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "oracle",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "numerator",
+          "type": "u32"
+        },
+        {
+          "name": "denominator",
+          "type": "u32"
+        }
+      ]
+    },
+    {
+      "name": "deposit_collateral",
+      "discriminator": [
+        156,
+        131,
+        142,
+        116,
+        146,
+        247,
+        162,
+        120
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle",
+          "docs": [
+            "Needed only for its split factor, so a freshly created position starts",
+            "at the market's current corporate-action state rather than at 1.0 and",
+            "then rescales itself on first use."
+          ]
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_collateral",
+      "discriminator": [
+        115,
+        135,
+        168,
+        106,
+        139,
+        214,
+        138,
+        150
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_position",
+      "discriminator": [
+        135,
+        128,
+        47,
+        77,
+        15,
+        152,
+        240,
+        49
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "docs": [
+            "The counterparty. Read-only here - opening a position does not move the",
+            "pool's money, it commits the pool's *capacity*, which is what the",
+            "utilisation cap below checks."
+          ]
+        },
+        {
+          "name": "pool_vault"
+        }
+      ],
+      "args": [
+        {
+          "name": "size_delta",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "close_position",
+      "discriminator": [
+        123,
+        134,
+        81,
+        0,
+        49,
+        68,
+        98,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "docs": [
+            "The counterparty. Realised PnL physically moves between the two vaults",
+            "here, which is why both appear."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "market_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "reduce_size",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "crank_funding",
+      "discriminator": [
+        83,
+        30,
+        120,
+        80,
+        177,
+        60,
+        27,
+        119
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "pool",
+          "docs": [
+            "The market's pool, and its vault. Needed because funding is now scaled",
+            "by how hard the pool is working - see `math::funding::funding_rate_bps`."
+          ]
+        },
+        {
+          "name": "pool_vault"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "liquidate",
+      "discriminator": [
+        223,
+        179,
+        226,
+        125,
+        48,
+        46,
+        39,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "liquidator",
+          "signer": true
+        },
+        {
+          "name": "liquidator_token_account",
+          "writable": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "docs": [
+            "The counterparty, and the second loss absorber after insurance."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_liquidity_pool",
+      "discriminator": [
+        155,
+        18,
+        138,
+        107,
+        111,
+        23,
+        178,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "quote_mint"
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        },
+        {
+          "name": "rent"
+        }
+      ],
+      "args": [
+        {
+          "name": "cooldown_secs",
+          "type": "i64"
+        }
+      ]
+    },
+    {
+      "name": "deposit_liquidity",
+      "discriminator": [
+        245,
+        99,
+        59,
+        25,
+        151,
+        71,
+        233,
+        249
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "lp_position",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_withdraw_liquidity",
+      "docs": [
+        "Start the redemption cooldown. Shares stay at risk while pending, which",
+        "is what removes the incentive to be first out of a losing pool."
+      ],
+      "discriminator": [
+        43,
+        177,
+        39,
+        3,
+        23,
+        132,
+        154,
+        163
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "lp_position",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "shares",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "cancel_withdraw_liquidity",
+      "discriminator": [
+        68,
+        64,
+        226,
+        77,
+        108,
+        232,
+        87,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "lp_position",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "withdraw_liquidity",
+      "docs": [
+        "Settle a matured redemption at the NAV now, capped at what the open book",
+        "leaves free."
+      ],
+      "discriminator": [
+        149,
+        158,
+        33,
+        185,
+        47,
+        243,
+        253,
+        31
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market"
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "lp_position",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "initialize_treasury",
+      "discriminator": [
+        124,
+        186,
+        211,
+        195,
+        85,
+        165,
+        129,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "agent_mint",
+          "docs": [
+            "The agent's token, as launched on the bonding curve."
+          ]
+        },
+        {
+          "name": "stock_mint",
+          "docs": [
+            "The tokenized stock the agent raised in."
+          ]
+        },
+        {
+          "name": "market",
+          "docs": [
+            "The perp market used to hedge. Its oracle must price `stock_mint`;",
+            "this program cannot verify that link on-chain, so it is recorded and",
+            "surfaced in the event for off-chain checking."
+          ]
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "stock_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        },
+        {
+          "name": "rent"
+        }
+      ],
+      "args": [
+        {
+          "name": "hedge_ratio_bps",
+          "type": "u16"
+        },
+        {
+          "name": "rebalance_tolerance_bps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "set_treasury_policy",
+      "discriminator": [
+        255,
+        232,
+        110,
+        132,
+        190,
+        25,
+        124,
+        219
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "hedge_ratio_bps",
+          "type": "u16"
+        },
+        {
+          "name": "rebalance_tolerance_bps",
+          "type": "u16"
+        },
+        {
+          "name": "hedging_enabled",
+          "type": "bool"
+        },
+        {
+          "name": "tokens_outstanding",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "deposit_stock",
+      "discriminator": [
+        156,
+        189,
+        5,
+        153,
+        8,
+        223,
+        62,
+        209
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "stock_vault",
+          "writable": true
+        },
+        {
+          "name": "authority_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "withdraw_stock",
+      "discriminator": [
+        42,
+        142,
+        30,
+        190,
+        242,
+        139,
+        98,
+        106
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "stock_vault",
+          "writable": true
+        },
+        {
+          "name": "authority_token_account",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "rebalance_hedge",
+      "docs": [
+        "Permissionless: anyone may bring a treasury back to its target hedge.",
+        "The tolerance band, not an authority check, is what keeps this from",
+        "being farmed for taker fees."
+      ],
+      "discriminator": [
+        35,
+        211,
+        159,
+        55,
+        42,
+        200,
+        179,
+        172
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "docs": [
+            "Anyone. The tolerance band, not an authority check, is what makes this",
+            "safe to expose."
+          ],
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The treasury's own perp position, owned by the treasury PDA."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "docs": [
+            "The counterparty. A treasury hedge is an ordinary position as far as the",
+            "pool is concerned, so it settles through the same path as any trader."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "market_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "set_protocol_paused",
+      "discriminator": [
+        47,
+        62,
+        75,
+        69,
+        166,
+        0,
+        147,
+        157
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_market_paused",
+      "discriminator": [
+        233,
+        31,
+        161,
+        248,
+        178,
+        111,
+        102,
+        65
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "paused",
+          "type": "bool"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "AgentTreasury",
+      "discriminator": [
+        129,
+        97,
+        0,
+        63,
+        102,
+        222,
+        200,
+        166
+      ]
+    },
+    {
+      "name": "GlobalConfig",
+      "discriminator": [
+        149,
+        8,
+        156,
+        202,
+        160,
+        252,
+        176,
+        217
+      ]
+    },
+    {
+      "name": "LiquidityPool",
+      "discriminator": [
+        66,
+        38,
+        17,
+        64,
+        188,
+        80,
+        68,
+        129
+      ]
+    },
+    {
+      "name": "LpPosition",
+      "discriminator": [
+        105,
+        241,
+        37,
+        200,
+        224,
+        2,
+        252,
+        90
+      ]
+    },
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "Position",
+      "discriminator": [
+        170,
+        188,
+        143,
+        228,
+        122,
+        64,
+        247,
+        208
+      ]
+    },
+    {
+      "name": "PriceOracle",
+      "discriminator": [
+        57,
+        140,
+        120,
+        176,
+        191,
+        65,
+        52,
+        89
+      ]
+    }
+  ],
+  "events": [
+    {
+      "discriminator": [
+        244,
+        62,
+        77,
+        11,
+        135,
+        112,
+        61,
+        96
+      ],
+      "name": "CollateralDeposited"
+    },
+    {
+      "discriminator": [
+        51,
+        224,
+        133,
+        106,
+        74,
+        173,
+        72,
+        82
+      ],
+      "name": "CollateralWithdrawn"
+    },
+    {
+      "discriminator": [
+        181,
+        230,
+        160,
+        46,
+        185,
+        15,
+        69,
+        140
+      ],
+      "name": "CorporateActionApplied"
+    },
+    {
+      "discriminator": [
+        245,
+        38,
+        158,
+        236,
+        129,
+        195,
+        123,
+        235
+      ],
+      "name": "FundingAccrued"
+    },
+    {
+      "discriminator": [
+        218,
+        155,
+        74,
+        193,
+        59,
+        66,
+        94,
+        122
+      ],
+      "name": "LiquidityDeposited"
+    },
+    {
+      "discriminator": [
+        116,
+        81,
+        252,
+        86,
+        124,
+        191,
+        134,
+        172
+      ],
+      "name": "LiquidityPoolInitialized"
+    },
+    {
+      "discriminator": [
+        6,
+        25,
+        153,
+        226,
+        94,
+        151,
+        222,
+        154
+      ],
+      "name": "LiquidityWithdrawRequested"
+    },
+    {
+      "discriminator": [
+        240,
+        120,
+        73,
+        139,
+        154,
+        31,
+        218,
+        68
+      ],
+      "name": "LiquidityWithdrawn"
+    },
+    {
+      "discriminator": [
+        88,
+        184,
+        130,
+        231,
+        226,
+        84,
+        6,
+        58
+      ],
+      "name": "MarketCreated"
+    },
+    {
+      "discriminator": [
+        0,
+        236,
+        168,
+        207,
+        215,
+        13,
+        199,
+        197
+      ],
+      "name": "MarketPauseToggled"
+    },
+    {
+      "discriminator": [
+        71,
+        220,
+        136,
+        147,
+        65,
+        185,
+        90,
+        47
+      ],
+      "name": "PoolSettled"
+    },
+    {
+      "discriminator": [
+        157,
+        163,
+        227,
+        228,
+        13,
+        97,
+        138,
+        121
+      ],
+      "name": "PositionClosed"
+    },
+    {
+      "discriminator": [
+        40,
+        107,
+        90,
+        214,
+        96,
+        30,
+        61,
+        128
+      ],
+      "name": "PositionLiquidated"
+    },
+    {
+      "discriminator": [
+        237,
+        175,
+        243,
+        230,
+        147,
+        117,
+        101,
+        121
+      ],
+      "name": "PositionOpened"
+    },
+    {
+      "discriminator": [
+        3,
+        52,
+        40,
+        57,
+        84,
+        61,
+        7,
+        199
+      ],
+      "name": "ProtocolPauseToggled"
+    },
+    {
+      "discriminator": [
+        185,
+        82,
+        255,
+        175,
+        167,
+        232,
+        171,
+        235
+      ],
+      "name": "SessionChanged"
+    },
+    {
+      "discriminator": [
+        91,
+        147,
+        139,
+        209,
+        222,
+        227,
+        104,
+        99
+      ],
+      "name": "TreasuryHedgeRebalanced"
+    },
+    {
+      "discriminator": [
+        199,
+        73,
+        174,
+        205,
+        59,
+        145,
+        55,
+        179
+      ],
+      "name": "TreasuryInitialized"
+    },
+    {
+      "discriminator": [
+        219,
+        152,
+        169,
+        161,
+        31,
+        196,
+        145,
+        189
+      ],
+      "name": "TreasuryStockMoved"
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Unauthorized",
+      "msg": "Only the global authority can perform this action"
+    },
+    {
+      "code": 6001,
+      "name": "ProtocolPaused",
+      "msg": "The protocol is currently paused"
+    },
+    {
+      "code": 6002,
+      "name": "MarketPaused",
+      "msg": "This market is currently paused"
+    },
+    {
+      "code": 6003,
+      "name": "StaleOracle",
+      "msg": "Oracle price is stale, refusing to trade or liquidate"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidOraclePrice",
+      "msg": "Oracle price must be a positive value"
+    },
+    {
+      "code": 6005,
+      "name": "OracleConfidenceTooWide",
+      "msg": "Oracle confidence interval is too wide to trade against"
+    },
+    {
+      "code": 6006,
+      "name": "OracleDeviationTooLarge",
+      "msg": "Oracle price moved more than the per-update deviation limit"
+    },
+    {
+      "code": 6007,
+      "name": "OracleMismatch",
+      "msg": "Provided oracle account does not match the market's configured oracle"
+    },
+    {
+      "code": 6008,
+      "name": "MarketHalted",
+      "msg": "The underlying venue is halted, there is no price to mark against"
+    },
+    {
+      "code": 6009,
+      "name": "SessionNotOpen",
+      "msg": "The underlying venue is not open for trading"
+    },
+    {
+      "code": 6010,
+      "name": "CannotIncreaseRiskWhileClosed",
+      "msg": "Cannot increase risk while the underlying venue is closed; you can still reduce or close"
+    },
+    {
+      "code": 6011,
+      "name": "NotOracleAuthority",
+      "msg": "Only the oracle authority can publish a session or corporate action"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidSplitRatio",
+      "msg": "Split ratio must be non-zero, not 1:1, and within the permitted bounds"
+    },
+    {
+      "code": 6013,
+      "name": "PositionNotNormalized",
+      "msg": "Position must be normalized for corporate actions before it can be used"
+    },
+    {
+      "code": 6014,
+      "name": "SessionMustBeClosedForCorporateAction",
+      "msg": "Corporate actions may only be applied while the venue is not open"
+    },
+    {
+      "code": 6015,
+      "name": "ZeroSize",
+      "msg": "Position size cannot be zero"
+    },
+    {
+      "code": 6016,
+      "name": "DirectionFlip",
+      "msg": "Cannot flip direction in one instruction: close the position first"
+    },
+    {
+      "code": 6017,
+      "name": "ExceedsMaxLeverage",
+      "msg": "Requested leverage exceeds the market's max leverage"
+    },
+    {
+      "code": 6018,
+      "name": "BelowInitialMargin",
+      "msg": "Resulting position would be below the initial margin requirement"
+    },
+    {
+      "code": 6019,
+      "name": "InsufficientCollateral",
+      "msg": "Not enough collateral for this action"
+    },
+    {
+      "code": 6020,
+      "name": "WithdrawalBreaksMargin",
+      "msg": "Withdrawal would push the position below the minimum margin ratio"
+    },
+    {
+      "code": 6021,
+      "name": "InsufficientPositionSize",
+      "msg": "Position does not have enough size to close this amount"
+    },
+    {
+      "code": 6022,
+      "name": "PositionTooSmall",
+      "msg": "Resulting position notional is below the protocol minimum"
+    },
+    {
+      "code": 6023,
+      "name": "PositionHealthy",
+      "msg": "Position is still above the maintenance margin ratio, cannot be liquidated"
+    },
+    {
+      "code": 6024,
+      "name": "PositionNotFlat",
+      "msg": "Position must be flat before its account can be closed"
+    },
+    {
+      "code": 6025,
+      "name": "OpenInterestCapExceeded",
+      "msg": "Trade would exceed the market's open interest cap"
+    },
+    {
+      "code": 6026,
+      "name": "SkewCapExceeded",
+      "msg": "Trade would push open interest imbalance beyond the market's skew cap"
+    },
+    {
+      "code": 6027,
+      "name": "VaultMismatch",
+      "msg": "Provided vault account does not match the market's configured vault"
+    },
+    {
+      "code": 6028,
+      "name": "VaultInsolvent",
+      "msg": "Vault does not hold enough to cover this payout"
+    },
+    {
+      "code": 6029,
+      "name": "InvalidLeverageParam",
+      "msg": "Max leverage must be between 1x and 20x"
+    },
+    {
+      "code": 6030,
+      "name": "InvalidMarginParam",
+      "msg": "Min margin ratio must be between 1% and 50%"
+    },
+    {
+      "code": 6031,
+      "name": "InvalidFundingInterval",
+      "msg": "Funding interval is outside the permitted range"
+    },
+    {
+      "code": 6032,
+      "name": "InvalidFundingSensitivity",
+      "msg": "Funding sensitivity is outside the permitted range"
+    },
+    {
+      "code": 6033,
+      "name": "InvalidFeeParam",
+      "msg": "Fee exceeds the protocol maximum"
+    },
+    {
+      "code": 6034,
+      "name": "InvalidPenaltyParam",
+      "msg": "Liquidation penalty exceeds the protocol maximum"
+    },
+    {
+      "code": 6035,
+      "name": "FundingNotDue",
+      "msg": "Funding interval has not elapsed yet"
+    },
+    {
+      "code": 6036,
+      "name": "PoolNavNonPositive",
+      "msg": "Pool NAV is zero or negative; shares cannot be priced"
+    },
+    {
+      "code": 6037,
+      "name": "UtilizationCapExceeded",
+      "msg": "Trade would push pool utilization past the market's cap"
+    },
+    {
+      "code": 6038,
+      "name": "ExceedsWithdrawableLiquidity",
+      "msg": "Withdrawal exceeds what the open book leaves free"
+    },
+    {
+      "code": 6039,
+      "name": "CooldownNotElapsed",
+      "msg": "Withdrawal cooldown has not elapsed yet"
+    },
+    {
+      "code": 6040,
+      "name": "NoPendingWithdrawal",
+      "msg": "No withdrawal request is pending"
+    },
+    {
+      "code": 6041,
+      "name": "WithdrawalAlreadyPending",
+      "msg": "A withdrawal request is already pending; cancel it first"
+    },
+    {
+      "code": 6042,
+      "name": "InsufficientShares",
+      "msg": "Not enough shares for this action"
+    },
+    {
+      "code": 6043,
+      "name": "PoolMismatch",
+      "msg": "Provided liquidity pool does not match the market's configured pool"
+    },
+    {
+      "code": 6044,
+      "name": "InvalidUtilizationCap",
+      "msg": "Utilization cap is outside the permitted range"
+    },
+    {
+      "code": 6045,
+      "name": "InvalidCooldown",
+      "msg": "Withdrawal cooldown is outside the permitted range"
+    },
+    {
+      "code": 6046,
+      "name": "InvalidHedgeRatio",
+      "msg": "Hedge ratio must be between 0 and 100%"
+    },
+    {
+      "code": 6047,
+      "name": "InvalidRebalanceTolerance",
+      "msg": "Rebalance tolerance exceeds the protocol maximum"
+    },
+    {
+      "code": 6048,
+      "name": "HedgingDisabled",
+      "msg": "Hedging is disabled for this treasury"
+    },
+    {
+      "code": 6049,
+      "name": "RebalanceNotNeeded",
+      "msg": "Treasury is already within its rebalance tolerance band"
+    },
+    {
+      "code": 6050,
+      "name": "TreasuryAssetMismatch",
+      "msg": "Treasury stock mint does not match the market's underlying"
+    },
+    {
+      "code": 6051,
+      "name": "WithdrawalBreaksHedge",
+      "msg": "Withdrawal would leave the treasury unable to maintain its hedge"
+    },
+    {
+      "code": 6052,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow or underflow"
+    },
+    {
+      "code": 6053,
+      "name": "DivideByZero",
+      "msg": "Division by zero"
+    },
+    {
+      "code": 6054,
+      "name": "NegativeAmount",
+      "msg": "Expected a non-negative amount"
+    }
+  ],
+  "types": [
+    {
+      "name": "AgentTreasury",
+      "docs": [
+        "An AI agent's balance sheet, denominated in a tokenized stock.",
+        "",
+        "# Where this sits",
+        "",
+        "The agent launches its token on a Meteora DBC curve whose quote asset is a",
+        "tokenized stock. Contributors pay in AAPLx; at graduation the raise lands",
+        "here. This account is what happens *after* the launch \u2014 the part every",
+        "bonding-curve launchpad leaves as an exercise for the founder.",
+        "",
+        "It holds three things: the stock the agent raised, a perp position that",
+        "offsets the beta of that stock, and enough accounting to publish an honest",
+        "NAV per agent token.",
+        "",
+        "# Why an agent needs it",
+        "",
+        "An agent that raised the equivalent of $100k in AAPLx has a runway that",
+        "swings with Apple's earnings. It did not ask for that exposure and has no",
+        "view on it \u2014 it just wanted to be funded in the asset it trades. Shorting",
+        "the matching perp turns a levered bet on one company back into a stable",
+        "operating budget, and while the perp book is skewed long the short is on",
+        "the receiving side of funding, so the hedge can carry positively."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "The agent's authority. Can set policy, withdraw to operations, and",
+              "close the treasury. Cannot touch another treasury."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "agent_mint",
+            "docs": [
+              "The agent's own SPL token, as launched on the bonding curve. Recorded so",
+              "NAV per token means something."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "stock_mint",
+            "docs": [
+              "The tokenized stock this treasury is denominated in, e.g. AAPLx."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "docs": [
+              "The perp market used to hedge. Its oracle must price `stock_mint`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "stock_vault",
+            "docs": [
+              "PDA token account holding the raised stock."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "stock_qty",
+            "docs": [
+              "Base units of stock held outright, at [`BASE_SCALE`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "tokens_outstanding",
+            "docs": [
+              "Agent tokens outstanding, used as the NAV denominator. Maintained by",
+              "the authority, because supply lives on the bonding curve and DBC has no",
+              "CPI this program can trust for it."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "hedge_ratio_bps",
+            "docs": [
+              "How much of the stock exposure to hedge away, in bps.",
+              "10_000 is fully delta-neutral; 0 leaves the treasury long."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "rebalance_tolerance_bps",
+            "docs": [
+              "Drift band before a rebalance is allowed, in bps of the holding.",
+              "Stops a permissionless crank being farmed for taker fees."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "hedging_enabled",
+            "docs": [
+              "When false, `rebalance` refuses. Lets an agent step out of the hedge",
+              "without unwinding the treasury."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "last_nav_per_token",
+            "docs": [
+              "Last published NAV per agent token, at [`QUOTE_SCALE`]. A cache for",
+              "readers; recomputed on every rebalance."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_nav_ts",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "stock_vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CollateralDeposited",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "collateral_after",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "CollateralWithdrawn",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "collateral_after",
+            "type": "u64"
+          },
+          {
+            "name": "margin_ratio_bps_after",
+            "type": "i128"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "CorporateActionApplied",
+      "type": {
+        "fields": [
+          {
+            "name": "oracle",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "numerator",
+            "type": "u32"
+          },
+          {
+            "name": "denominator",
+            "type": "u32"
+          },
+          {
+            "name": "split_factor_before",
+            "type": "u64"
+          },
+          {
+            "name": "split_factor_after",
+            "type": "u64"
+          },
+          {
+            "name": "price_before",
+            "type": "u64"
+          },
+          {
+            "name": "price_after",
+            "type": "u64"
+          },
+          {
+            "name": "sequence",
+            "type": "u32"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "FundingAccrued",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "cranker",
+            "type": "pubkey"
+          },
+          {
+            "name": "skew_bps",
+            "type": "i128"
+          },
+          {
+            "name": "rate_bps",
+            "type": "i128"
+          },
+          {
+            "name": "intervals",
+            "type": "i128"
+          },
+          {
+            "name": "mark_price",
+            "type": "u64"
+          },
+          {
+            "name": "index_after",
+            "type": "i128"
+          },
+          {
+            "docs": [
+              "How hard the pool was working when this accrued. Reading a funding rate",
+              "without it is misleading, since utilisation is half the formula."
+            ],
+            "name": "utilization_bps",
+            "type": "i128"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "GlobalConfig",
+      "docs": [
+        "Protocol-level configuration. Exactly one exists, at a fixed PDA.",
+        "",
+        "Note what is *not* here: no vault, no withdrawal authority, no fee sink the",
+        "authority can sweep. The authority can set a default fee and pause trading;",
+        "it cannot move user funds. That is the concrete content of the security",
+        "claim in the README, and it is enforced by the absence of any instruction",
+        "that transfers out of a market vault to an admin-chosen destination."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "insurance_fund",
+            "docs": [
+              "Recorded for off-chain accounting. Insurance is held inside each",
+              "market's own vault and tracked by `Market::insurance_balance`, so this",
+              "is a label, not a spendable account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "default_fee_bps",
+            "docs": [
+              "Default taker fee applied to markets created after this is set."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "docs": [
+              "Protocol-wide kill switch. Unlike the original engine, this is actually",
+              "enforced - see `instructions::guards::require_tradable`."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "docs": [
+              "Reserved so new fields can be added without a migration."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidityDeposited",
+      "type": {
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "shares_minted",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "NAV the shares were priced against, so a depositor can verify the rate."
+            ],
+            "name": "nav_before",
+            "type": "i128"
+          },
+          {
+            "name": "total_shares_after",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "LiquidityPool",
+      "docs": [
+        "The counterparty pool for one market.",
+        "",
+        "LPs deposit quote here and the pool takes the other side of whatever",
+        "imbalance traders leave. It is the answer to \"where does a winning trader's",
+        "money come from\", and without it the market vault was paying winners out of",
+        "other traders' deposits.",
+        "",
+        "# Design choices, and what each one costs",
+        "",
+        "**Separate vault, not shared with trader collateral.** LP capital lives in",
+        "its own token account. Realised PnL therefore moves between the two vaults",
+        "on every close, which costs an extra CPI per settlement. The benefit is that",
+        "\"how much of this balance is LP capital\" is never a question of bookkeeping -",
+        "it is the balance. During a shortfall, that distinction is the one people",
+        "will want to audit.",
+        "",
+        "**Internal share accounting, not an LP mint.** Shares live in",
+        "[`LpPosition`] accounts rather than as a token. That gives up composability:",
+        "an Arclis LP share cannot be traded on a DEX or used as collateral",
+        "elsewhere. In exchange there is no mint authority to secure, no way to",
+        "accidentally mint supply, and redemption rules can be enforced on the share",
+        "itself rather than only at the vault. Given the pool is a loss absorber,",
+        "keeping the accounting in one program is the safer trade for now; a",
+        "tokenised wrapper can be layered on later without changing this.",
+        "",
+        "**Cooldown withdrawals.** See [`LpPosition::pending_shares`]."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "PDA token account holding LP capital, in the market's quote mint."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "docs": [
+              "Set at creation; may pause deposits without affecting redemptions."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "total_shares",
+            "docs": [
+              "Shares outstanding. Value per share is NAV / this."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "principal",
+            "docs": [
+              "Lifetime deposits minus withdrawals. Reporting only - it is *not* the",
+              "pool's value, because it ignores trader PnL."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "realized_pnl",
+            "docs": [
+              "Cumulative realised PnL transferred between traders and the pool.",
+              "Positive means the pool has taken money from traders on net."
+            ],
+            "type": "i128"
+          },
+          {
+            "name": "absorbed_bad_debt",
+            "docs": [
+              "Shortfall the pool has absorbed from the bad-debt waterfall."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "cooldown_secs",
+            "docs": [
+              "How long a redemption request must wait. Bounded by",
+              "[`MIN_LP_COOLDOWN_SECS`] and [`MAX_LP_COOLDOWN_SECS`]."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "pending_shares",
+            "docs": [
+              "Shares across all LPs currently in cooldown. Reporting only; each",
+              "request is enforced against its own [`LpPosition`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "deposits_paused",
+            "docs": [
+              "When true, no new deposits. Redemptions always remain open - trapping",
+              "LPs in a losing pool is how a protocol loses them permanently."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidityPoolInitialized",
+      "type": {
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "quote_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "cooldown_secs",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "LiquidityWithdrawRequested",
+      "type": {
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "cooldown_ends_ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "LiquidityWithdrawn",
+      "type": {
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares_burned",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "NAV at settlement - deliberately not the NAV at request time."
+            ],
+            "name": "nav_at_settlement",
+            "type": "i128"
+          },
+          {
+            "name": "total_shares_after",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "LpPosition",
+      "docs": [
+        "One LP's stake in a pool.",
+        "",
+        "# Why a cooldown",
+        "",
+        "Instant redemption turns a drawdown into a collapse. The moment the pool is",
+        "carrying a loss, the rational move for every LP is to exit before the others",
+        "- so the first out are paid at a NAV the pool cannot sustain, and whoever is",
+        "slowest holds the entire loss. It is a bank run with the run built in.",
+        "",
+        "A cooldown means a redemption is priced at the NAV *when it settles*, not",
+        "when it was requested. An LP who requests on bad news still carries the",
+        "position through the cooldown, so there is nothing to win by being fast.",
+        "Shares stay at risk while pending, which is the whole point: a cooldown that",
+        "froze the redemption value would just be a slower free option."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "shares",
+            "docs": [
+              "Total shares held, including any pending redemption."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "pending_shares",
+            "docs": [
+              "Shares under an active redemption request. Still at risk."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "cooldown_ends_ts",
+            "docs": [
+              "When the pending request becomes claimable. Zero when none is pending."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "last_deposit_ts",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Market",
+      "docs": [
+        "One market == one oracle plus a risk configuration plus a vault.",
+        "",
+        "# Solvency accounting",
+        "",
+        "The fields `total_collateral`, `insurance_balance`, and `bad_debt` exist to",
+        "answer a question the original engine could not: *does the vault actually",
+        "hold what it owes?* Previously, closing a profitable position credited the",
+        "trader's collateral out of thin air and `withdraw_collateral` paid it from a",
+        "pool of other people's deposits, with no check that the money was there. A",
+        "sufficiently profitable long could drain the vault and the last trader out",
+        "would simply find the transfer failing at the token-program level with no",
+        "explanation.",
+        "",
+        "Now, `total_collateral` is the protocol's liability to traders and is",
+        "maintained on every path that touches collateral. Payouts are checked",
+        "against the vault's real balance before transferring, and any shortfall a",
+        "liquidation cannot cover is recorded in `bad_debt` rather than quietly",
+        "consuming someone else's deposit.",
+        "",
+        "This does not make the design solvent - see `docs/FEASIBILITY.md`, the",
+        "counterparty problem is structural and not fixable with accounting alone -",
+        "but it makes insolvency *visible and bounded* instead of silent."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "oracle",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          },
+          {
+            "name": "max_leverage",
+            "type": "u8"
+          },
+          {
+            "name": "maintenance_margin_bps",
+            "docs": [
+              "Maintenance margin. Below this a position can be liquidated."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "initial_margin_bps",
+            "docs": [
+              "Initial margin, always above maintenance by at least",
+              "[`INITIAL_MARGIN_BUFFER_BPS`], so a freshly opened position is never",
+              "already inside the liquidation band."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "taker_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "liquidation_penalty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "funding_sensitivity_bps",
+            "docs": [
+              "Scales raw skew into a funding rate. 10_000 == funding equals skew."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "funding_interval_secs",
+            "type": "i64"
+          },
+          {
+            "name": "last_funding_ts",
+            "type": "i64"
+          },
+          {
+            "name": "cumulative_funding_index",
+            "docs": [
+              "Cumulative quote owed per base unit, at [`FUNDING_INDEX_SCALE`].",
+              "Positive means longs have paid shorts on net since inception."
+            ],
+            "type": "i128"
+          },
+          {
+            "name": "open_interest_long",
+            "type": "u64"
+          },
+          {
+            "name": "open_interest_short",
+            "type": "u64"
+          },
+          {
+            "name": "long_entry_notional",
+            "docs": [
+              "Running sum of `|size| * entry_price` across every open long, at",
+              "[`PRICE_SCALE`]. Paired with `open_interest_long`, this is enough to",
+              "value every long in the market at once.",
+              "",
+              "It exists because the liquidity pool's liability is the aggregate",
+              "unrealised PnL of all traders, and Solana cannot iterate position",
+              "accounts. Maintaining the sum as positions move makes that an O(1)",
+              "read - see [`crate::math::liquidity::net_trader_pnl`].",
+              "",
+              "Adding `|delta| * fill_price` on an increase is exactly correct, because",
+              "that is how the weighted entry price is defined; removing",
+              "`reduce_size * entry_price` on a decrease is correct for the same",
+              "reason, since a partial close leaves the entry price untouched."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "short_entry_notional",
+            "type": "u128"
+          },
+          {
+            "name": "max_open_interest",
+            "docs": [
+              "Per-side cap. Bounds how large the vault's directional exposure can get."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "max_skew_bps",
+            "docs": [
+              "Cap on |skew|, in bps of total open interest."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "max_utilization_bps",
+            "docs": [
+              "Cap on pool utilisation - the pool's directional exposure over its own",
+              "NAV - in bps. This is the real solvency lever: it bounds how much risk",
+              "the liquidity pool can be made to carry relative to the capital standing",
+              "behind it. `max_skew_bps` limits the *shape* of the book; this limits",
+              "the *size* of the bet the pool is taking."
+            ],
+            "type": "u16"
+          },
+          {
+            "name": "liquidity_pool",
+            "docs": [
+              "The market's liquidity pool, or `Pubkey::default()` until one exists.",
+              "Markets created before a pool can still be opened and closed; they just",
+              "have no counterparty, which is the state the pool exists to end."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "total_collateral",
+            "docs": [
+              "Sum of every open position's collateral: what the vault owes traders."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "insurance_balance",
+            "docs": [
+              "Fees and liquidation penalties retained in the vault as a backstop."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bad_debt",
+            "docs": [
+              "Shortfall insurance could not cover. Non-zero means the vault is",
+              "under-collateralised by this amount and an operator must recapitalise."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketCreated",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "oracle",
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_leverage",
+            "type": "u8"
+          },
+          {
+            "name": "maintenance_margin_bps",
+            "type": "u16"
+          },
+          {
+            "name": "funding_interval_secs",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MarketParams",
+      "docs": [
+        "Parameters for a new market, passed as one struct.",
+        "",
+        "The original signature took three loose arguments; this now configures nine",
+        "risk knobs, and an unnamed nine-argument call is a bug waiting to happen at",
+        "the TypeScript boundary where argument order is unchecked."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "max_leverage",
+            "type": "u8"
+          },
+          {
+            "name": "maintenance_margin_bps",
+            "type": "u16"
+          },
+          {
+            "name": "taker_fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "liquidation_penalty_bps",
+            "type": "u16"
+          },
+          {
+            "name": "funding_interval_secs",
+            "type": "i64"
+          },
+          {
+            "name": "funding_sensitivity_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_open_interest",
+            "type": "u64"
+          },
+          {
+            "name": "max_skew_bps",
+            "type": "u16"
+          },
+          {
+            "name": "max_utilization_bps",
+            "docs": [
+              "Cap on liquidity-pool utilisation, in bps of pool NAV. This is the",
+              "market's main solvency dial: it bounds how much directional exposure the",
+              "pool can be made to carry relative to the capital standing behind it."
+            ],
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketPauseToggled",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "MarketSession",
+      "docs": [
+        "Trading state of the underlying venue, published by the oracle authority."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Closed"
+          },
+          {
+            "name": "PreOpen"
+          },
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Halted"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "Emitted whenever realised trader PnL moves between the market vault and the",
+        "pool. This is the audit trail for where a winning trader's money came from."
+      ],
+      "name": "PoolSettled",
+      "type": {
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "docs": [
+              "Positive when the pool paid traders, negative when it collected."
+            ],
+            "name": "amount",
+            "type": "i128"
+          },
+          {
+            "name": "reason",
+            "type": {
+              "defined": {
+                "name": "SettlementReason"
+              }
+            }
+          },
+          {
+            "name": "pool_realized_pnl_after",
+            "type": "i128"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "Position",
+      "docs": [
+        "A trader's position in one market. One per (owner, market) pair.",
+        "",
+        "Collateral is isolated per market by construction, because the PDA seeds",
+        "include the market. That is a deliberate risk choice: a blow-up in one",
+        "market cannot reach into a trader's margin in another. It also means capital",
+        "is less efficient than a cross-margin design, which is the trade-off to",
+        "revisit if this ever grows past a handful of markets."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "size",
+            "docs": [
+              "Signed base size at [`crate::constants::BASE_SCALE`]. `+` long, `-` short."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "entry_price",
+            "docs": [
+              "Size-weighted average entry, at [`crate::constants::PRICE_SCALE`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "collateral",
+            "docs": [
+              "Quote collateral at [`crate::constants::QUOTE_SCALE`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "entry_funding_index",
+            "docs": [
+              "Funding index snapshot at the last settlement."
+            ],
+            "type": "i128"
+          },
+          {
+            "name": "last_update_ts",
+            "type": "i64"
+          },
+          {
+            "name": "entry_split_factor",
+            "docs": [
+              "The oracle's cumulative split factor when this position was last",
+              "touched. Lazy corporate-action normalisation keys off this; see",
+              "[`Position::normalize_for_splits`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                24
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionClosed",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "reduce_size",
+            "type": "u64"
+          },
+          {
+            "name": "size_after",
+            "type": "i64"
+          },
+          {
+            "name": "fill_price",
+            "type": "u64"
+          },
+          {
+            "name": "realized_pnl",
+            "type": "i128"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "funding_settled",
+            "type": "i128"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PositionLiquidated",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidator",
+            "type": "pubkey"
+          },
+          {
+            "name": "size_closed",
+            "type": "i64"
+          },
+          {
+            "name": "mark_price",
+            "type": "u64"
+          },
+          {
+            "name": "equity",
+            "type": "i128"
+          },
+          {
+            "name": "liquidator_reward",
+            "type": "u64"
+          },
+          {
+            "name": "insurance_cut",
+            "type": "u64"
+          },
+          {
+            "name": "trader_remainder",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Shortfall taken out of LP capital, after insurance was exhausted."
+            ],
+            "name": "bad_debt_absorbed_by_pool",
+            "type": "u64"
+          },
+          {
+            "docs": [
+              "Non-zero here is the signal an operator must watch: neither insurance",
+              "nor the pool covered the shortfall and the remainder was socialised",
+              "across everyone still open."
+            ],
+            "name": "bad_debt_socialized",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PositionOpened",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "size_delta",
+            "type": "i64"
+          },
+          {
+            "name": "size_after",
+            "type": "i64"
+          },
+          {
+            "name": "fill_price",
+            "type": "u64"
+          },
+          {
+            "name": "entry_price_after",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "funding_settled",
+            "type": "i128"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "PriceOracle",
+      "docs": [
+        "Keeper-fed price account.",
+        "",
+        "# Why this is not Pyth yet",
+        "",
+        "The shape here - price, confidence, publish time, exponent - is Pyth's on",
+        "purpose. Swapping in a real feed should touch [`PriceOracle::validated_price`]",
+        "and the account type in each instruction's `Accounts` struct, and nothing",
+        "else.",
+        "",
+        "It is not Pyth today because a single trusted writer is honest about what a",
+        "hackathon build actually is, and because pulling `pyth-solana-receiver-sdk`",
+        "into an Anchor 0.30.1 / Solana 1.18 build drags in the same edition-2024",
+        "dependency wall documented in `BUILD.md`. Treat the writer as a trusted",
+        "party and say so; do not ship this to mainnet.",
+        "",
+        "What the account *does* enforce, so the trust is bounded rather than total:",
+        "staleness, a positive price, a confidence band, and a per-update deviation",
+        "cap that stops a compromised keeper from printing an instant 100x."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "symbol",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "price",
+            "docs": [
+              "Price at [`PRICE_SCALE`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "confidence",
+            "docs": [
+              "Half-width of the confidence interval, at [`PRICE_SCALE`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_update_ts",
+            "type": "i64"
+          },
+          {
+            "name": "update_slot",
+            "docs": [
+              "Monotonic counter, so a consumer can tell \"unchanged\" from \"not updated\"."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "session",
+            "docs": [
+              "Trading state of the underlying venue. This is what makes the engine",
+              "usable for an asset that does not trade around the clock - see",
+              "[`crate::math::session`]."
+            ],
+            "type": {
+              "defined": {
+                "name": "MarketSession"
+              }
+            }
+          },
+          {
+            "name": "session_updated_ts",
+            "type": "i64"
+          },
+          {
+            "name": "split_factor",
+            "docs": [
+              "Cumulative shares-per-original-share since inception, at",
+              "[`SPLIT_FACTOR_SCALE`]. Starts at exactly 1.0 and moves only when a",
+              "corporate action is published. Positions record the factor they were",
+              "opened at and rescale themselves lazily; see",
+              "[`crate::math::corporate_actions`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "corporate_action_seq",
+            "docs": [
+              "Incremented on every corporate action, so a position can cheaply tell",
+              "whether it needs normalising without comparing factors."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "_reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProtocolPauseToggled",
+      "type": {
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "bool"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "docs": [
+        "Emitted whenever the underlying venue changes trading state. An indexer can",
+        "reconstruct the full session calendar from these alone, which is what a",
+        "frontend needs to render \"opens Monday 09:30\" instead of a bare error."
+      ],
+      "name": "SessionChanged",
+      "type": {
+        "fields": [
+          {
+            "name": "oracle",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "previous",
+            "type": {
+              "defined": {
+                "name": "MarketSession"
+              }
+            }
+          },
+          {
+            "name": "current",
+            "type": {
+              "defined": {
+                "name": "MarketSession"
+              }
+            }
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "ts",
+            "type": "i64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "SettlementReason",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "PositionClosed"
+          },
+          {
+            "name": "Liquidation"
+          },
+          {
+            "name": "BadDebt"
+          }
+        ]
+      }
+    },
+    {
+      "docs": [
+        "The event an agent's dashboard is built from: what the hedge did, and what",
+        "the treasury is worth per token afterwards."
+      ],
+      "name": "TreasuryHedgeRebalanced",
+      "type": {
+        "fields": [
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "cranker",
+            "type": "pubkey"
+          },
+          {
+            "name": "mark_price",
+            "type": "u64"
+          },
+          {
+            "name": "size_delta",
+            "type": "i64"
+          },
+          {
+            "name": "delta_before",
+            "type": "i64"
+          },
+          {
+            "name": "delta_after",
+            "type": "i64"
+          },
+          {
+            "name": "stock_value",
+            "type": "i128"
+          },
+          {
+            "name": "perp_equity",
+            "type": "i128"
+          },
+          {
+            "name": "nav",
+            "type": "i128"
+          },
+          {
+            "name": "nav_per_token",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TreasuryInitialized",
+      "type": {
+        "fields": [
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "stock_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "hedge_ratio_bps",
+            "type": "u16"
+          },
+          {
+            "name": "rebalance_tolerance_bps",
+            "type": "u16"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
+      "name": "TreasuryStockMoved",
+      "type": {
+        "fields": [
+          {
+            "name": "treasury",
+            "type": "pubkey"
+          },
+          {
+            "name": "actor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "deposited",
+            "type": "bool"
+          },
+          {
+            "name": "stock_qty_after",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
+      }
+    }
+  ]
+}
