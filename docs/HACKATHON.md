@@ -6,6 +6,10 @@ what still needs a mainnet transaction.
 
 ---
 
+> Project renamed to **Arclis** — *On-chain access to public markets.* The
+> program crate is `arclis`; PDA seeds and the program ID are unchanged. See
+> [`NAMING.md`](NAMING.md).
+
 ## The product in one paragraph
 
 An AI agent launches its token on a Meteora Dynamic Bonding Curve whose **quote
@@ -210,7 +214,7 @@ anchor build && anchor test       # see BUILD.md first
 | | |
 |---|---|
 | `cargo check` / `clippy -D warnings` / `fmt` | clean |
-| Rust unit tests | **87 passing** |
+| Rust unit tests | **114 passing** |
 | DBC TypeScript tests | **37 passing**, against the real SDK |
 | `tsc --noEmit`, prettier | clean |
 | `anchor build` | **not run here** — no Solana toolchain in this environment |
@@ -218,7 +222,7 @@ anchor build && anchor test       # see BUILD.md first
 | Mainnet deployment | **not done** — needs a funded wallet |
 
 "Working code on mainnet beats slides" is the right bar and this has not cleared
-it. What it has: a program that compiles, 124 tests across both languages
+it. What it has: a program that compiles, 151 tests across both languages
 covering every piece of arithmetic that decides who gets paid, and tooling whose
 output has been run and verified end to end. The gap to mainnet is a funded
 wallet and `anchor build`, not unfinished work.

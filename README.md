@@ -1,30 +1,37 @@
-# perp_engine
+# Arclis
 
-**Treasury infrastructure for agents that raise in tokenized stock.**
+**On-chain access to public markets.**
 
-An AI agent launches its token on a Meteora Dynamic Bonding Curve quoted in a
-tokenized stock — contributors pay in AAPLx, not SOL. That leaves the agent
-holding a treasury that is 100% long one company's earnings, which it never
-asked for. This repository is what happens next: the treasury holds the stock it
-raised and shorts the matching perp, turning a levered bet on one company back
-into a stable operating budget that earns funding rather than paying it.
+Tokenized equities already trade on Solana. What is missing is everything that
+makes them usable: an oracle that knows a stock market closes at 4pm, halts on
+news and splits four-for-one overnight; a venue that can price them around the
+clock; and capital willing to take the other side.
 
-Underneath sits the part nobody builds — an oracle that knows equities close at
-4pm, halt on news, and split four-for-one overnight.
+Arclis is that layer. The first thing built on it is an agent treasury: an AI
+agent launches its token on a Meteora Dynamic Bonding Curve quoted in a
+tokenized stock, contributors pay in AAPLx rather than SOL, and the treasury
+that results — 100% long one company's earnings, which nobody chose — is hedged
+back into a stable operating budget that earns funding instead of paying it.
 
-Three pieces:
+Four pieces:
 
-- **`programs/perp_engine/`** — an oracle-priced perpetual futures engine.
+- **`programs/arclis/`** — an oracle-priced perpetual futures engine.
   Cash-settled, permissionless to list and to liquidate, with no admin path to
-  user funds. Now equity-aware: market sessions, halts, and corporate actions.
+  user funds. Equity-aware: market sessions, halts, and corporate actions.
+- **Liquidity pool** — the counterparty. LPs take the other side of net open
+  interest and are paid in fees, funding and trader losses for it. This is what
+  makes a winning trade payable from something other than another trader's
+  deposit.
 - **Agent treasuries** — hold tokenized stock, maintain a delta hedge against
   it, publish an honest NAV per agent token. Rebalancing is permissionless, so
   the hedge survives the agent's own keeper going down.
 - **`src/dbc/`** — launch and monitoring tooling for Meteora DBC pools whose
   quote token is a tokenized stock.
 
-See **[`docs/HACKATHON.md`](docs/HACKATHON.md)** for how this maps to each
-bounty, and what still needs a mainnet transaction.
+Start with **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** if you are
+building against this — every account, instruction and PDA seed, plus the read
+model a frontend needs. **[`docs/HACKATHON.md`](docs/HACKATHON.md)** maps the
+work to each bounty and says what still needs a mainnet transaction.
 
 Nothing in the program is hardcoded to stocks: `create_market` takes an oracle
 account, not a ticker.
@@ -34,7 +41,7 @@ account, not a ticker.
 | | |
 |---|---|
 | Compiles (`cargo check`) | **yes**, clean |
-| Rust unit tests (`cargo test --lib`) | **87 passing** — PnL, funding, margin, liquidation, sessions, splits, treasury hedging |
+| Rust unit tests (`cargo test --lib`) | **114 passing** — PnL, funding, margin, liquidation, sessions, splits, treasury hedging, pool NAV and the loss waterfall |
 | DBC tests (`npm run test:dbc`) | **37 passing** — against the real Meteora SDK, no network |
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
 | `anchor build` | **not run here** — no Solana toolchain in the authoring environment |
@@ -71,7 +78,7 @@ npx ts-node scripts/dbc-plan.ts --symbol AAPL --price 250 --vol 0.28 \
 ## Layout
 
 ```
-programs/perp_engine/src/
+programs/arclis/src/
   lib.rs              entrypoint; one thin forward per instruction
   constants.rs        fixed-point scales and every protocol bound
   errors.rs           error surface
@@ -160,7 +167,7 @@ compiled". It did not compile, and several things were wrong beyond that.
   needs `Error` rather than `PerpError`.
 - `declare_id!` held Anchor's default placeholder and disagreed with
   `Anchor.toml`. Reconciled.
-- `target/` was committed, including `perp_engine-keypair.json` — the **secret
+- `target/` was committed, including `arclis-keypair.json` — the **secret
   key** for the declared program ID. Removed and gitignored; rotation
   instructions in `BUILD.md`.
 
@@ -211,12 +218,11 @@ compiled". It did not compile, and several things were wrong beyond that.
 
 Listed plainly, because a judge will find them anyway:
 
-- **No counterparty pool.** Still the single most important thing to build next.
-  A cash-settled perp with no AMM or order book needs winners' profits to be
-  funded by losers' losses, and nothing enforces that. Insolvency is now
-  *visible and bounded* (`Market::total_collateral`, `bad_debt`, vault balance
-  checks) rather than silent — that is not the same as solved.
-  `docs/FEASIBILITY.md` §1.
+- **The pool can still be outrun.** The counterparty pool now exists, and
+  `max_utilization_bps` bounds how much exposure it can be made to carry — but
+  a large enough adverse move still exhausts insurance, then LP capital, then
+  socialises the rest onto `market.bad_debt`. The waterfall makes that visible
+  and ordered; it does not make it impossible.
 - **A weekend gap will outrun the insurance fund.** Sessions stop anyone opening
   against a frozen price, but a Friday-to-Monday gap still puts leveraged longs
   underwater before any liquidator can act. Fees now capitalise insurance;
@@ -234,8 +240,9 @@ Listed plainly, because a judge will find them anyway:
 ## Next steps
 
 1. `anchor build`, then `anchor test`; fix what the integration suite surfaces.
+   **Do this before building more** — the program has never been compiled for
+   SBF, and stacking a frontend on top of that means debugging two unknowns.
 2. Rotate the program keypair (`BUILD.md`) — its secret key is in git history.
-3. Add the LP counterparty vault.
-4. Add an instruction to capitalise the insurance fund directly.
-5. Swap the keeper oracle for Pyth.
-6. Handle dividends alongside splits.
+3. Add an instruction to capitalise the insurance fund directly.
+4. Swap the keeper oracle for Pyth.
+5. Handle dividends alongside splits.

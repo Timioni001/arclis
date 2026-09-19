@@ -61,7 +61,7 @@ lockfile, and Cargo 1.75 only understands v3.
 `Cargo.lock` is now resolved against **rustc 1.75.0** and committed in **v3**
 format. Concretely:
 
-- `programs/perp_engine/Cargo.toml` declares `rust-version = "1.75.0"`.
+- `programs/arclis/Cargo.toml` declares `rust-version = "1.75.0"`.
 - The lock was regenerated with Cargo's MSRV-aware resolver, which picks the
   newest version of each dependency that 1.75.0 can actually compile.
 - Four crates that declare no MSRV metadata (so the resolver could not see the
@@ -102,7 +102,7 @@ no Solana toolchain at all.
 
 ## Rotate the program keypair before deploying
 
-`target/deploy/perp_engine-keypair.json` was committed to this repository's git
+`target/deploy/arclis-keypair.json` was committed to this repository's git
 history. That file is the **secret key** for program ID
 `8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x`, so anyone who has ever cloned
 this repo can deploy to and upgrade that program ID.
@@ -112,7 +112,7 @@ but **removing a file from the index does not remove it from history**. Before
 any deployment that holds value:
 
 ```bash
-solana-keygen new -o target/deploy/perp_engine-keypair.json --force
+solana-keygen new -o target/deploy/arclis-keypair.json --force
 anchor keys sync     # rewrites declare_id! and Anchor.toml together
 ```
 

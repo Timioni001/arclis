@@ -1,101 +1,58 @@
-# On changing the name
+# Name
 
-## What "Stocklana" costs you
+**Arclis** — *On-chain access to public markets.*
 
-It is a clear name — Stock + Solana, instantly parseable. Three problems, in
-descending order of seriousness:
+Decided. This document records what was chosen and why, so the reasoning does
+not have to be reconstructed later.
 
-**1. It contradicts the product.** The README's own positioning is "a
-general-purpose engine, not hardcoded to stocks", and `create_market` is
-permissionless over any oracle. The name asserts the opposite. Right now the
-only thing in this repository that is stock-specific *is the name* — the Rust
-crate is already called `perp_engine`.
+## The name
 
-**2. It advertises the regulatory exposure.** Per `FEASIBILITY.md`, the strongest
-recommendation is to run this on crypto or FX first and treat tokenized equities
-as a later, jurisdiction-scoped phase. A name with "stock" in it makes that pivot
-read as a retreat rather than a plan, and puts the most legally loaded word in
-the project at the top of every page — including for anyone screening it.
+Previously "Stocklana" (Stock + Solana). Three problems with it, all now moot:
 
-**3. `-lana` is a crowded, dated suffix.** Solana-derived names were a 2021–22
-convention and now read as chain-locked and of their moment. It also ties the
-brand to one chain, which is a real cost if this ever deploys elsewhere.
+1. It contradicted the product. The engine takes an oracle, not a ticker;
+   nothing on-chain is equity-specific. The name asserted the opposite.
+2. It put the most legally loaded word in the project at the top of every page.
+3. `-lana` tied the brand to one chain and read as a 2021 convention.
 
-## What a rename costs
+**Arclis** carries none of that. Short, pronounceable, no chain lock-in, and it
+does not box the product into equities if indices, ETFs or commodities follow.
 
-Very little, which is the good news, and the reason to decide now rather than
-later:
+## The tagline
 
-- The Rust crate is `perp_engine` — already brand-neutral.
-- The program ID does not encode the name.
-- The on-chain seeds (`config`, `oracle`, `market`, `vault`, `position`) do not
-  encode the name.
+**Primary: "On-chain access to public markets."**
 
-A rename touches the repository name, the README, `package.json`, and the docs.
-It does not touch a single line of program logic. That stops being true the
-moment you have a deployed frontend, a domain, or users.
+*Access* is the honest verb. Arclis is the access layer — the oracle, the
+sessions, the corporate actions, the hedging and the launch tooling — not the
+venue where price is discovered. "The on-chain market for stocks" claims to *be*
+the market, which would be an overclaim while price comes from an external
+oracle. "Public markets" also survives the product extending past single
+equities, where "stocks" would not.
 
-## Candidates
+**Variant: "Public markets, built on Solana."**
 
-Each is checked against: says what the thing does, survives the pivot to other
-assets, not obviously taken in this space, and pronounceable by someone reading
-it aloud at a demo.
+For Solana-ecosystem contexts — the hackathon submission, ecosystem directories,
+anywhere naming the chain is the point rather than a constraint.
 
-### Contango — strongest pick
+Rejected: *"Stocks, reimagined on-chain"* ("reimagined" says nothing),
+*"Bringing global equities on-chain"* (weaker gerund), *"The on-chain market for
+stocks"* (overclaims, see above).
 
-A futures term: the state where forward price sits above spot. Immediately
-signals *derivatives* to anyone in the field, signals nothing about which
-underlying, and is a real word with no chain lock-in. Sounds like a venue rather
-than a toy.
+## What the rename touched
 
-Risk: it names a market condition that is not specifically what the protocol
-does, and it is a recognisable enough term that some variant is probably in use
-somewhere. Check before committing.
+The on-chain program crate is now `arclis`, not `perp_engine`. That was a
+judgement call: the earlier advice in this file was to keep the crate
+brand-neutral so a rename stayed cheap, and while the program was only a perp
+engine that was right. It is no longer only a perp engine — it carries the
+equity calendar, agent treasuries and the liquidity pool — so `perp_engine`
+described a subset and `arclis` describes the program.
 
-### Datum — strongest if you want to lead on the oracle design
+Unchanged: the program ID, and every PDA seed (`config`, `oracle`, `market`,
+`vault`, `position`, `treasury`, `lp_pool`). Seeds are deliberately generic, so
+the name is not baked into any address.
 
-A datum is the fixed reference point everything else is measured from. That is
-precisely the architecture: every position is valued against an oracle price,
-and the whole design follows from having one reference rather than an order
-book. Short, clean, unhyphenated, easy to say.
+## Still to do
 
-Risk: fairly generic as a word; harder to defend as a trademark.
-
-### Skew — names the actual mechanism
-
-The funding rate here is driven by open-interest skew, which is a genuinely
-distinctive design choice and the one thing a technical audience will ask about.
-Short, memorable, and it makes the mechanism the brand.
-
-Risk: "skew" is established terminology in derivatives analytics and has been
-used as a product name before; the collision is adjacent rather than direct, but
-diligence it.
-
-### Continuum — leans on "perpetual"
-
-Perpetuals have no expiry; a continuum has no breaks. Elegant fit, no chain
-lock-in, sounds like infrastructure.
-
-Risk: abstract enough that it does not tell anyone what you do. Needs a tagline
-carrying the weight.
-
-### If you want to keep continuity with "Stocklana"
-
-**Lana Markets** keeps the sound people already associate with the project,
-drops the "stock", and drops the explicit Solana tie. Weakest option on
-distinctiveness, but the cheapest if the name already has any recognition
-attached to it.
-
-## Recommendation
-
-**Contango**, with **Datum** as the alternate if you would rather lead on the
-oracle-priced architecture than on the derivatives category.
-
-Either way, decide before the frontend and the domain exist. Before committing,
-do the boring checks — domain, the handle on whichever platforms matter, a
-trademark search in your jurisdiction, and a scan of DefiLlama and the Solana
-program registry for a protocol already using it.
-
-And whatever you pick: leave the crate named `perp_engine`. Keeping the code's
-internal name generic and the brand separate is what made this rename cheap, and
-it is worth preserving for the next one.
+- Rename the GitHub repository (owner action; the clone URL changes).
+- Check the domain, the handle on whichever platforms matter, and run a
+  trademark search in your jurisdiction before the name goes on anything
+  printed or signed.
