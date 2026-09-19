@@ -11,10 +11,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-perp_engine = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
+arclis = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
 
 [programs.devnet]
-perp_engine = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
+arclis = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
 
 [registry]
 url = "https://api.apr.dev"
