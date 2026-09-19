@@ -1,9 +1,17 @@
 [toolchain]
+# Pinned deliberately. The Cargo.lock in this repo is resolved against the Rust
+# that ships inside Solana 1.18.x platform-tools (rustc 1.75.0); moving this
+# version moves that compiler and can reintroduce the edition-2024 dependency
+# wall documented in BUILD.md. Read BUILD.md before changing it.
 anchor_version = "0.30.1"
+solana_version = "1.18.26"
 
 [features]
 resolution = true
 skip-lint = false
+
+[programs.localnet]
+perp_engine = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
 
 [programs.devnet]
 perp_engine = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
@@ -12,7 +20,7 @@ perp_engine = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
 url = "https://api.apr.dev"
 
 [provider]
-cluster = "Devnet"
+cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]

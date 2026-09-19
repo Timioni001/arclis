@@ -1,0 +1,19 @@
+.anchor
+target/
+node_modules/
+dist/
+build/
+test-ledger/
+.DS_Store
+*.log
+
+# Keypairs - never commit these.
+**/*-keypair.json
+!programs/**/keypair.json.example
+.env
+.env.*
+!.env.example
+
+# Local editor state
+.idea/
+.vscode/

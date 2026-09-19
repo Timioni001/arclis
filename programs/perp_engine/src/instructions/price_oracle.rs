@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+
 use crate::errors::PerpError;
 use crate::state::PriceOracle;
 
@@ -26,13 +27,16 @@ pub fn initialize_price_oracle(
     initial_price: u64,
 ) -> Result<()> {
     require!(initial_price > 0, PerpError::InvalidOraclePrice);
+
     let oracle = &mut ctx.accounts.oracle;
     oracle.authority = ctx.accounts.authority.key();
     oracle.symbol = symbol;
     oracle.price = initial_price;
     oracle.confidence = 0;
     oracle.last_update_ts = Clock::get()?.unix_timestamp;
+    oracle.update_slot = Clock::get()?.slot;
     oracle.bump = ctx.bumps.oracle;
+    oracle._reserved = [0u8; 32];
     Ok(())
 }
 
@@ -42,18 +46,33 @@ pub struct UpdatePriceOracle<'info> {
 
     #[account(
         mut,
-        has_one = authority,
+        has_one = authority @ PerpError::Unauthorized,
         seeds = [PriceOracle::SEED, oracle.symbol.as_ref()],
         bump = oracle.bump
     )]
     pub oracle: Account<'info, PriceOracle>,
 }
 
-pub fn update_price_oracle(ctx: Context<UpdatePriceOracle>, price: u64, confidence: u64) -> Result<()> {
+/// Push a new price.
+///
+/// The deviation cap is the meaningful addition over the original engine: a
+/// compromised keeper key can still walk the price wherever it wants, but it
+/// can no longer do it in one transaction, which is the difference between an
+/// atomic drain and an attack that liquidations and monitoring can react to.
+pub fn update_price_oracle(
+    ctx: Context<UpdatePriceOracle>,
+    price: u64,
+    confidence: u64,
+) -> Result<()> {
     require!(price > 0, PerpError::InvalidOraclePrice);
+
+    let clock = Clock::get()?;
     let oracle = &mut ctx.accounts.oracle;
+    oracle.check_deviation(price)?;
+
     oracle.price = price;
     oracle.confidence = confidence;
-    oracle.last_update_ts = Clock::get()?.unix_timestamp;
+    oracle.last_update_ts = clock.unix_timestamp;
+    oracle.update_slot = clock.slot;
     Ok(())
 }

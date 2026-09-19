@@ -1,19 +1,37 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
-use crate::errors::PerpError;
-use crate::state::{read_oracle_price, Market, PriceOracle, Position, BPS_SCALE, LIQUIDATOR_REWARD_BPS};
 
+use crate::constants::BAD_DEBT_LIQUIDATION_BOUNTY;
+use crate::errors::PerpError;
+use crate::events::PositionLiquidated;
+use crate::instructions::guards::require_protocol_live;
+use crate::math::liquidation;
+use crate::state::{GlobalConfig, Market, Position, PriceOracle};
+
+/// Close an undercollateralised position. Permissionless, paid by penalty.
+///
+/// Note this does **not** call `require_tradable`: a paused market must still be
+/// liquidatable. Pausing a market stops new risk from being taken on; it must
+/// not trap the vault holding positions it cannot close while the price keeps
+/// moving against it. A protocol-wide pause is a genuine emergency stop and does
+/// halt this too.
 #[derive(Accounts)]
 pub struct Liquidate<'info> {
     pub liquidator: Signer<'info>,
 
-    #[account(mut)]
+    #[account(
+        mut,
+        constraint = liquidator_token_account.mint == vault.mint @ PerpError::VaultMismatch,
+    )]
     pub liquidator_token_account: Account<'info, TokenAccount>,
+
+    #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
+    pub config: Account<'info, GlobalConfig>,
 
     #[account(
         mut,
         seeds = [Market::SEED, oracle.key().as_ref()],
-        bump = market.bump
+        bump = market.bump,
     )]
     pub market: Account<'info, Market>,
 
@@ -23,74 +41,116 @@ pub struct Liquidate<'info> {
     #[account(
         mut,
         seeds = [Position::SEED, position.owner.as_ref(), market.key().as_ref()],
-        bump = position.bump
+        bump = position.bump,
+        constraint = position.market == market.key() @ PerpError::VaultMismatch,
     )]
     pub position: Account<'info, Position>,
 
-    #[account(
-        mut,
-        address = market.vault @ PerpError::VaultMismatch
-    )]
+    #[account(mut, address = market.vault @ PerpError::VaultMismatch)]
     pub vault: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
 }
 
 pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
+    require_protocol_live(&ctx.accounts.config)?;
+
     let now = Clock::get()?.unix_timestamp;
-    let mark_price = read_oracle_price(&ctx.accounts.oracle, now)?;
+    let mark_price = ctx.accounts.oracle.validated_price(now)?;
+    let funding_index = ctx.accounts.market.cumulative_funding_index;
+    let penalty_bps = ctx.accounts.market.liquidation_penalty_bps;
+    let maintenance_bps = ctx.accounts.market.maintenance_margin_bps;
 
-    let market = &mut ctx.accounts.market;
-    let position = &mut ctx.accounts.position;
-    require!(position.size != 0, PerpError::InsufficientPositionSize);
-
-    let margin_ratio_bps = position.margin_ratio_bps(mark_price, market.cumulative_funding_index)?;
     require!(
-        margin_ratio_bps < market.min_margin_ratio_bps as i128,
+        !ctx.accounts.position.is_flat(),
+        PerpError::InsufficientPositionSize
+    );
+
+    // Settle funding first: unpaid funding is part of why a position is
+    // underwater, and the health test must see it.
+    ctx.accounts.position.settle_funding(funding_index)?;
+
+    let equity = ctx.accounts.position.equity(mark_price, funding_index)?;
+    let notional = ctx.accounts.position.notional(mark_price)?;
+    require!(
+        liquidation::is_liquidatable(equity, notional, maintenance_bps)?,
         PerpError::PositionHealthy
     );
 
-    let funding_owed = position.funding_owed(market.cumulative_funding_index)?;
-    let pnl = position.unrealized_pnl(mark_price)?;
-    let net = pnl.checked_sub(funding_owed).ok_or(PerpError::MathOverflow)?;
+    let outcome = liquidation::settle(equity, notional, penalty_bps)?;
 
-    let equity: i128 = (position.collateral as i128)
-        .checked_add(net)
-        .ok_or(PerpError::MathOverflow)?;
-    let equity_u64: u64 = if equity > 0 { equity as u64 } else { 0 };
+    let size_closed = ctx.accounts.position.size;
+    let owner = ctx.accounts.position.owner;
+    let collateral_before = ctx.accounts.position.collateral;
 
-    let reward = (equity_u64 as u128)
-        .checked_mul(LIQUIDATOR_REWARD_BPS)
-        .ok_or(PerpError::MathOverflow)?
-        .checked_div(BPS_SCALE)
-        .ok_or(PerpError::MathOverflow)? as u64;
-
-    let remaining = equity_u64.checked_sub(reward).ok_or(PerpError::MathOverflow)?;
-
-    let is_long = position.size > 0;
-    let abs_size = position.size.unsigned_abs();
-    if is_long {
-        market.open_interest_long = market
-            .open_interest_long
-            .checked_sub(abs_size)
-            .ok_or(PerpError::MathOverflow)?;
-    } else {
-        market.open_interest_short = market
-            .open_interest_short
-            .checked_sub(abs_size)
-            .ok_or(PerpError::MathOverflow)?;
+    // --- flatten the position ------------------------------------------------
+    {
+        let position = &mut ctx.accounts.position;
+        position.size = 0;
+        position.entry_price = 0;
+        position.entry_funding_index = funding_index;
+        position.collateral = outcome.trader_remainder;
+        position.last_update_ts = now;
     }
 
-    position.size = 0;
-    position.entry_price = 0;
-    position.entry_funding_index = market.cumulative_funding_index;
-    position.collateral = remaining;
-    position.last_update_ts = now;
+    // --- reconcile market accounting ----------------------------------------
+    //
+    // The liability side moves by exactly the change in this position's
+    // collateral: drop what it held, book what it still holds. Expressing it as
+    // a delta rather than adding up the individual flows means the market's
+    // `total_collateral` cannot drift away from the sum of live positions,
+    // whichever branch below runs.
+    let mut bad_debt_socialized = 0u64;
+    let mut liquidator_reward = outcome.liquidator_reward;
+    {
+        let market = &mut ctx.accounts.market;
+        market.apply_open_interest(size_closed, false)?;
 
-    if reward > 0 {
+        let bookable = collateral_before.min(market.total_collateral);
+        market.debit_collateral(bookable)?;
+        market.credit_collateral(outcome.trader_remainder)?;
+
+        if outcome.bad_debt > 0 {
+            // The position is underwater: the vault is short by `bad_debt` and
+            // there is no equity to pay anyone out of. Insurance absorbs what it
+            // can; whatever is left is socialised across the remaining traders
+            // and recorded so it is visible rather than silent.
+            let (drawn, socialized) =
+                liquidation::draw_from_insurance(outcome.bad_debt, market.insurance_balance);
+            market.debit_insurance(drawn)?;
+            if socialized > 0 {
+                market.record_bad_debt(socialized)?;
+                bad_debt_socialized = socialized;
+            }
+
+            // Without this, nobody liquidates an underwater position: the
+            // penalty is a share of equity that no longer exists, so the
+            // rational liquidator walks away and the bad debt grows. A small
+            // bounty from whatever insurance remains keeps the permissionless
+            // incentive alive exactly when it matters most. Capped at the
+            // remaining balance, so it can never itself create a shortfall.
+            let bounty = market.insurance_balance.min(BAD_DEBT_LIQUIDATION_BOUNTY);
+            if bounty > 0 {
+                market.debit_insurance(bounty)?;
+                liquidator_reward = bounty;
+            }
+        } else {
+            // Solvent liquidation: the insurance share of the penalty stays in
+            // the vault and becomes insurance; the liquidator's share is about
+            // to leave the vault and so is booked nowhere.
+            market.credit_insurance(outcome.insurance_cut)?;
+        }
+    }
+
+    // --- pay the liquidator --------------------------------------------------
+    if liquidator_reward > 0 {
+        ctx.accounts
+            .market
+            .require_payable(ctx.accounts.vault.amount, liquidator_reward)?;
+
         let oracle_key = ctx.accounts.oracle.key();
-        let market_bump = market.bump;
-        let seeds: &[&[u8]] = &[Market::SEED, oracle_key.as_ref(), &[market_bump]];
+        let bump = [ctx.accounts.market.bump];
+        let seeds = Market::signer_seeds(&oracle_key, &bump);
 
         token::transfer(
             CpiContext::new_with_signer(
@@ -100,11 +160,23 @@ pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
                     to: ctx.accounts.liquidator_token_account.to_account_info(),
                     authority: ctx.accounts.market.to_account_info(),
                 },
-                &[seeds],
+                &[&seeds],
             ),
-            reward,
+            liquidator_reward,
         )?;
     }
 
+    emit!(PositionLiquidated {
+        market: ctx.accounts.market.key(),
+        owner,
+        liquidator: ctx.accounts.liquidator.key(),
+        size_closed,
+        mark_price,
+        equity,
+        liquidator_reward,
+        insurance_cut: outcome.insurance_cut,
+        trader_remainder: outcome.trader_remainder,
+        bad_debt_socialized,
+    });
     Ok(())
 }

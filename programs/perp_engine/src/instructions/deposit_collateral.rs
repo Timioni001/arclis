@@ -1,14 +1,20 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+
 use crate::errors::PerpError;
-use crate::state::{Market, Position};
+use crate::events::CollateralDeposited;
+use crate::instructions::guards::require_tradable;
+use crate::state::{GlobalConfig, Market, Position};
 
 #[derive(Accounts)]
 pub struct DepositCollateral<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
 
-    #[account(constraint = !market.paused @ PerpError::MarketPaused)]
+    #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
+    pub config: Account<'info, GlobalConfig>,
+
+    #[account(mut, seeds = [Market::SEED, market.oracle.as_ref()], bump = market.bump)]
     pub market: Account<'info, Market>,
 
     #[account(
@@ -20,13 +26,14 @@ pub struct DepositCollateral<'info> {
     )]
     pub position: Account<'info, Position>,
 
-    #[account(mut)]
-    pub owner_token_account: Account<'info, TokenAccount>,
-
     #[account(
         mut,
-        address = market.vault @ PerpError::VaultMismatch
+        constraint = owner_token_account.owner == owner.key() @ PerpError::Unauthorized,
+        constraint = owner_token_account.mint == vault.mint @ PerpError::VaultMismatch,
     )]
+    pub owner_token_account: Account<'info, TokenAccount>,
+
+    #[account(mut, address = market.vault @ PerpError::VaultMismatch)]
     pub vault: Account<'info, TokenAccount>,
 
     pub token_program: Program<'info, Token>,
@@ -34,17 +41,35 @@ pub struct DepositCollateral<'info> {
 }
 
 pub fn handler(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
+    require_tradable(&ctx.accounts.config, &ctx.accounts.market)?;
     require!(amount > 0, PerpError::InsufficientCollateral);
 
-    let position = &mut ctx.accounts.position;
-    let is_new = position.owner == Pubkey::default();
-    if is_new {
-        position.owner = ctx.accounts.owner.key();
-        position.market = ctx.accounts.market.key();
-        position.size = 0;
-        position.entry_price = 0;
-        position.entry_funding_index = 0;
-        position.bump = ctx.bumps.position;
+    let now = Clock::get()?.unix_timestamp;
+    let market_key = ctx.accounts.market.key();
+    let owner_key = ctx.accounts.owner.key();
+
+    // `init_if_needed` gives a zeroed account on first use. Initialise it
+    // before touching any field, and snapshot the market's current funding
+    // index so a brand-new position is not charged for funding that accrued
+    // before it existed.
+    {
+        let position = &mut ctx.accounts.position;
+        if position.owner == Pubkey::default() {
+            position.owner = owner_key;
+            position.market = market_key;
+            position.size = 0;
+            position.entry_price = 0;
+            position.collateral = 0;
+            position.entry_funding_index = ctx.accounts.market.cumulative_funding_index;
+            position.bump = ctx.bumps.position;
+            position._reserved = [0u8; 32];
+        } else {
+            // Re-using an existing account: it must be this owner's, in this
+            // market. The PDA seeds already guarantee it, but an explicit check
+            // costs nothing and survives a future seed change.
+            require_keys_eq!(position.owner, owner_key, PerpError::Unauthorized);
+            require_keys_eq!(position.market, market_key, PerpError::VaultMismatch);
+        }
     }
 
     token::transfer(
@@ -59,11 +84,21 @@ pub fn handler(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
         amount,
     )?;
 
+    let position = &mut ctx.accounts.position;
     position.collateral = position
         .collateral
         .checked_add(amount)
         .ok_or(PerpError::MathOverflow)?;
-    position.last_update_ts = Clock::get()?.unix_timestamp;
+    position.last_update_ts = now;
 
+    // The market's liability total moves in lockstep with trader collateral.
+    ctx.accounts.market.credit_collateral(amount)?;
+
+    emit!(CollateralDeposited {
+        market: market_key,
+        owner: owner_key,
+        amount,
+        collateral_after: position.collateral,
+    });
     Ok(())
 }
