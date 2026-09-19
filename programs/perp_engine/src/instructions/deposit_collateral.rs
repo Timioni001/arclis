@@ -4,7 +4,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use crate::errors::PerpError;
 use crate::events::CollateralDeposited;
 use crate::instructions::guards::require_tradable;
-use crate::state::{GlobalConfig, Market, Position};
+use crate::state::{GlobalConfig, Market, Position, PriceOracle};
 
 #[derive(Accounts)]
 pub struct DepositCollateral<'info> {
@@ -14,8 +14,14 @@ pub struct DepositCollateral<'info> {
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
     pub config: Account<'info, GlobalConfig>,
 
-    #[account(mut, seeds = [Market::SEED, market.oracle.as_ref()], bump = market.bump)]
+    #[account(mut, seeds = [Market::SEED, oracle.key().as_ref()], bump = market.bump)]
     pub market: Account<'info, Market>,
+
+    /// Needed only for its split factor, so a freshly created position starts
+    /// at the market's current corporate-action state rather than at 1.0 and
+    /// then rescales itself on first use.
+    #[account(address = market.oracle @ PerpError::OracleMismatch)]
+    pub oracle: Account<'info, PriceOracle>,
 
     #[account(
         init_if_needed,
@@ -61,14 +67,18 @@ pub fn handler(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
             position.entry_price = 0;
             position.collateral = 0;
             position.entry_funding_index = ctx.accounts.market.cumulative_funding_index;
+            position.entry_split_factor = ctx.accounts.oracle.split_factor;
             position.bump = ctx.bumps.position;
-            position._reserved = [0u8; 32];
+            position._reserved = [0u8; 24];
         } else {
             // Re-using an existing account: it must be this owner's, in this
             // market. The PDA seeds already guarantee it, but an explicit check
             // costs nothing and survives a future seed change.
             require_keys_eq!(position.owner, owner_key, PerpError::Unauthorized);
             require_keys_eq!(position.market, market_key, PerpError::VaultMismatch);
+            // Depositing does not need a price, but it must not leave a
+            // position holding a stale split factor for the next instruction.
+            position.normalize_for_splits(ctx.accounts.oracle.split_factor)?;
         }
     }
 

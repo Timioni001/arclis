@@ -4,6 +4,7 @@ use crate::errors::PerpError;
 use crate::events::FundingAccrued;
 use crate::instructions::guards::require_protocol_live;
 use crate::math::funding;
+use crate::math::session::{funding_accrues, PriceUse};
 use crate::state::{GlobalConfig, Market, PriceOracle};
 
 /// Accrue funding. Permissionless: anyone may call once an interval has
@@ -44,7 +45,17 @@ pub fn handler(ctx: Context<CrankFunding>) -> Result<()> {
     require_protocol_live(&ctx.accounts.config)?;
 
     let now = Clock::get()?.unix_timestamp;
-    let mark_price = ctx.accounts.oracle.validated_price(now)?;
+    // Funding requires a live venue: `IncreaseRisk` is the strict budget, and
+    // the explicit `funding_accrues` check below states the intent rather than
+    // relying on that side effect.
+    let mark_price = ctx
+        .accounts
+        .oracle
+        .validated_price(now, PriceUse::IncreaseRisk)?;
+    require!(
+        funding_accrues(ctx.accounts.oracle.session),
+        PerpError::SessionNotOpen
+    );
     let market = &mut ctx.accounts.market;
 
     let elapsed = now

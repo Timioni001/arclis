@@ -3,7 +3,8 @@ use anchor_lang::prelude::*;
 use crate::constants::MIN_POSITION_NOTIONAL;
 use crate::errors::PerpError;
 use crate::events::PositionOpened;
-use crate::instructions::guards::require_tradable;
+use crate::instructions::guards::{require_tradable, sync_position};
+use crate::math::session::PriceUse;
 use crate::math::{fixed, pnl};
 use crate::state::{GlobalConfig, Market, Position, PriceOracle};
 
@@ -44,22 +45,22 @@ pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
     require!(size_delta != 0, PerpError::ZeroSize);
 
     let now = Clock::get()?.unix_timestamp;
-    let fill_price = ctx.accounts.oracle.validated_price(now)?;
+    // Opening or adding is the canonical increase-risk action, so this is
+    // refused outright while the underlying venue is shut.
+    let fill_price = ctx
+        .accounts
+        .oracle
+        .validated_price(now, PriceUse::IncreaseRisk)?;
     let funding_index = ctx.accounts.market.cumulative_funding_index;
     let taker_fee_bps = ctx.accounts.market.taker_fee_bps;
 
-    {
-        let position = &ctx.accounts.position;
-        if !position.is_flat() {
-            require!(
-                position.is_long() == (size_delta > 0),
-                PerpError::DirectionFlip
-            );
-        }
-    }
-
-    // 1. Settle funding against the *old* size, before it changes.
-    let funding_settled = ctx.accounts.position.settle_funding(funding_index)?;
+    // 1. Normalise for any corporate action, then settle funding against the
+    //    *old* size, before it changes. Order matters - see `sync_position`.
+    let funding_settled = sync_position(
+        &mut ctx.accounts.position,
+        &ctx.accounts.oracle,
+        funding_index,
+    )?;
 
     // 2. Charge the taker fee on the notional being added, and route it to the
     //    market's insurance balance. The original engine stored `fee_bps` and
@@ -68,23 +69,15 @@ pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
     let added_notional = pnl::notional(size_delta, fill_price)?;
     let fee = fixed::to_u64(pnl::fee_on_notional(added_notional, taker_fee_bps)?)?;
 
-    // 3. Re-price the entry and apply the size change.
+    // 3. Re-price the entry and apply the size change. `Position::increase`
+    //    also rejects a direction flip: netting two directions inside one
+    //    instruction would mean the entry price has to reconcile both.
     let (size_after, entry_price_after) = {
         let position = &mut ctx.accounts.position;
         position.debit_collateral(fee)?;
-
-        let new_entry =
-            pnl::weighted_entry_price(position.size, position.entry_price, size_delta, fill_price)?;
-        let new_size = fixed::to_i64(
-            i128::from(position.size)
-                .checked_add(i128::from(size_delta))
-                .ok_or(PerpError::MathOverflow)?,
-        )?;
-
-        position.size = new_size;
-        position.entry_price = new_entry;
+        position.increase(size_delta, fill_price)?;
         position.last_update_ts = now;
-        (new_size, new_entry)
+        (position.size, position.entry_price)
     };
 
     // 4. Move the fee from trader collateral into insurance. Both sides of the

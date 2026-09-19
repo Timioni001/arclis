@@ -1,10 +1,10 @@
 use anchor_lang::prelude::*;
-use std::cmp::Ordering;
 
 use crate::constants::MIN_POSITION_NOTIONAL;
 use crate::errors::PerpError;
 use crate::events::PositionClosed;
-use crate::instructions::guards::require_tradable;
+use crate::instructions::guards::{require_tradable, sync_position};
+use crate::math::session::PriceUse;
 use crate::math::{fixed, pnl};
 use crate::state::{GlobalConfig, Market, Position, PriceOracle};
 
@@ -44,9 +44,23 @@ pub fn handler(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
     require!(reduce_size > 0, PerpError::ZeroSize);
 
     let now = Clock::get()?.unix_timestamp;
-    let fill_price = ctx.accounts.oracle.validated_price(now)?;
+    // Reducing risk stays available against a settled closing price, so a
+    // trader is not trapped in a position all weekend.
+    let fill_price = ctx
+        .accounts
+        .oracle
+        .validated_price(now, PriceUse::ReduceRisk)?;
     let funding_index = ctx.accounts.market.cumulative_funding_index;
     let taker_fee_bps = ctx.accounts.market.taker_fee_bps;
+
+    // Normalise for corporate actions and settle funding *before* reading size.
+    // `reduce_size` is quoted in post-split base units, so checking it against
+    // an un-normalised size would reject a valid full close after a 4-for-1.
+    let funding_settled = sync_position(
+        &mut ctx.accounts.position,
+        &ctx.accounts.oracle,
+        funding_index,
+    )?;
 
     require!(
         !ctx.accounts.position.is_flat(),
@@ -55,44 +69,23 @@ pub fn handler(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
     let abs_size = ctx.accounts.position.size.unsigned_abs();
     require!(reduce_size <= abs_size, PerpError::InsufficientPositionSize);
 
-    // Settle funding on the full size before any of it goes away.
-    let funding_settled = ctx.accounts.position.settle_funding(funding_index)?;
-
     let is_long = ctx.accounts.position.is_long();
     let closed_notional = pnl::notional(fixed::to_i64(i128::from(reduce_size))?, fill_price)?;
     let fee = fixed::to_u64(pnl::fee_on_notional(closed_notional, taker_fee_bps)?)?;
 
     let (realized_pnl, size_after, fee_charged) = {
         let position = &mut ctx.accounts.position;
+        let realized = position.reduce(reduce_size, fill_price)?;
 
-        // Realise the closed fraction of PnL. Entry price is left untouched, so
-        // the surviving remainder keeps its original cost basis.
-        let total_pnl = position.unrealized_pnl(fill_price)?;
-        let realized = fixed::mul_div(total_pnl, i128::from(reduce_size), i128::from(abs_size))?;
-        position.apply_realized_pnl(realized)?;
-
-        // The fee is charged after PnL, and saturates rather than failing: a
-        // position closing at a total loss should still be closable, otherwise
-        // the trader is trapped and the market keeps carrying the exposure.
-        // Book the amount actually taken, not the amount owed - crediting
-        // insurance with a fee the position could not pay would invent value.
+        // The fee is charged after PnL and saturates rather than failing: a
+        // position closing at a total loss must still be closable, or the
+        // trader is trapped and the market keeps carrying the exposure. Book
+        // what was actually taken, not what was owed - crediting insurance with
+        // a fee the position could not pay would invent value.
         let fee_charged = fee.min(position.collateral);
         position.collateral -= fee_charged;
-
-        let new_abs = abs_size
-            .checked_sub(reduce_size)
-            .ok_or(PerpError::MathOverflow)?;
-        let new_size = if is_long {
-            fixed::to_i64(i128::from(new_abs))?
-        } else {
-            -fixed::to_i64(i128::from(new_abs))?
-        };
-        position.size = new_size;
-        if new_abs == 0 {
-            position.entry_price = 0;
-        }
         position.last_update_ts = now;
-        (realized, new_size, fee_charged)
+        (realized, position.size, fee_charged)
     };
 
     {
@@ -107,23 +100,8 @@ pub fn handler(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
 
         // Reconcile liabilities with what actually happened to collateral.
         // Realised profit increases what the vault owes; a loss decreases it.
-        match realized_pnl.cmp(&0) {
-            Ordering::Greater => market.credit_collateral(fixed::to_u64(realized_pnl)?)?,
-            Ordering::Less => {
-                let loss =
-                    fixed::to_u64(realized_pnl.checked_neg().ok_or(PerpError::MathOverflow)?)?;
-                // A loss larger than the position's collateral is bad debt, not
-                // a liability reduction we can book - clamp to what was
-                // actually there and record the difference.
-                let bookable = loss.min(market.total_collateral);
-                market.debit_collateral(bookable)?;
-                market.credit_insurance(bookable)?;
-                if loss > bookable {
-                    market.record_bad_debt(loss - bookable)?;
-                }
-            }
-            Ordering::Equal => {}
-        }
+        market.settle_realized_pnl(realized_pnl)?;
+
         let bookable_fee = fee_charged.min(market.total_collateral);
         market.debit_collateral(bookable_fee)?;
         market.credit_insurance(bookable_fee)?;

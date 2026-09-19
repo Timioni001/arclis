@@ -30,6 +30,8 @@
 //! errors.rs         the error surface
 //! events.rs         emitted logs
 //! math/             pure arithmetic - no accounts, no Clock, no CPI
+//!   session.rs        trading hours and halts: what a frozen price may be used for
+//!   corporate_actions.rs  splits, via lazy per-position normalisation
 //! state/            account layouts, one file each, thin forwards into math/
 //! instructions/     guards, then math, then writes, then an event
 //! ```
@@ -57,6 +59,7 @@ pub mod math;
 pub mod state;
 
 use instructions::*;
+use math::session::MarketSession;
 
 // This is the program keypair committed in this repo's git history, which means
 // its secret key is public. It is fine for local validator work and devnet
@@ -101,6 +104,31 @@ pub mod perp_engine {
         instructions::create_market::handler(ctx, params)
     }
 
+    // --- equity calendar ----------------------------------------------------
+    //
+    // These two are what let a perpetual track an asset that does not trade
+    // perpetually. Everything else in the program is asset-agnostic; this is
+    // where the stock market's opening hours and corporate actions enter.
+
+    /// Publish the trading state of the underlying venue: open, closed,
+    /// pre-open, or halted. See `math::session`.
+    pub fn set_market_session(
+        ctx: Context<SetMarketSession>,
+        session: MarketSession,
+    ) -> Result<()> {
+        instructions::price_oracle::set_market_session(ctx, session)
+    }
+
+    /// Apply a split or reverse split, atomically across the oracle price and
+    /// the market's aggregates. See `math::corporate_actions`.
+    pub fn apply_corporate_action(
+        ctx: Context<ApplyCorporateAction>,
+        numerator: u32,
+        denominator: u32,
+    ) -> Result<()> {
+        instructions::corporate_action::apply_split(ctx, numerator, denominator)
+    }
+
     // --- collateral ---------------------------------------------------------
 
     pub fn deposit_collateral(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
@@ -129,6 +157,51 @@ pub mod perp_engine {
 
     pub fn liquidate(ctx: Context<Liquidate>) -> Result<()> {
         instructions::liquidate::handler(ctx)
+    }
+
+    // --- agent treasuries ---------------------------------------------------
+    //
+    // An agent that raised on a stock-quoted bonding curve holds a treasury
+    // levered to one company's earnings. These four turn that into an operating
+    // budget: hold the stock, short the matching perp, publish an honest NAV.
+
+    pub fn initialize_treasury(
+        ctx: Context<InitializeTreasury>,
+        hedge_ratio_bps: u16,
+        rebalance_tolerance_bps: u16,
+    ) -> Result<()> {
+        instructions::treasury::initialize_treasury(ctx, hedge_ratio_bps, rebalance_tolerance_bps)
+    }
+
+    pub fn set_treasury_policy(
+        ctx: Context<SetTreasuryPolicy>,
+        hedge_ratio_bps: u16,
+        rebalance_tolerance_bps: u16,
+        hedging_enabled: bool,
+        tokens_outstanding: u64,
+    ) -> Result<()> {
+        instructions::treasury::set_treasury_policy(
+            ctx,
+            hedge_ratio_bps,
+            rebalance_tolerance_bps,
+            hedging_enabled,
+            tokens_outstanding,
+        )
+    }
+
+    pub fn deposit_stock(ctx: Context<MoveTreasuryStock>, amount: u64) -> Result<()> {
+        instructions::treasury::deposit_stock(ctx, amount)
+    }
+
+    pub fn withdraw_stock(ctx: Context<MoveTreasuryStock>, amount: u64) -> Result<()> {
+        instructions::treasury::withdraw_stock(ctx, amount)
+    }
+
+    /// Permissionless: anyone may bring a treasury back to its target hedge.
+    /// The tolerance band, not an authority check, is what keeps this from
+    /// being farmed for taker fees.
+    pub fn rebalance_hedge(ctx: Context<RebalanceHedge>) -> Result<()> {
+        instructions::treasury::rebalance_hedge(ctx)
     }
 
     // --- authority (pause only; no value movement lives here) ---------------

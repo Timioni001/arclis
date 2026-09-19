@@ -10,6 +10,8 @@
 
 use anchor_lang::prelude::*;
 
+use crate::math::session::MarketSession;
+
 #[event]
 pub struct MarketCreated {
     pub market: Pubkey,
@@ -100,4 +102,71 @@ pub struct MarketPauseToggled {
 pub struct ProtocolPauseToggled {
     pub authority: Pubkey,
     pub paused: bool,
+}
+
+/// Emitted whenever the underlying venue changes trading state. An indexer can
+/// reconstruct the full session calendar from these alone, which is what a
+/// frontend needs to render "opens Monday 09:30" instead of a bare error.
+#[event]
+pub struct SessionChanged {
+    pub oracle: Pubkey,
+    pub authority: Pubkey,
+    pub previous: MarketSession,
+    pub current: MarketSession,
+    pub price: u64,
+    pub ts: i64,
+}
+
+#[event]
+pub struct CorporateActionApplied {
+    pub oracle: Pubkey,
+    pub market: Pubkey,
+    pub authority: Pubkey,
+    pub numerator: u32,
+    pub denominator: u32,
+    pub split_factor_before: u64,
+    pub split_factor_after: u64,
+    pub price_before: u64,
+    pub price_after: u64,
+    pub sequence: u32,
+}
+
+// ---------------------------------------------------------------------------
+// Agent treasuries
+// ---------------------------------------------------------------------------
+
+#[event]
+pub struct TreasuryInitialized {
+    pub treasury: Pubkey,
+    pub authority: Pubkey,
+    pub agent_mint: Pubkey,
+    pub stock_mint: Pubkey,
+    pub market: Pubkey,
+    pub hedge_ratio_bps: u16,
+    pub rebalance_tolerance_bps: u16,
+}
+
+#[event]
+pub struct TreasuryStockMoved {
+    pub treasury: Pubkey,
+    pub actor: Pubkey,
+    pub amount: u64,
+    pub deposited: bool,
+    pub stock_qty_after: u64,
+}
+
+/// The event an agent's dashboard is built from: what the hedge did, and what
+/// the treasury is worth per token afterwards.
+#[event]
+pub struct TreasuryHedgeRebalanced {
+    pub treasury: Pubkey,
+    pub cranker: Pubkey,
+    pub mark_price: u64,
+    pub size_delta: i64,
+    pub delta_before: i64,
+    pub delta_after: i64,
+    pub stock_value: i128,
+    pub perp_equity: i128,
+    pub nav: i128,
+    pub nav_per_token: u64,
 }

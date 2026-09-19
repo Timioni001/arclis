@@ -3,7 +3,8 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::PerpError;
 use crate::events::CollateralWithdrawn;
-use crate::instructions::guards::require_tradable;
+use crate::instructions::guards::{require_tradable, sync_position};
+use crate::math::session::PriceUse;
 use crate::state::{GlobalConfig, Market, Position, PriceOracle};
 
 #[derive(Accounts)]
@@ -48,12 +49,22 @@ pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
     require!(amount > 0, PerpError::InsufficientCollateral);
 
     let now = Clock::get()?.unix_timestamp;
-    let mark_price = ctx.accounts.oracle.validated_price(now)?;
+    // Withdrawing collateral raises leverage on whatever is still open, so it
+    // counts as increasing risk and is refused while the venue is shut.
+    let mark_price = ctx
+        .accounts
+        .oracle
+        .validated_price(now, PriceUse::IncreaseRisk)?;
     let funding_index = ctx.accounts.market.cumulative_funding_index;
 
-    // Settle funding before valuing anything, so the margin check below runs
-    // against the position's actual current state rather than a stale snapshot.
-    ctx.accounts.position.settle_funding(funding_index)?;
+    // Normalise and settle before valuing anything, so the margin check below
+    // runs against the position's actual current state rather than a stale
+    // snapshot.
+    sync_position(
+        &mut ctx.accounts.position,
+        &ctx.accounts.oracle,
+        funding_index,
+    )?;
     ctx.accounts.position.debit_collateral(amount)?;
 
     // With collateral already debited, the ratio computed here is the

@@ -35,6 +35,30 @@ pub enum PerpError {
     #[msg("Provided oracle account does not match the market's configured oracle")]
     OracleMismatch,
 
+    // --- market sessions ----------------------------------------------------
+    #[msg("The underlying venue is halted, there is no price to mark against")]
+    MarketHalted,
+
+    #[msg("The underlying venue is not open for trading")]
+    SessionNotOpen,
+
+    #[msg(
+        "Cannot increase risk while the underlying venue is closed; you can still reduce or close"
+    )]
+    CannotIncreaseRiskWhileClosed,
+
+    #[msg("Only the oracle authority can publish a session or corporate action")]
+    NotOracleAuthority,
+
+    #[msg("Split ratio must be non-zero, not 1:1, and within the permitted bounds")]
+    InvalidSplitRatio,
+
+    #[msg("Position must be normalized for corporate actions before it can be used")]
+    PositionNotNormalized,
+
+    #[msg("Corporate actions may only be applied while the venue is not open")]
+    SessionMustBeClosedForCorporateAction,
+
     // --- position lifecycle -------------------------------------------------
     #[msg("Position size cannot be zero")]
     ZeroSize,
@@ -100,6 +124,26 @@ pub enum PerpError {
 
     #[msg("Funding interval has not elapsed yet")]
     FundingNotDue,
+
+    // --- arithmetic ---------------------------------------------------------
+    // --- agent treasuries ---------------------------------------------------
+    #[msg("Hedge ratio must be between 0 and 100%")]
+    InvalidHedgeRatio,
+
+    #[msg("Rebalance tolerance exceeds the protocol maximum")]
+    InvalidRebalanceTolerance,
+
+    #[msg("Hedging is disabled for this treasury")]
+    HedgingDisabled,
+
+    #[msg("Treasury is already within its rebalance tolerance band")]
+    RebalanceNotNeeded,
+
+    #[msg("Treasury stock mint does not match the market's underlying")]
+    TreasuryAssetMismatch,
+
+    #[msg("Withdrawal would leave the treasury unable to maintain its hedge")]
+    WithdrawalBreaksHedge,
 
     // --- arithmetic ---------------------------------------------------------
     #[msg("Arithmetic overflow or underflow")]

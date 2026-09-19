@@ -9,7 +9,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::PerpError;
-use crate::state::{GlobalConfig, Market};
+use crate::state::{GlobalConfig, Market, Position, PriceOracle};
 
 /// Both kill switches, protocol first.
 ///
@@ -34,4 +34,32 @@ pub fn require_protocol_live(config: &GlobalConfig) -> Result<()> {
 pub fn require_authority(config: &GlobalConfig, signer: &Pubkey) -> Result<()> {
     require_keys_eq!(config.authority, *signer, PerpError::Unauthorized);
     Ok(())
+}
+
+pub fn require_oracle_authority(oracle: &PriceOracle, signer: &Pubkey) -> Result<()> {
+    require_keys_eq!(oracle.authority, *signer, PerpError::NotOracleAuthority);
+    Ok(())
+}
+
+/// Bring a position fully up to date, in the one order that is correct.
+///
+/// Corporate actions first, then funding. The order matters and is not
+/// interchangeable: funding settlement multiplies size by an index delta, and
+/// both of those are denominated in pre-split base units. Settling first and
+/// normalising second would charge funding computed against a size that no
+/// longer exists.
+///
+/// Returns the funding settled, positive when the trader paid.
+///
+/// Every handler that reads or writes a position calls this before doing
+/// anything else. It exists because "did this instruction remember to
+/// normalise, and in the right order?" is not a question anyone should have to
+/// re-answer per handler.
+pub fn sync_position(
+    position: &mut Position,
+    oracle: &PriceOracle,
+    market_funding_index: i128,
+) -> Result<i128> {
+    position.normalize_for_splits(oracle.split_factor)?;
+    position.settle_funding(market_funding_index)
 }

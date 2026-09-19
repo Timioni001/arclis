@@ -7,7 +7,7 @@
  * ordering between instructions.
  */
 import * as anchor from "@coral-xyz/anchor";
-import { Program, BN } from "@coral-xyz/anchor";
+import { BN } from "@coral-xyz/anchor";
 import { PublicKey, Keypair, SystemProgram } from "@solana/web3.js";
 import {
   createMint,
@@ -32,7 +32,14 @@ function symbolBytes(s: string): number[] {
 describe("perp_engine", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-  const program = anchor.workspace.PerpEngine as Program;
+  // Untyped on purpose. Anchor generates `target/types/perp_engine.ts` during
+  // `anchor build`, and this file has to typecheck before that has ever run.
+  // Once you have built once, swap this for:
+  //   import { PerpEngine } from "../target/types/perp_engine";
+  //   const program = anchor.workspace.PerpEngine as Program<PerpEngine>;
+  // and the account namespace and method args become fully typed.
+  /* eslint-disable @typescript-eslint/no-explicit-any */
+  const program = anchor.workspace.PerpEngine as any;
   const conn = provider.connection;
   const payer = (provider.wallet as anchor.Wallet).payer;
 
@@ -51,29 +58,57 @@ describe("perp_engine", () => {
 
   before(async () => {
     quoteMint = await createMint(conn, payer, payer.publicKey, null, 6);
-    traderAta = await createAssociatedTokenAccount(conn, payer, quoteMint, payer.publicKey);
-    await mintTo(conn, payer, quoteMint, traderAta, payer, 1_000_000 * QUOTE_SCALE);
+    traderAta = await createAssociatedTokenAccount(
+      conn,
+      payer,
+      quoteMint,
+      payer.publicKey,
+    );
+    await mintTo(
+      conn,
+      payer,
+      quoteMint,
+      traderAta,
+      payer,
+      1_000_000 * QUOTE_SCALE,
+    );
 
     await conn.confirmTransaction(
-      await conn.requestAirdrop(liquidator.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL)
+      await conn.requestAirdrop(
+        liquidator.publicKey,
+        2 * anchor.web3.LAMPORTS_PER_SOL,
+      ),
     );
     liquidatorAta = await createAssociatedTokenAccount(
-      conn, liquidator, quoteMint, liquidator.publicKey
+      conn,
+      liquidator,
+      quoteMint,
+      liquidator.publicKey,
     );
 
-    [configPda] = PublicKey.findProgramAddressSync([Buffer.from("config")], program.programId);
+    [configPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from("config")],
+      program.programId,
+    );
     [oraclePda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("oracle"), Buffer.from(SYMBOL)], program.programId
+      [Buffer.from("oracle"), Buffer.from(SYMBOL)],
+      program.programId,
     );
     [marketPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("market"), oraclePda.toBuffer()], program.programId
+      [Buffer.from("market"), oraclePda.toBuffer()],
+      program.programId,
     );
     [vaultPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("vault"), marketPda.toBuffer()], program.programId
+      [Buffer.from("vault"), marketPda.toBuffer()],
+      program.programId,
     );
     [positionPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("position"), payer.publicKey.toBuffer(), marketPda.toBuffer()],
-      program.programId
+      [
+        Buffer.from("position"),
+        payer.publicKey.toBuffer(),
+        marketPda.toBuffer(),
+      ],
+      program.programId,
     );
   });
 
@@ -156,17 +191,24 @@ describe("perp_engine", () => {
   it("rejects a market whose leverage and margin are inconsistent", async () => {
     const sym = symbolBytes("BAD");
     const [badOracle] = PublicKey.findProgramAddressSync(
-      [Buffer.from("oracle"), Buffer.from(sym)], program.programId
+      [Buffer.from("oracle"), Buffer.from(sym)],
+      program.programId,
     );
     const [badMarket] = PublicKey.findProgramAddressSync(
-      [Buffer.from("market"), badOracle.toBuffer()], program.programId
+      [Buffer.from("market"), badOracle.toBuffer()],
+      program.programId,
     );
     const [badVault] = PublicKey.findProgramAddressSync(
-      [Buffer.from("vault"), badMarket.toBuffer()], program.programId
+      [Buffer.from("vault"), badMarket.toBuffer()],
+      program.programId,
     );
     await program.methods
       .initializePriceOracle(sym, new BN(100 * PRICE_SCALE))
-      .accounts({ authority: payer.publicKey, oracle: badOracle, systemProgram: SystemProgram.programId })
+      .accounts({
+        authority: payer.publicKey,
+        oracle: badOracle,
+        systemProgram: SystemProgram.programId,
+      })
       .rpc();
 
     try {
@@ -184,9 +226,14 @@ describe("perp_engine", () => {
           maxSkewBps: 10_000,
         })
         .accounts({
-          creator: payer.publicKey, config: configPda, oracle: badOracle,
-          market: badMarket, quoteMint, vault: badVault,
-          tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
+          creator: payer.publicKey,
+          config: configPda,
+          oracle: badOracle,
+          market: badMarket,
+          quoteMint,
+          vault: badVault,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
         })
         .rpc();
@@ -200,9 +247,14 @@ describe("perp_engine", () => {
     await program.methods
       .depositCollateral(new BN(10_000 * QUOTE_SCALE))
       .accounts({
-        owner: payer.publicKey, config: configPda, market: marketPda,
-        position: positionPda, ownerTokenAccount: traderAta, vault: vaultPda,
-        tokenProgram: TOKEN_PROGRAM_ID, systemProgram: SystemProgram.programId,
+        owner: payer.publicKey,
+        config: configPda,
+        market: marketPda,
+        position: positionPda,
+        ownerTokenAccount: traderAta,
+        vault: vaultPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
       })
       .rpc();
 
@@ -220,8 +272,11 @@ describe("perp_engine", () => {
     await program.methods
       .openPosition(new BN(50 * BASE_SCALE))
       .accounts({
-        owner: payer.publicKey, config: configPda, market: marketPda,
-        oracle: oraclePda, position: positionPda,
+        owner: payer.publicKey,
+        config: configPda,
+        market: marketPda,
+        oracle: oraclePda,
+        position: positionPda,
       })
       .rpc();
 
@@ -241,8 +296,11 @@ describe("perp_engine", () => {
       await program.methods
         .openPosition(new BN(-100 * BASE_SCALE))
         .accounts({
-          owner: payer.publicKey, config: configPda, market: marketPda,
-          oracle: oraclePda, position: positionPda,
+          owner: payer.publicKey,
+          config: configPda,
+          market: marketPda,
+          oracle: oraclePda,
+          position: positionPda,
         })
         .rpc();
       assert.fail("expected DirectionFlip");
@@ -262,8 +320,11 @@ describe("perp_engine", () => {
     await program.methods
       .closePosition(new BN(25 * BASE_SCALE))
       .accounts({
-        owner: payer.publicKey, config: configPda, market: marketPda,
-        oracle: oraclePda, position: positionPda,
+        owner: payer.publicKey,
+        config: configPda,
+        market: marketPda,
+        oracle: oraclePda,
+        position: positionPda,
       })
       .rpc();
 
@@ -286,8 +347,10 @@ describe("perp_engine", () => {
       await program.methods
         .crankFunding()
         .accounts({
-          cranker: payer.publicKey, config: configPda,
-          market: marketPda, oracle: oraclePda,
+          cranker: payer.publicKey,
+          config: configPda,
+          market: marketPda,
+          oracle: oraclePda,
         })
         .rpc();
       const after = await program.account.market.fetch(marketPda);
@@ -306,9 +369,13 @@ describe("perp_engine", () => {
       await program.methods
         .withdrawCollateral(new BN(pos.collateral.toNumber() - 1))
         .accounts({
-          owner: payer.publicKey, config: configPda, market: marketPda,
-          oracle: oraclePda, position: positionPda,
-          ownerTokenAccount: traderAta, vault: vaultPda,
+          owner: payer.publicKey,
+          config: configPda,
+          market: marketPda,
+          oracle: oraclePda,
+          position: positionPda,
+          ownerTokenAccount: traderAta,
+          vault: vaultPda,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
@@ -325,8 +392,11 @@ describe("perp_engine", () => {
         .accounts({
           liquidator: liquidator.publicKey,
           liquidatorTokenAccount: liquidatorAta,
-          config: configPda, market: marketPda, oracle: oraclePda,
-          position: positionPda, vault: vaultPda,
+          config: configPda,
+          market: marketPda,
+          oracle: oraclePda,
+          position: positionPda,
+          vault: vaultPda,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([liquidator])
@@ -347,8 +417,11 @@ describe("perp_engine", () => {
       await program.methods
         .openPosition(new BN(1 * BASE_SCALE))
         .accounts({
-          owner: payer.publicKey, config: configPda, market: marketPda,
-          oracle: oraclePda, position: positionPda,
+          owner: payer.publicKey,
+          config: configPda,
+          market: marketPda,
+          oracle: oraclePda,
+          position: positionPda,
         })
         .rpc();
       assert.fail("expected ProtocolPaused");
@@ -383,7 +456,9 @@ describe("perp_engine", () => {
     // what the vault holds must cover what the market says it owes.
     assert.isAtLeast(
       Number(vault.amount),
-      m.totalCollateral.toNumber() + m.insuranceBalance.toNumber() - m.badDebt.toNumber()
+      m.totalCollateral.toNumber() +
+        m.insuranceBalance.toNumber() -
+        m.badDebt.toNumber(),
     );
   });
 });

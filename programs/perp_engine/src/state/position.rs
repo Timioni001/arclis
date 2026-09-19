@@ -1,8 +1,9 @@
 use anchor_lang::prelude::*;
 use std::cmp::Ordering;
 
+use crate::constants::SPLIT_FACTOR_SCALE;
 use crate::errors::PerpError;
-use crate::math::{fixed, pnl};
+use crate::math::{corporate_actions, fixed, pnl};
 
 use super::market::Market;
 
@@ -27,8 +28,12 @@ pub struct Position {
     /// Funding index snapshot at the last settlement.
     pub entry_funding_index: i128,
     pub last_update_ts: i64,
+    /// The oracle's cumulative split factor when this position was last
+    /// touched. Lazy corporate-action normalisation keys off this; see
+    /// [`Position::normalize_for_splits`].
+    pub entry_split_factor: u64,
     pub bump: u8,
-    pub _reserved: [u8; 32],
+    pub _reserved: [u8; 24],
 }
 
 impl Position {
@@ -41,6 +46,54 @@ impl Position {
 
     pub fn is_flat(&self) -> bool {
         self.size == 0
+    }
+
+    /// Bring this position up to date with any corporate actions that happened
+    /// while it sat untouched.
+    ///
+    /// Must be called before any valuation or mutation, because every field it
+    /// rewrites - size, entry price, funding snapshot - feeds directly into
+    /// PnL. Callers go through `guards::sync_position`, which does this and the
+    /// funding settlement together in the right order.
+    ///
+    /// Cheap and idempotent: the common case is a single `u64` comparison that
+    /// returns immediately.
+    pub fn normalize_for_splits(&mut self, oracle_split_factor: u64) -> Result<()> {
+        let from = self.entry_split_factor;
+        let to = oracle_split_factor;
+        if from == to {
+            return Ok(());
+        }
+        require!(from != 0 && to != 0, PerpError::MathOverflow);
+
+        self.size = corporate_actions::rescale_size(self.size, from, to)?;
+        self.entry_price = corporate_actions::rescale_price(self.entry_price, from, to)?;
+        // The funding index is quote-per-base; if a base unit splits into four,
+        // the amount owed per unit must quarter or the position's unsettled
+        // funding would quadruple the instant the split landed.
+        self.entry_funding_index =
+            corporate_actions::rescale_funding_index(self.entry_funding_index, from, to)?;
+        self.entry_split_factor = to;
+        Ok(())
+    }
+
+    /// Fail loudly if a caller forgot to normalise.
+    ///
+    /// Belt and braces: every handler routes through `guards::sync_position`,
+    /// but a future instruction that does not would otherwise silently value a
+    /// stale position against a rescaled oracle - which is exactly the
+    /// liquidate-everyone bug corporate-action handling exists to prevent.
+    pub fn require_normalized(&self, oracle_split_factor: u64) -> Result<()> {
+        require!(
+            self.entry_split_factor == oracle_split_factor,
+            PerpError::PositionNotNormalized
+        );
+        Ok(())
+    }
+
+    /// Factor a freshly created position starts at.
+    pub const fn initial_split_factor() -> u64 {
+        SPLIT_FACTOR_SCALE
     }
 
     // --- valuation: thin forwards into `math::pnl` -------------------------
@@ -132,6 +185,53 @@ impl Position {
             Ordering::Equal => {}
         }
         Ok(())
+    }
+
+    /// Add to the position at `fill_price`, re-pricing the weighted entry.
+    ///
+    /// Shared by `open_position` and by treasury hedge rebalancing, which is
+    /// the same operation with a PDA rather than a wallet as the owner.
+    /// Callers must have settled funding first.
+    pub fn increase(&mut self, size_delta: i64, fill_price: u64) -> Result<()> {
+        require!(size_delta != 0, PerpError::ZeroSize);
+        if !self.is_flat() {
+            require!(self.is_long() == (size_delta > 0), PerpError::DirectionFlip);
+        }
+        self.entry_price =
+            pnl::weighted_entry_price(self.size, self.entry_price, size_delta, fill_price)?;
+        self.size = fixed::to_i64(
+            i128::from(self.size)
+                .checked_add(i128::from(size_delta))
+                .ok_or(PerpError::MathOverflow)?,
+        )?;
+        Ok(())
+    }
+
+    /// Reduce the position by `reduce_size` base units, realising the
+    /// proportional slice of PnL into collateral and returning it.
+    ///
+    /// Entry price is deliberately left untouched, so the surviving remainder
+    /// keeps its original cost basis. Callers must have settled funding first.
+    pub fn reduce(&mut self, reduce_size: u64, fill_price: u64) -> Result<i128> {
+        require!(reduce_size > 0, PerpError::ZeroSize);
+        require!(!self.is_flat(), PerpError::InsufficientPositionSize);
+        let abs_size = self.size.unsigned_abs();
+        require!(reduce_size <= abs_size, PerpError::InsufficientPositionSize);
+
+        let total_pnl = self.unrealized_pnl(fill_price)?;
+        let realized = fixed::mul_div(total_pnl, i128::from(reduce_size), i128::from(abs_size))?;
+        self.apply_realized_pnl(realized)?;
+
+        let was_long = self.is_long();
+        let new_abs = abs_size
+            .checked_sub(reduce_size)
+            .ok_or(PerpError::MathOverflow)?;
+        let new_size = fixed::to_i64(i128::from(new_abs))?;
+        self.size = if was_long { new_size } else { -new_size };
+        if new_abs == 0 {
+            self.entry_price = 0;
+        }
+        Ok(realized)
     }
 
     pub fn debit_collateral(&mut self, amount: u64) -> Result<()> {

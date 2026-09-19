@@ -1,12 +1,17 @@
 # Is this idea feasible?
 
-An honest assessment of oracle-priced perpetual futures on tokenized equities,
-separate from whether the code compiles.
+An honest assessment, separate from whether the code compiles.
 
-Short version: **the engine is feasible, the specific product is not, and the
-gap between them is not a coding problem.** Three obstacles are structural. One
-is fatal to the equities framing specifically. The engine itself is worth
-keeping — it is the choice of underlying asset that needs to change.
+> **Revised after the hackathon scope was set.** An earlier version of this
+> document recommended abandoning tokenized equities and pointing the engine at
+> crypto perps. That recommendation assumed the choice of underlying was open.
+> It is not: the bounties are specifically about tokenized stocks. More
+> importantly, one of the arguments behind it was wrong in a way worth stating
+> plainly — the product now has a **spot** leg (a DBC pool quoted in a tokenized
+> stock) as well as a derivative one, and those two carry very different
+> regulatory weight. §3 is rewritten accordingly. Sections 1 and 2 were the
+> serious objections and both have since been partly addressed in code; they are
+> updated to say what is actually fixed and what is not.
 
 Ranked by how likely each is to kill the project, not by how hard each is to
 fix.
@@ -57,82 +62,102 @@ risky.
 
 Until then, treat this as a demo that must not hold real money.
 
-## 2. Equities do not trade 24/7 — fatal to the stocks framing as designed
+## 2. Equities do not trade 24/7 — was fatal, now handled
 
 Perpetual futures never expire. Equities close at 4pm ET, and stay closed all
 weekend and on holidays. **The underlying has a price roughly 32% of the hours
 the perp is live.**
 
-The engine rejects any price older than 60 seconds
-(`MAX_ORACLE_STALENESS_SECS`), so on the current design the market is simply
-shut for about two-thirds of every week. That is not a bug — refusing to trade
-on a stale price is correct — but it means the product as specified does not
-work, and no amount of parameter tuning fixes it. Loosening staleness to cover a
-weekend would mean liquidating people on Sunday against Friday's close, which is
-worse.
+The original engine rejected any price older than 60 seconds, which shut the
+market for two-thirds of every week. Refusing to trade on a stale price is
+correct; doing it with one global constant is not, and loosening that constant
+to cover a weekend would mean liquidating people on Sunday against Friday's
+close, which is worse.
 
-Three specific failure modes underneath it:
+**This is now built** (`math::session`, `math::corporate_actions`). The
+resolution was to stop asking how old a price is and start asking what the
+caller wants to do with it — a frozen close is a fine price for letting someone
+*out* of a position and a free option for letting someone *in*. See
+`docs/HACKATHON.md` §3 for the full table.
 
-- **Weekend gaps.** Friday close $100, Monday open $80. Every leveraged long is
-  underwater *before* the first liquidation transaction can land. Liquidators
-  cannot prevent a gap, only clean up after it — so the gap becomes bad debt,
-  not a liquidation. This is exactly the scenario the insurance fund exists for,
-  and it will be undercapitalised for it.
+What that closes, and what it does not:
 
-- **Corporate actions.** A 4-for-1 split drops the quoted price 75% overnight.
-  With no split handling, the engine liquidates every long in the market for a
-  price move that economically did not happen. Dividends, mergers, and
-  delistings each need explicit treatment. There is currently none, and
-  `MAX_ORACLE_DEVIATION_BPS` would reject the split price as an attack — which
-  is safer than the alternative, but still leaves the market permanently stuck.
+- **Weekend gaps — bounded, not eliminated.** Nobody can open a position against
+  a frozen price any more, so the free option is gone. But Friday $100 to Monday
+  $80 still puts every leveraged long underwater before a liquidator can act.
+  Liquidators clean up after a gap; they cannot prevent one. The gap still
+  becomes bad debt rather than a liquidation — the difference is that bad debt
+  is now recorded (`Market::bad_debt`) instead of silently consuming someone
+  else's deposit. **The insurance fund will be undercapitalised for a real gap.**
+  This is the residual risk of the whole design and it is not solved.
 
-- **Halts.** A halted stock has no price. Pyth's equity feeds carry a trading
-  status flag precisely for this; this oracle has no equivalent.
+- **Splits — handled.** A cumulative split factor on the oracle, with positions
+  rescaling themselves lazily. Notional, PnL and unsettled funding are all
+  invariant across a split, asserted in tests.
 
-If the equities framing is kept, the engine needs a market-hours state machine:
-scheduled sessions, a defined settlement price at the close, funding that
-accrues (or explicitly does not) overnight, and a corporate-actions instruction.
-That is a substantial subsystem, comparable in size to everything currently in
-`instructions/`.
+- **Halts — handled.** `MarketSession::Halted` blocks everything, including
+  liquidation. That is deliberate: a halted stock has no mark, and liquidating
+  against the pre-halt print hands the liquidator a position whose real value
+  nobody knows.
 
-## 3. Regulation — the reason similar products keep getting shut down
+- **Dividends, mergers, delistings — still unhandled.** Only splits are
+  implemented. A cash dividend mechanically drops the price on the ex-date by
+  roughly the dividend, which the engine would read as a real move. For a
+  low-yield large cap that is small; for a high-yield name it is not.
 
-Not legal advice; get counsel before anything touches real money. But the track
-record is unusually clear and worth knowing before building further.
+## 3. Regulation — and the spot/derivative distinction that matters here
 
-A cash-settled contract whose value derives from a single equity is, in the US,
-a **security-based swap**. Offering one to anyone who is not an "eligible
-contract participant" — which is essentially all retail — outside a registered
-national exchange is prohibited under Dodd-Frank. It is not a licensing hurdle
-that a startup grows into; it is closer to a prohibition.
+Not legal advice; get counsel before anything touches real money. But the
+distinction below is load-bearing for how this project should be shaped, and an
+earlier version of this document blurred it.
 
-The precedents point the same way:
+**The two legs carry different weight.**
+
+A **DBC pool quoted in a tokenized stock** is a spot swap: someone exchanges a
+tokenized share they already own for an agent token. The tokenized share itself
+is a security and its *issuance* is the regulated act — which is why it is
+issued by a licensed issuer and not by this project. Trading one for something
+else is an ordinary secondary-market transaction. That is a meaningfully
+different posture from creating leveraged exposure out of nothing.
+
+A **cash-settled perpetual on a single equity** is not. In the US it is a
+security-based swap, and offering one to anyone who is not an eligible contract
+participant — essentially all retail — outside a registered national exchange is
+prohibited under Dodd-Frank. It is not a licensing hurdle a startup grows into.
+
+The track record is consistent on the derivative side:
 
 - **Mirror Protocol** (Terra) minted synthetic equities. The SEC charged
-  Terraform Labs, treating the mAssets as security-based swaps. The protocol is
-  gone.
-- **Synthetix** delisted its synthetic equities (sTSLA, sAAPL) in 2021 under
-  regulatory pressure, while keeping crypto and FX synths.
-- **Binance stock tokens** launched in April 2021 and were withdrawn by July,
-  after action from German, Italian, Hong Kong, and UK regulators.
+  Terraform Labs, treating the mAssets as security-based swaps. Gone.
+- **Synthetix** delisted sTSLA and sAAPL in 2021 under regulatory pressure,
+  while keeping its crypto and FX synths.
+- **Binance stock tokens** launched April 2021 and were withdrawn by July after
+  action from German, Italian, Hong Kong and UK regulators.
 
-Two things have shifted more recently and are worth tracking rather than relying
-on: tokenized equities themselves have had a genuine resurgence through
-regulated issuers, and US derivatives regulators have grown more receptive to
-perpetual-style products onshore. Neither of those has made *retail equity
-perps* permissible for US persons, and the distinction between holding a
-tokenized share and trading a leveraged derivative on it is exactly the line
-regulators have drawn.
+Two things have shifted since, and both are worth tracking rather than relying
+on: tokenized equities have had a genuine resurgence through regulated issuers,
+and US derivatives regulators have grown more receptive to perpetual-style
+products onshore. Neither has made retail equity perps permissible for US
+persons.
 
-Workable paths, roughly in order of how much they change the project:
+**What this means for the shape of the product.** The spot leg — the DBC launch,
+the treasury holding tokenized stock, the fee income — is the part that can be
+offered broadly. The perp leg is the part that needs care, and the specific use
+here is narrower than a retail perp DEX: it is **one entity hedging its own
+balance sheet**, not a venue offering leverage to the public. That is a better
+position to be in than a general equity perp exchange, and it is still a
+derivative on a single name.
 
-1. **Change the underlying.** Crypto, FX, or commodity perps carry nothing like
-   this exposure. The engine is already asset-agnostic — `create_market` takes
-   an oracle, not a ticker.
-2. **Geofence and incorporate offshore.** Real, but expensive, and it caps the
-   market you can serve.
-3. **Partner with a licensed venue.** Slow; unlikely to be reachable from a
-   hackathon build.
+Concretely, in descending order of how much it changes the project:
+
+1. **Keep the perp leg restricted to treasury hedging.** Do not market it as a
+   retail venue. The hedging use is the defensible one.
+2. **Geofence and take counsel on jurisdiction** before opening the perp markets
+   to third parties.
+3. **The engine is asset-agnostic** — `create_market` takes an oracle, not a
+   ticker — so the same code serves commodity, FX or crypto underlyings if the
+   equity perp leg proves unworkable. That optionality is architectural and
+   already present; it costs nothing to keep.
 
 ## 4. The oracle is a single trusted key
 
@@ -186,19 +211,25 @@ Worth being clear, because the list above is long:
 
 ## Recommendation
 
-Keep the engine. Change two things, in this order:
+Unchanged in substance from the first version, reordered for the scope that
+actually applies:
 
-1. **Add a counterparty LP vault.** Without it nothing else matters, because the
-   protocol cannot pay its winners. Biggest single improvement available.
-2. **Point it at crypto perps first.** 24/7 oracles, no market-hours subsystem,
-   no security-based-swap exposure. It makes the thing demonstrable end-to-end
-   in a way the equities version cannot be.
+1. **Add a counterparty LP vault.** Still the single most important thing.
+   Without it the protocol cannot pay its winners, and no amount of accounting
+   makes that untrue. Everything else is polish by comparison.
+2. **Keep the perp leg scoped to treasury hedging** rather than a public venue,
+   per §3. This is a positioning decision, and it is cheap now and expensive
+   later.
+3. **Capitalise the insurance fund before any real weekend.** Fees now flow into
+   it, which they did not before, but a single gap will outrun fee accrual on a
+   young market. There is still no instruction to pay into it directly — that is
+   the most obvious missing piece after the LP vault.
+4. **Swap the keeper oracle for Pyth.** The shape is already Pyth's; the swap
+   touches `PriceOracle::validated_price` and the account type in each
+   `Accounts` struct.
+5. **Handle dividends** alongside the splits already implemented.
 
-Then, if tokenized equities are still the goal, add the market-hours and
-corporate-actions subsystem and take legal advice on jurisdiction — as a
-deliberate second phase, with the engine already proven on an asset class that
-does not fight it.
-
-That sequencing also helps the pitch: "a general oracle-priced perp engine,
-demonstrated on crypto, designed to extend to tokenized RWAs" is a stronger and
-more credible story than a stock perp that halts every Friday at 4pm.
+The honest summary for a judge: the equity-specific infrastructure — sessions,
+halts, splits, oracle bounds — is real, tested, and the part most teams skip.
+The counterparty gap is real, unsolved, and the reason this must not hold
+material size until an LP vault exists.

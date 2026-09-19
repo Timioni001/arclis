@@ -4,8 +4,9 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use crate::constants::BAD_DEBT_LIQUIDATION_BOUNTY;
 use crate::errors::PerpError;
 use crate::events::PositionLiquidated;
-use crate::instructions::guards::require_protocol_live;
+use crate::instructions::guards::{require_protocol_live, sync_position};
 use crate::math::liquidation;
+use crate::math::session::PriceUse;
 use crate::state::{GlobalConfig, Market, Position, PriceOracle};
 
 /// Close an undercollateralised position. Permissionless, paid by penalty.
@@ -56,7 +57,14 @@ pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
     require_protocol_live(&ctx.accounts.config)?;
 
     let now = Clock::get()?.unix_timestamp;
-    let mark_price = ctx.accounts.oracle.validated_price(now)?;
+    // Liquidation reduces protocol risk, so it stays available against a
+    // settled close. A halt still blocks it: there is no mark during a halt,
+    // and liquidating against the pre-halt print hands the liquidator a
+    // position whose real value nobody knows.
+    let mark_price = ctx
+        .accounts
+        .oracle
+        .validated_price(now, PriceUse::ReduceRisk)?;
     let funding_index = ctx.accounts.market.cumulative_funding_index;
     let penalty_bps = ctx.accounts.market.liquidation_penalty_bps;
     let maintenance_bps = ctx.accounts.market.maintenance_margin_bps;
@@ -66,9 +74,13 @@ pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
         PerpError::InsufficientPositionSize
     );
 
-    // Settle funding first: unpaid funding is part of why a position is
+    // Normalise and settle first: unpaid funding is part of why a position is
     // underwater, and the health test must see it.
-    ctx.accounts.position.settle_funding(funding_index)?;
+    sync_position(
+        &mut ctx.accounts.position,
+        &ctx.accounts.oracle,
+        funding_index,
+    )?;
 
     let equity = ctx.accounts.position.equity(mark_price, funding_index)?;
     let notional = ctx.accounts.position.notional(mark_price)?;
