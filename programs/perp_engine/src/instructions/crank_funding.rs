@@ -1,57 +1,90 @@
 use anchor_lang::prelude::*;
-use crate::errors::PerpError;
-use crate::state::{Market, FUNDING_INDEX_SCALE, MAX_FUNDING_RATE_BPS_PER_INTERVAL};
 
-/// Anyone can call this once a funding interval has elapsed. No admin
-/// required - it only reads open interest and writes a funding index delta,
-/// so there is nothing here for a malicious caller to steal or bias beyond
-/// the interval-clamped, skew-derived rate below.
+use crate::errors::PerpError;
+use crate::events::FundingAccrued;
+use crate::instructions::guards::require_protocol_live;
+use crate::math::funding;
+use crate::state::{GlobalConfig, Market, PriceOracle};
+
+/// Accrue funding. Permissionless: anyone may call once an interval has
+/// elapsed.
+///
+/// There is nothing here for a caller to bias. The rate is derived from open
+/// interest they do not control, clamped to a constant they cannot configure,
+/// and the number of intervals is capped, so calling early, late, or repeatedly
+/// changes nothing except who pays the transaction fee.
+///
+/// # The oracle account is new and not optional
+///
+/// The original `CrankFunding` took only the market, because its funding index
+/// was a bare rate with no price in it. That was the bug: funding is a charge on
+/// *notional*, so the index has to be denominated in quote per base unit, which
+/// means the mark price must be read here. Without it a $200 asset and a $1
+/// asset were charged identically.
 #[derive(Accounts)]
 pub struct CrankFunding<'info> {
+    pub cranker: Signer<'info>,
+
+    #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
+    pub config: Account<'info, GlobalConfig>,
+
     #[account(
         mut,
+        seeds = [Market::SEED, oracle.key().as_ref()],
+        bump = market.bump,
         constraint = !market.paused @ PerpError::MarketPaused
     )]
     pub market: Account<'info, Market>,
+
+    #[account(address = market.oracle @ PerpError::OracleMismatch)]
+    pub oracle: Account<'info, PriceOracle>,
 }
 
 pub fn handler(ctx: Context<CrankFunding>) -> Result<()> {
-    let market = &mut ctx.accounts.market;
+    require_protocol_live(&ctx.accounts.config)?;
+
     let now = Clock::get()?.unix_timestamp;
+    let mark_price = ctx.accounts.oracle.validated_price(now)?;
+    let market = &mut ctx.accounts.market;
 
     let elapsed = now
         .checked_sub(market.last_funding_ts)
         .ok_or(PerpError::MathOverflow)?;
-    require!(elapsed >= market.funding_interval_secs, PerpError::FundingNotDue);
+    require!(
+        elapsed >= market.funding_interval_secs,
+        PerpError::FundingNotDue
+    );
 
-    // Longs pay shorts when open interest skews long, and vice versa.
-    // Rate is clamped to MAX_FUNDING_RATE_BPS_PER_INTERVAL regardless of
-    // how extreme the skew is, and scaled down if more than one interval
-    // has elapsed since the last crank so a late crank doesn't overshoot.
+    let intervals = funding::intervals_elapsed(elapsed, market.funding_interval_secs)?;
     let skew_bps = market.skew_bps()?;
-    let clamped_bps = skew_bps
-        .max(-MAX_FUNDING_RATE_BPS_PER_INTERVAL)
-        .min(MAX_FUNDING_RATE_BPS_PER_INTERVAL);
-
-    let intervals_elapsed = (elapsed as i128)
-        .checked_div(market.funding_interval_secs as i128)
-        .ok_or(PerpError::MathOverflow)?
-        .max(1);
-
-    // Index delta expressed per unit base size, scaled by FUNDING_INDEX_SCALE.
-    let delta = clamped_bps
-        .checked_mul(intervals_elapsed)
-        .ok_or(PerpError::MathOverflow)?
-        .checked_mul(FUNDING_INDEX_SCALE)
-        .ok_or(PerpError::MathOverflow)?
-        .checked_div(10_000)
-        .ok_or(PerpError::MathOverflow)?;
+    let rate_bps = funding::funding_rate_bps(skew_bps, market.funding_sensitivity_bps)?;
+    let delta = funding::funding_index_delta(rate_bps, mark_price, intervals)?;
 
     market.cumulative_funding_index = market
         .cumulative_funding_index
         .checked_add(delta)
         .ok_or(PerpError::MathOverflow)?;
-    market.last_funding_ts = now;
 
+    // Advance by exactly the intervals settled, not to `now`. If the cap in
+    // `intervals_elapsed` truncated a long gap, the unsettled remainder stays
+    // owed and the next crank picks it up, instead of being silently forgiven.
+    let consumed = i64::try_from(intervals)
+        .map_err(|_| PerpError::MathOverflow)?
+        .checked_mul(market.funding_interval_secs)
+        .ok_or(PerpError::MathOverflow)?;
+    market.last_funding_ts = market
+        .last_funding_ts
+        .checked_add(consumed)
+        .ok_or(PerpError::MathOverflow)?;
+
+    emit!(FundingAccrued {
+        market: market.key(),
+        cranker: ctx.accounts.cranker.key(),
+        skew_bps,
+        rate_bps,
+        intervals,
+        mark_price,
+        index_after: market.cumulative_funding_index,
+    });
     Ok(())
 }

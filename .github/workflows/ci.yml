@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # The fast gate. No Solana toolchain, no validator - just the arithmetic.
+  # This is the job that should stay under a minute and catch most regressions.
+  unit:
+    name: unit tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.79.0"
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --lib -- -D warnings
+
+      - name: Unit tests
+        run: cargo test --lib
+
+  # Guards the fix documented in BUILD.md. Without this, the next routine
+  # `cargo update` silently pulls an edition-2024 crate back into the lock and
+  # `anchor build` breaks on a developer machine days later, with an error that
+  # names a transitive dependency nobody recognises.
+  msrv-audit:
+    name: lockfile builds on platform-tools rustc
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Audit Cargo.lock against rustc 1.75
+        run: python3 scripts/audit_msrv.py --max-rust 1.75
+
+  # The slow gate: actually builds the on-chain program and runs the
+  # TypeScript suite against a local validator.
+  anchor:
+    name: anchor build + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: yarn
+
+      - name: Install Solana
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.26/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Cache Anchor CLI
+        id: anchor-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/anchor
+          key: anchor-0.30.1-${{ runner.os }}
+
+      - name: Install Anchor
+        if: steps.anchor-cache.outputs.cache-hit != 'true'
+        run: cargo install --git https://github.com/coral-xyz/anchor --tag v0.30.1 anchor-cli --locked
+
+      - name: Create a throwaway deploy keypair
+        run: |
+          # Never reuse a committed keypair in CI. This one exists for the
+          # length of the job and is thrown away with the runner.
+          solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json
+
+      - run: yarn install --frozen-lockfile
+      - run: anchor build
+      - run: anchor test

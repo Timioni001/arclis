@@ -1,0 +1,13 @@
+# Host toolchain used for `cargo test` / `cargo clippy` / rust-analyzer.
+#
+# This is NOT the toolchain that compiles the on-chain program. `anchor build`
+# shells out to `cargo build-sbf`, which uses the Rust bundled inside Solana's
+# platform-tools (rustc 1.75.0 for the Solana 1.18.x / Anchor 0.30.1 pair this
+# repo targets). That bundled rustc is the reason Cargo.lock is pinned the way
+# it is - see BUILD.md.
+#
+# Keep this at or above the program's `rust-version`, and re-run the lock audit
+# in BUILD.md if you raise it.
+[toolchain]
+channel = "1.79.0"
+components = ["rustfmt", "clippy"]

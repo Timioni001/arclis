@@ -1,16 +1,23 @@
 use anchor_lang::prelude::*;
+
+use crate::constants::MIN_POSITION_NOTIONAL;
 use crate::errors::PerpError;
-use crate::state::{read_oracle_price, Market, PriceOracle, Position, PRICE_SCALE};
+use crate::events::PositionOpened;
+use crate::instructions::guards::require_tradable;
+use crate::math::{fixed, pnl};
+use crate::state::{GlobalConfig, Market, Position, PriceOracle};
 
 #[derive(Accounts)]
 pub struct OpenPosition<'info> {
     pub owner: Signer<'info>,
 
+    #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
+    pub config: Account<'info, GlobalConfig>,
+
     #[account(
         mut,
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
-        constraint = !market.paused @ PerpError::MarketPaused
     )]
     pub market: Account<'info, Market>,
 
@@ -19,105 +26,103 @@ pub struct OpenPosition<'info> {
 
     #[account(
         mut,
-        has_one = owner,
+        has_one = owner @ PerpError::Unauthorized,
         seeds = [Position::SEED, owner.key().as_ref(), market.key().as_ref()],
         bump = position.bump
     )]
     pub position: Account<'info, Position>,
 }
 
-/// size_delta is signed base size (PRICE_SCALE-denominated): positive to go
-/// long / add to a long, negative to go short / add to a short. Flipping
-/// direction in one call is disallowed on purpose - close first, then open
-/// the other way - so entry price accounting never has to net two directions
-/// in the same transaction.
+/// Increase a position. `size_delta` is signed base size at `BASE_SCALE`:
+/// positive opens or adds to a long, negative to a short.
+///
+/// Flipping direction in one call is rejected rather than netted, so entry-price
+/// accounting never has to reconcile two directions inside one instruction.
+/// Close first, then open the other way.
 pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
+    require_tradable(&ctx.accounts.config, &ctx.accounts.market)?;
     require!(size_delta != 0, PerpError::ZeroSize);
 
     let now = Clock::get()?.unix_timestamp;
-    let mark_price = read_oracle_price(&ctx.accounts.oracle, now)?;
+    let fill_price = ctx.accounts.oracle.validated_price(now)?;
+    let funding_index = ctx.accounts.market.cumulative_funding_index;
+    let taker_fee_bps = ctx.accounts.market.taker_fee_bps;
 
-    let market = &mut ctx.accounts.market;
-    let position = &mut ctx.accounts.position;
-
-    if position.size != 0 {
-        let same_direction = (position.size > 0) == (size_delta > 0);
-        require!(same_direction, PerpError::InsufficientPositionSize);
+    {
+        let position = &ctx.accounts.position;
+        if !position.is_flat() {
+            require!(
+                position.is_long() == (size_delta > 0),
+                PerpError::DirectionFlip
+            );
+        }
     }
 
-    let funding_owed = position.funding_owed(market.cumulative_funding_index)?;
-    settle_funding(position, funding_owed)?;
+    // 1. Settle funding against the *old* size, before it changes.
+    let funding_settled = ctx.accounts.position.settle_funding(funding_index)?;
 
-    let old_size = position.size as i128;
-    let new_size = old_size
-        .checked_add(size_delta as i128)
-        .ok_or(PerpError::MathOverflow)?;
+    // 2. Charge the taker fee on the notional being added, and route it to the
+    //    market's insurance balance. The original engine stored `fee_bps` and
+    //    never charged it, so the insurance fund had no funding source at all
+    //    and could never cover the bad debt it was nominally there for.
+    let added_notional = pnl::notional(size_delta, fill_price)?;
+    let fee = fixed::to_u64(pnl::fee_on_notional(added_notional, taker_fee_bps)?)?;
 
-    let old_notional = old_size
-        .checked_abs()
-        .ok_or(PerpError::MathOverflow)?
-        .checked_mul(position.entry_price as i128)
-        .ok_or(PerpError::MathOverflow)?;
-    let added_notional = (size_delta as i128)
-        .checked_abs()
-        .ok_or(PerpError::MathOverflow)?
-        .checked_mul(mark_price as i128)
-        .ok_or(PerpError::MathOverflow)?;
-    let new_abs_size = new_size.checked_abs().ok_or(PerpError::MathOverflow)?;
-    let new_entry_price = if new_abs_size == 0 {
-        0
-    } else {
-        old_notional
-            .checked_add(added_notional)
-            .ok_or(PerpError::MathOverflow)?
-            .checked_div(new_abs_size)
-            .ok_or(PerpError::MathOverflow)?
+    // 3. Re-price the entry and apply the size change.
+    let (size_after, entry_price_after) = {
+        let position = &mut ctx.accounts.position;
+        position.debit_collateral(fee)?;
+
+        let new_entry =
+            pnl::weighted_entry_price(position.size, position.entry_price, size_delta, fill_price)?;
+        let new_size = fixed::to_i64(
+            i128::from(position.size)
+                .checked_add(i128::from(size_delta))
+                .ok_or(PerpError::MathOverflow)?,
+        )?;
+
+        position.size = new_size;
+        position.entry_price = new_entry;
+        position.last_update_ts = now;
+        (new_size, new_entry)
     };
 
-    position.size = new_size as i64;
-    position.entry_price = new_entry_price as u64;
-    position.entry_funding_index = market.cumulative_funding_index;
-    position.last_update_ts = now;
-
-    let added_abs = size_delta.unsigned_abs();
-    if size_delta > 0 {
-        market.open_interest_long = market
-            .open_interest_long
-            .checked_add(added_abs)
-            .ok_or(PerpError::MathOverflow)?;
-    } else {
-        market.open_interest_short = market
-            .open_interest_short
-            .checked_add(added_abs)
-            .ok_or(PerpError::MathOverflow)?;
+    // 4. Move the fee from trader collateral into insurance. Both sides of the
+    //    market's liability accounting move together.
+    {
+        let market = &mut ctx.accounts.market;
+        market.debit_collateral(fee)?;
+        market.credit_insurance(fee)?;
+        market.apply_open_interest(size_delta, true)?;
     }
 
-    let notional = (new_abs_size as u128)
-        .checked_mul(mark_price as u128)
-        .ok_or(PerpError::MathOverflow)?
-        .checked_div(PRICE_SCALE)
-        .ok_or(PerpError::MathOverflow)?;
-    let max_notional = (position.collateral as u128)
-        .checked_mul(market.max_leverage as u128)
-        .ok_or(PerpError::MathOverflow)?;
-    require!(notional <= max_notional, PerpError::ExceedsMaxLeverage);
+    // 5. Dust guard: a position too small to be worth a liquidation
+    //    transaction becomes permanent bad debt if it goes underwater, because
+    //    no rational liquidator will ever close it.
+    let total_notional = pnl::notional(size_after, fill_price)?;
+    require!(
+        total_notional >= i128::from(MIN_POSITION_NOTIONAL),
+        PerpError::PositionTooSmall
+    );
 
-    Ok(())
-}
+    // 6. Health check last, on the final state. This is the check the original
+    //    engine got wrong: it compared notional against raw collateral times
+    //    leverage, ignoring unrealised PnL and unsettled funding, so a position
+    //    deep in the red could add to itself and land below maintenance margin
+    //    in the same instruction.
+    ctx.accounts
+        .position
+        .require_initial_margin(fill_price, &ctx.accounts.market)?;
 
-fn settle_funding(position: &mut Position, funding_owed: i128) -> Result<()> {
-    if funding_owed == 0 {
-        return Ok(());
-    }
-    if funding_owed > 0 {
-        let owed = funding_owed as u64;
-        position.collateral = position.collateral.saturating_sub(owed);
-    } else {
-        let received = (-funding_owed) as u64;
-        position.collateral = position
-            .collateral
-            .checked_add(received)
-            .ok_or(PerpError::MathOverflow)?;
-    }
+    emit!(PositionOpened {
+        market: ctx.accounts.market.key(),
+        owner: ctx.accounts.owner.key(),
+        size_delta,
+        size_after,
+        fill_price,
+        entry_price_after,
+        fee,
+        funding_settled,
+    });
     Ok(())
 }
