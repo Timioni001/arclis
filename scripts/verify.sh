@@ -32,6 +32,17 @@ else
   skip "Rust unit tests" "Rust not installed — run scripts/setup-ubuntu.sh"
 fi
 
+section "The demo — can you show a judge why this is hard?"
+if command -v cargo >/dev/null 2>&1; then
+  if cargo run --quiet --example stock_hazards >/dev/null 2>&1; then
+    pass "stock_hazards demo  (run it: cargo run --example stock_hazards)"
+  else
+    fail "stock_hazards demo"
+  fi
+else
+  skip "stock_hazards demo" "Rust not installed — run scripts/setup-ubuntu.sh"
+fi
+
 section "The launch tooling — does the Meteora config build?"
 if command -v node >/dev/null 2>&1; then
   if [ -d node_modules ]; then
