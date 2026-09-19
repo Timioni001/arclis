@@ -1,57 +1,64 @@
+@import "/fonts/fonts.css";
+
 /*
  * Arclis design tokens.
  *
- * Values come from DESIGN.md. Two deliberate additions, both from running the
- * palette through a contrast/colour-vision validator rather than eyeballing it:
+ * The visual language: near-white warm-grey page, pure white cards with a very
+ * large radius and almost no border - separation comes from a soft, wide
+ * shadow, not a stroke. One bright lime accent carries every active and primary
+ * state; everything else is neutral. Rows inside cards sit on their own faintly
+ * tinted surface rather than being divided by lines.
  *
- *   --chart-1..4   A separate categorical ramp for chart series. The brand
- *                  accents are tuned for UI surfaces and several of them fall
- *                  below 3:1 against the light background - lime is 1.15:1,
- *                  effectively invisible on white. Charts need their own steps
- *                  per mode. Both sets pass lightness-band, chroma, adjacent
- *                  colour-vision separation and contrast.
+ * Typography is After for display and Newblack for text. Both are commercial
+ * and not shipped here; the stacks below name them first and fall back to Plus
+ * Jakarta Sans, which is self-hosted (scripts/fetch-fonts.py). Drop the
+ * licensed woff2 files into app/public/fonts/ and uncomment the two blocks in
+ * fonts.css - nothing else changes.
  *
- *   Positive/negative stay the conventional green/red, but every component that
- *   uses them MUST also carry a sign or a glyph. Under deuteranopia the two are
- *   only 5.1 ΔE apart - below the 8 floor - so colour alone is unreadable for
- *   roughly 8% of men. See `.num-delta` in base.css.
+ * Chart series keep their own ramp, validated per mode for contrast and
+ * colour-vision separation. The lime is a UI accent and is deliberately not a
+ * data colour: at 1.2:1 against white it cannot carry a value.
  */
 
 :root {
-  /* --- light mode surfaces --- */
-  --bg: #f6f8f5;
+  /* --- surfaces --- */
+  --bg: #eef0ed;
   --surface: #ffffff;
-  --surface-muted: #eef2ee;
+  --surface-sunken: #f6f8f5;
+  --surface-muted: #f1f3f0;
   --surface-elevated: #ffffff;
-  --border: #dde4de;
-  --text-primary: #101512;
-  --text-secondary: #5f6a63;
-  --text-muted: #8a948d;
+  --border: #e7eae5;
+  --border-soft: #f0f2ef;
 
-  /* --- accents (brand, mode-independent) --- */
-  --primary: #6c63ff;
-  --primary-soft: #827aff;
-  --primary-bright: #a59fff;
-  --cyan: #18c8ff;
-  --cyan-soft: #54d8ff;
-  --lime: #c9ff3d;
-  --lime-soft: #d8ff72;
-  --positive: #0f9d63;
-  --positive-soft: #24d17e;
-  --negative: #e0384c;
-  --negative-soft: #ff5e70;
-  --warning: #b3700f;
-  --warning-soft: #ffb547;
-  --info: #1d7fc0;
-  --info-soft: #43b9ff;
+  /* --- ink --- */
+  --text-primary: #10150e;
+  --text-secondary: #6b746a;
+  --text-muted: #9aa397;
 
-  /* --- chart categorical ramp: validated for the light surface --- */
+  /* --- the accent --- */
+  --lime: #c6f03f;
+  --lime-bright: #d4f86a;
+  --lime-deep: #aadd1f;
+  --lime-wash: #eefbc9;
+  --on-lime: #16210c;
+
+  /* --- semantic --- */
+  --positive: #16a34a;
+  --positive-wash: #e8f7ec;
+  --negative: #dc2626;
+  --negative-wash: #fdeaea;
+  --warning: #b45309;
+  --warning-wash: #fdf2e3;
+  --info: #0e7490;
+  --info-wash: #e6f4f8;
+
+  /* --- chart ramp: validated against the light surface --- */
   --chart-1: #5b52e8;
   --chart-2: #0a7ea4;
   --chart-3: #a96a00;
   --chart-4: #b3288a;
-  --chart-grid: #e6ebe7;
-  --chart-axis: #8a948d;
+  --chart-grid: #eef0ec;
+  --chart-axis: #9aa397;
 
   /* --- spacing --- */
   --space-1: 4px;
@@ -65,88 +72,70 @@
   --space-9: 48px;
   --space-10: 64px;
 
-  /* --- radius --- */
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
-  --radius-2xl: 32px;
+  /* --- radius: generous, the defining trait of the language --- */
+  --radius-xs: 10px;
+  --radius-sm: 14px;
+  --radius-md: 18px;
+  --radius-lg: 24px;
+  --radius-xl: 28px;
+  --radius-2xl: 36px;
   --radius-pill: 999px;
+
+  /* --- elevation: wide and soft; cards are lifted, not outlined --- */
+  --shadow-sm: 0 1px 2px rgba(16, 21, 14, 0.03), 0 4px 12px rgba(16, 21, 14, 0.03);
+  --shadow-card: 0 1px 2px rgba(16, 21, 14, 0.03), 0 10px 30px rgba(16, 21, 14, 0.05);
+  --shadow-lift: 0 2px 4px rgba(16, 21, 14, 0.04), 0 18px 44px rgba(16, 21, 14, 0.08);
+  --shadow-lime: 0 6px 18px rgba(170, 221, 31, 0.32);
 
   /* --- motion --- */
   --micro: 120ms;
   --fast: 180ms;
   --standard: 240ms;
-  --emphasis: 360ms;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
-  /* --- glow: controlled illumination, not decoration --- */
-  --glow-violet: 0 0 0 1px rgba(108, 99, 255, 0.18), 0 0 24px rgba(108, 99, 255, 0.14);
-  --glow-lime: 0 0 0 1px rgba(201, 255, 61, 0.18), 0 0 28px rgba(201, 255, 61, 0.12);
-  --shadow-card: 0 1px 2px rgba(16, 21, 18, 0.04), 0 4px 16px rgba(16, 21, 18, 0.03);
-
-  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "After", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  --font: "Newblack", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #0d1110;
-    --surface: #141a17;
-    --surface-muted: #1a211d;
-    --surface-elevated: #202923;
-    --border: #303a34;
-    --text-primary: #f4f8f5;
-    --text-secondary: #aeb8b1;
-    --text-muted: #748078;
-
-    --positive: #24d17e;
-    --positive-soft: #6be6a8;
-    --negative: #ff5e70;
-    --negative-soft: #ff8996;
-    --warning: #ffb547;
-    --warning-soft: #ffd17a;
-    --info: #43b9ff;
-    --info-soft: #7bd2ff;
-
-    /* chart ramp re-stepped for the dark surface, not flipped */
-    --chart-1: #7d75f0;
-    --chart-2: #1fa0c4;
-    --chart-3: #c2861f;
-    --chart-4: #ce4e98;
-    --chart-grid: #232b26;
-    --chart-axis: #748078;
-
-    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.22);
-  }
-}
-
+/*
+ * Dark mode is a considered variant, not an inversion. Same lime, same radii,
+ * same shadow logic; surfaces step down through near-black greens so the accent
+ * stays the only saturated thing on screen.
+ */
 :root[data-theme="dark"] {
-  --bg: #0d1110;
-  --surface: #141a17;
-  --surface-muted: #1a211d;
-  --surface-elevated: #202923;
-  --border: #303a34;
-  --text-primary: #f4f8f5;
-  --text-secondary: #aeb8b1;
-  --text-muted: #748078;
+  --bg: #0b0d0a;
+  --surface: #14170f;
+  --surface-sunken: #1b1f17;
+  --surface-muted: #1f2419;
+  --surface-elevated: #1b1f17;
+  --border: #272c20;
+  --border-soft: #1f2419;
 
-  --positive: #24d17e;
-  --positive-soft: #6be6a8;
-  --negative: #ff5e70;
-  --negative-soft: #ff8996;
-  --warning: #ffb547;
-  --warning-soft: #ffd17a;
-  --info: #43b9ff;
-  --info-soft: #7bd2ff;
+  --text-primary: #f3f6ef;
+  --text-secondary: #a8b0a2;
+  --text-muted: #737c6e;
+
+  --lime-wash: #2a3a12;
+  --on-lime: #101806;
+
+  --positive: #4ade80;
+  --positive-wash: #16281c;
+  --negative: #f87171;
+  --negative-wash: #2b1717;
+  --warning: #fbbf24;
+  --warning-wash: #2c2210;
+  --info: #38bdf8;
+  --info-wash: #10242c;
 
   --chart-1: #7d75f0;
   --chart-2: #1fa0c4;
   --chart-3: #c2861f;
   --chart-4: #ce4e98;
-  --chart-grid: #232b26;
-  --chart-axis: #748078;
+  --chart-grid: #232819;
+  --chart-axis: #737c6e;
 
-  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 20px rgba(0, 0, 0, 0.22);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);
+  --shadow-lift: 0 2px 4px rgba(0, 0, 0, 0.4), 0 18px 44px rgba(0, 0, 0, 0.45);
 }

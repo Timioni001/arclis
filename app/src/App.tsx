@@ -13,12 +13,13 @@ import { Liquidity } from "./screens/Liquidity";
 import { Treasury } from "./screens/Treasury";
 import { Portfolio } from "./screens/Portfolio";
 import { shortAddress } from "./lib/format";
+import { Icon } from "./components/ui";
 
-const TABS = ["Markets", "Trade", "Portfolio", "Liquidity", "Treasuries"] as const;
+const TABS = ["Overview", "Trade", "Portfolio", "Liquidity", "Treasuries"] as const;
 type Tab = (typeof TABS)[number];
 
 export function App({ source }: { source: DataSource }) {
-  const [tab, setTab] = useState<Tab>("Markets");
+  const [tab, setTab] = useState<Tab>("Overview");
   const [symbol, setSymbol] = useState<string>("AAPL");
   const [theme, setTheme] = useState<"light" | "dark">(
     () =>
@@ -55,10 +56,9 @@ export function App({ source }: { source: DataSource }) {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden />
-          <span>Arclis</span>
-        </div>
+        {/* The wordmark is the mark. No logo glyph — the name set in the
+            display face at 800 carries it. */}
+        <div className="wordmark">arclis</div>
 
         <nav className="nav" aria-label="Primary">
           {TABS.map((t) => (
@@ -80,19 +80,23 @@ export function App({ source }: { source: DataSource }) {
               DEMO DATA
             </span>
           )}
-          <button
-            className="btn btn-sm"
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-          >
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
+
+          <div className="icon-cluster">
+            <button className="icon-btn" aria-label="Search"><Icon name="search" /></button>
+            <button className="icon-btn" aria-label="Notifications"><Icon name="bell" /></button>
+            <button
+              className="icon-btn"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            >
+              {theme === "dark" ? "☀" : "☾"}
+            </button>
+          </div>
+
           {wallet ? (
-            <span className="pill" data-tone="open" title={wallet}>
-              <span className="dot" aria-hidden />
-              {shortAddress(wallet)}
-            </span>
+            <button className="avatar" title={`Connected ${shortAddress(wallet)}`} aria-label={`Wallet ${shortAddress(wallet)}`}>
+              <Icon name="wallet" size={18} />
+            </button>
           ) : (
             <button className="btn btn-sm btn-primary">Connect wallet</button>
           )}
@@ -100,7 +104,7 @@ export function App({ source }: { source: DataSource }) {
       </header>
 
       <main>
-        {tab === "Markets" && <Markets markets={markets} onOpen={openMarket} />}
+        {tab === "Overview" && <Markets markets={markets} onOpen={openMarket} />}
 
         {tab === "Trade" && view && (
           <Trade
@@ -108,7 +112,7 @@ export function App({ source }: { source: DataSource }) {
             position={source.positionFor(view.market.address)}
             corporateActions={source.corporateActions(view.oracle.symbol)}
             now={now}
-            onBack={() => setTab("Markets")}
+            onBack={() => setTab("Overview")}
           />
         )}
 

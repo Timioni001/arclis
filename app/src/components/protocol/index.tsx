@@ -8,7 +8,7 @@
 import type { ReactNode } from "react";
 import type { MarketSession, Oracle } from "../../lib/protocol/types";
 import { SESSION_LABEL } from "../../lib/protocol/session";
-import { StatusPill, Notice, Meter, Legend, type Tone } from "../ui";
+import { StatusPill, Notice, SegBar, Legend, Chip, Icon, ListRow, type Tone } from "../ui";
 import { ago, confidencePct, pctPlain, sessionOpensAt, usd, shares } from "../../lib/format";
 
 const SESSION_TONE: Record<MarketSession, Tone> = {
@@ -66,12 +66,14 @@ export function OracleStatus({ oracle, now }: { oracle: Oracle; now: number }) {
 
   return (
     <div>
-      <div className="metric-label">Oracle</div>
-      <div className="num" style={{ fontSize: 17, fontWeight: 600, marginTop: 2 }}>
-        {usd(oracle.price, { compact: false })}
-      </div>
-      <div className="metric-sub">
-        {conf.toFixed(1)}% confidence · {ago(oracle.lastUpdateTs, now)}
+      <div className="row-item" style={{ background: "var(--surface-sunken)" }}>
+        <Chip small><Icon name="target" size={15} /></Chip>
+        <div className="row-main">
+          <div className="row-title num">{usd(oracle.price, { compact: false })}</div>
+          <div className="row-sub">
+            Oracle · {conf.toFixed(1)}% confidence · {ago(oracle.lastUpdateTs, now)}
+          </div>
+        </div>
       </div>
       {stale && (
         <div style={{ marginTop: "var(--space-2)" }}>
@@ -129,11 +131,11 @@ export function MarginHealth({
           {label}
         </span>
       </div>
-      <Meter
+      <SegBar
         value={margin}
-        max={Math.max(margin * 1.25, maintenance * 4)}
-        threshold={maintenance}
-        tone={tone}
+        max={Math.max(margin * 1.2, maintenance * 4)}
+        segments={14}
+        tone={tone === "positive" ? "positive" : tone === "warning" ? "warning" : "negative"}
         ariaLabel={`Margin ratio ${margin.toFixed(1)} percent, maintenance ${maintenance.toFixed(1)} percent`}
       />
       <dl style={{ margin: "var(--space-3) 0 0" }}>
@@ -178,41 +180,52 @@ export function CorporateActionCard({
   sizeAfter?: bigint;
 }) {
   return (
-    <div className="notice" data-tone="info">
-      <div style={{ width: "100%" }}>
-        <div className="notice-title">
-          {symbol} · {numerator}:{denominator} stock split
+    <section className="card" style={{ borderLeft: "4px solid var(--lime)" }}>
+      <div className="card-head">
+        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+          <Chip accent>
+            <Icon name="swap" />
+          </Chip>
+          <div>
+            <h3 className="card-title">
+              {symbol} · {numerator}:{denominator} stock split
+            </h3>
+            <div className="card-note">Applied on-chain — positions rescaled automatically</div>
+          </div>
         </div>
-        <dl style={{ margin: "var(--space-2) 0 0" }}>
-          <div className="metric-row">
-            <dt>Previous price</dt>
-            <dd className="num">{usd(priceBefore, { compact: false })}</dd>
-          </div>
-          <div className="metric-row">
-            <dt>Adjusted price</dt>
-            <dd className="num">{usd(priceAfter, { compact: false })}</dd>
-          </div>
-          {sizeBefore !== undefined && sizeAfter !== undefined && (
-            <div className="metric-row">
-              <dt>Your position</dt>
-              <dd className="num">
-                {shares(sizeBefore)} → {shares(sizeAfter)} shares
-              </dd>
-            </div>
-          )}
-          <div className="metric-row">
-            <dt>P&L impact</dt>
-            <dd className="num" style={{ color: "var(--positive)" }}>
-              $0.00
-            </dd>
-          </div>
-        </dl>
-        <div className="metric-sub" style={{ marginTop: "var(--space-2)" }}>
-          Historical prices on the chart are adjusted. Position size was rescaled automatically —
-          your exposure and cost basis are unchanged.
-        </div>
+        <StatusPill tone="lime" dot={false}>
+          NO P&amp;L IMPACT
+        </StatusPill>
       </div>
-    </div>
+
+      <div className="rows">
+        <ListRow
+          title="Quoted price"
+          sub="Historical prices on the chart are adjusted"
+          value={
+            <span>
+              {usd(priceBefore, { compact: false })} → {usd(priceAfter, { compact: false })}
+            </span>
+          }
+        />
+        {sizeBefore !== undefined && sizeAfter !== undefined && (
+          <ListRow
+            title="Your position"
+            sub="Exposure and cost basis unchanged"
+            value={
+              <span>
+                {shares(sizeBefore)} → {shares(sizeAfter)} shares
+              </span>
+            }
+          />
+        )}
+        <ListRow
+          title="P&L impact"
+          sub="A split changes the share count, not the value"
+          value={<span style={{ color: "var(--positive)" }}>$0.00</span>}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -287,6 +300,9 @@ export function HedgeHealth({
   const full = Number(stockQty) || 1;
   const pos = Math.max(-1, Math.min(1, Number(netDelta) / full));
   const band = toleranceBps / 10_000;
+  // Drawn width only: a narrow band would otherwise be indistinguishable from
+  // the centre line. The stated tolerance above is the real value.
+  const drawnBand = Math.max(band, 0.06);
   const within = Math.abs(pos) <= band;
 
   return (
@@ -301,7 +317,7 @@ export function HedgeHealth({
         style={{
           position: "relative",
           height: 34,
-          background: "var(--surface-muted)",
+          background: "var(--surface-sunken)",
           borderRadius: "var(--radius-pill)",
         }}
       >
@@ -310,11 +326,11 @@ export function HedgeHealth({
           aria-hidden
           style={{
             position: "absolute",
-            left: `${50 - band * 50}%`,
-            width: `${band * 100}%`,
+            left: `${50 - drawnBand * 50}%`,
+            width: `${drawnBand * 100}%`,
             top: 0,
             bottom: 0,
-            background: "color-mix(in srgb, var(--positive) 18%, transparent)",
+            background: "var(--lime-wash)",
             borderRadius: "var(--radius-pill)",
           }}
         />
@@ -330,7 +346,7 @@ export function HedgeHealth({
             width: 14,
             height: 14,
             borderRadius: "50%",
-            background: within ? "var(--positive)" : "var(--warning)",
+            background: within ? "var(--lime)" : "var(--warning)",
             border: "2px solid var(--surface)",
             transition: "left var(--standard) var(--ease-out)",
           }}

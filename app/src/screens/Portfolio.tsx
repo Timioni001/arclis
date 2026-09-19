@@ -8,9 +8,24 @@
 import { useMemo } from "react";
 import type { ActivityEvent, MarketView, Position } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
-import { Card, Delta, Empty, Metric, Meter, StatTile } from "../components/ui";
+import { Card, Chip, Delta, Empty, Icon, ListRow, Metric, SegBar, StatTile, type IconName } from "../components/ui";
 import { PriceChart } from "../components/charts/PriceChart";
 import { ago, pct, shares as fmtShares, usd, usdSigned, pctPlain } from "../lib/format";
+
+/** One icon per event kind, so the feed is scannable without reading it. */
+const ACTIVITY_ICON: Partial<Record<ActivityEvent["kind"], IconName>> = {
+  PositionOpened: "arrowUp",
+  PositionClosed: "arrowDown",
+  CollateralDeposited: "plus",
+  CollateralWithdrawn: "arrowDown",
+  FundingAccrued: "clock",
+  PositionLiquidated: "alert",
+  LiquidityDeposited: "droplet",
+  LiquidityWithdrawn: "droplet",
+  SessionChanged: "clock",
+  CorporateActionApplied: "swap",
+  TreasuryHedgeRebalanced: "shield",
+};
 
 export function Portfolio({
   positions,
@@ -98,7 +113,7 @@ export function Portfolio({
         <Card>
           <Metric label="Notional exposure" value={usd(totalNotional)} sub={`${marginUsed.toFixed(1)}× equity`} size="lg" />
           <div style={{ marginTop: "var(--space-3)" }}>
-            <Meter value={marginUsed} max={10} tone={marginUsed < 5 ? "positive" : "warning"} ariaLabel="Leverage against equity" />
+            <SegBar value={marginUsed} max={10} segments={10} tone={marginUsed < 5 ? undefined : "warning"} ariaLabel="Leverage against equity" />
           </div>
         </Card>
         <Card>
@@ -126,8 +141,15 @@ export function Portfolio({
                 {rows.map((r) => (
                   <tr key={r.symbol} onClick={() => onOpen(r.symbol)} style={{ cursor: "pointer" }}>
                     <td>
-                      <strong>{r.symbol}</strong>
-                      <div className="metric-sub">{r.size > 0n ? "Long" : "Short"}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+                        <Chip small tone={r.pnl >= 0n ? "positive" : "negative"}>
+                          <Icon name={r.size > 0n ? "arrowUp" : "arrowDown"} size={15} />
+                        </Chip>
+                        <div>
+                          <strong>{r.symbol}</strong>
+                          <div className="metric-sub">{r.size > 0n ? "Long" : "Short"}</div>
+                        </div>
+                      </div>
                     </td>
                     <td className="right">{fmtShares(r.size)}</td>
                     <td className="right">{usd(r.entry, { compact: false })}</td>
@@ -146,18 +168,15 @@ export function Portfolio({
         </Card>
 
         <Card title="Recent activity">
-          <div className="timeline">
+          <div className="rows">
             {activity.map((e) => (
-              <div className="tl-item" key={e.id}>
-                <span className="tl-dot" aria-hidden />
-                <div>
-                  <div className="tl-title">{e.summary}</div>
-                  <div className="tl-meta">
-                    {e.detail ? `${e.detail} · ` : ""}
-                    {ago(e.ts, now)}
-                  </div>
-                </div>
-              </div>
+              <ListRow
+                key={e.id}
+                icon={<Chip small accent={e.kind === "PositionOpened"}><Icon name={ACTIVITY_ICON[e.kind] ?? "chart"} size={15} /></Chip>}
+                title={e.summary}
+                sub={e.detail}
+                meta={ago(e.ts, now)}
+              />
             ))}
           </div>
         </Card>

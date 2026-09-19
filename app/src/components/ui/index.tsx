@@ -1,10 +1,13 @@
+import type { ReactNode, CSSProperties } from "react";
+export { Icon, type IconName } from "./Icon";
 /**
  * UI primitives.
  *
- * Small, composable, token-driven. Nothing here knows about the protocol - the
- * protocol-aware components live in `components/protocol`.
+ * The repeating units of the design language: a white card with a large radius
+ * and a soft wide shadow, rows that sit on their own tinted surface rather than
+ * being divided by lines, rounded-square icon chips where lime marks the one
+ * that matters, and discrete segmented progress instead of a continuous fill.
  */
-import type { ReactNode, CSSProperties } from "react";
 
 export function Card({
   children,
@@ -14,6 +17,7 @@ export function Card({
   large,
   className = "",
   style,
+  onClick,
 }: {
   children: ReactNode;
   title?: ReactNode;
@@ -22,9 +26,10 @@ export function Card({
   large?: boolean;
   className?: string;
   style?: CSSProperties;
+  onClick?: () => void;
 }) {
   return (
-    <section className={`card ${large ? "card-lg" : ""} ${className}`} style={style}>
+    <section className={`card ${large ? "card-lg" : ""} ${className}`} style={style} onClick={onClick}>
       {(title || action) && (
         <header className="card-head">
           <div>
@@ -39,15 +44,100 @@ export function Card({
   );
 }
 
-export type Tone = "open" | "closed" | "preopen" | "halted" | "info" | "neutral";
-
-export function StatusPill({ tone, children }: { tone: Tone; children: ReactNode }) {
+export function CardLink({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
   return (
-    <span className="pill" data-tone={tone}>
-      <span className="dot" aria-hidden />
+    <button className="card-link" onClick={onClick}>
+      {children}
+    </button>
+  );
+}
+
+/**
+ * A rounded-square icon holder.
+ *
+ * `accent` turns it lime. Exactly one chip per group should be accented — it is
+ * how the eye finds the primary thing, and it stops meaning anything if
+ * everything glows.
+ */
+export function Chip({
+  children,
+  accent,
+  tone,
+  small,
+}: {
+  children: ReactNode;
+  accent?: boolean;
+  tone?: "positive" | "negative";
+  small?: boolean;
+}) {
+  return (
+    <span className={`chip ${small ? "chip-sm" : ""}`} data-accent={accent} data-tone={tone} aria-hidden>
       {children}
     </span>
   );
+}
+
+/** The list row the reference repeats everywhere: chip, title/sub, value/meta. */
+export function ListRow({
+  icon,
+  title,
+  sub,
+  value,
+  meta,
+  accent,
+  onClick,
+}: {
+  icon?: ReactNode;
+  title: ReactNode;
+  sub?: ReactNode;
+  value?: ReactNode;
+  meta?: ReactNode;
+  accent?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <div
+      className="row-item"
+      data-accent={accent}
+      data-clickable={onClick ? "true" : undefined}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={(e) => {
+        if (onClick && (e.key === "Enter" || e.key === " ")) {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+    >
+      {icon}
+      <div className="row-main">
+        <div className="row-title">{title}</div>
+        {sub && <div className="row-sub">{sub}</div>}
+      </div>
+      {(value || meta) && (
+        <div className="row-side num">
+          {value && <div className="row-value">{value}</div>}
+          {meta && <div className="row-meta">{meta}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export type Tone = "open" | "closed" | "preopen" | "halted" | "info" | "neutral" | "lime";
+
+export function StatusPill({ tone, children, dot = true }: { tone: Tone; children: ReactNode; dot?: boolean }) {
+  return (
+    <span className="pill" data-tone={tone}>
+      {dot && <span className="dot" aria-hidden />}
+      {children}
+    </span>
+  );
+}
+
+export function BadgeLime({ children }: { children: ReactNode }) {
+  return <span className="badge-lime">{children}</span>;
 }
 
 export function Metric({
@@ -56,7 +146,7 @@ export function Metric({
   sub,
   size = "md",
 }: {
-  label: ReactNode;
+  label?: ReactNode;
   value: ReactNode;
   sub?: ReactNode;
   size?: "md" | "lg" | "xl";
@@ -64,7 +154,7 @@ export function Metric({
   const cls = size === "xl" ? "metric-value-xl" : size === "lg" ? "metric-value-lg" : "";
   return (
     <div>
-      <div className="metric-label">{label}</div>
+      {label && <div className="metric-label">{label}</div>}
       <div className={`metric-value num ${cls}`}>{value}</div>
       {sub && <div className="metric-sub">{sub}</div>}
     </div>
@@ -75,9 +165,7 @@ export function StatTile({ label, value, sub }: { label: ReactNode; value: React
   return (
     <div className="stat-tile">
       <div className="metric-label">{label}</div>
-      <div className="num" style={{ fontSize: 17, fontWeight: 600, marginTop: 2 }}>
-        {value}
-      </div>
+      <div className="metric-value num">{value}</div>
       {sub && <div className="metric-sub">{sub}</div>}
     </div>
   );
@@ -86,10 +174,10 @@ export function StatTile({ label, value, sub }: { label: ReactNode; value: React
 /**
  * A signed value.
  *
- * Always renders a direction glyph alongside the colour. Positive and negative
- * in this palette are 5.1 ΔE apart under deuteranopia - below the readability
- * floor - so colour on its own would be invisible to a substantial minority of
- * users. The glyph is not decoration; it is the accessible channel.
+ * Always renders a direction glyph beside the colour. Positive and negative are
+ * 5.1 ΔE apart under deuteranopia — below the readability floor — so colour
+ * alone is unreadable for roughly 8% of men. The glyph is the accessible
+ * channel, not decoration.
  */
 export function Delta({
   value,
@@ -148,23 +236,23 @@ export function Button({
   children,
   variant = "default",
   block,
+  small,
   disabled,
   onClick,
   title,
-  type = "button",
 }: {
   children: ReactNode;
   variant?: "default" | "primary";
   block?: boolean;
+  small?: boolean;
   disabled?: boolean;
   onClick?: () => void;
   title?: string;
-  type?: "button" | "submit";
 }) {
   return (
     <button
-      type={type}
-      className={`btn ${variant === "primary" ? "btn-primary" : ""} ${block ? "btn-block" : ""}`}
+      type="button"
+      className={`btn ${variant === "primary" ? "btn-primary" : ""} ${block ? "btn-block" : ""} ${small ? "btn-sm" : ""}`}
       disabled={disabled}
       onClick={onClick}
       title={title}
@@ -232,56 +320,41 @@ export function NumberField({
   );
 }
 
-/** A meter with a labelled threshold — used for margin and utilisation. */
-export function Meter({
+/**
+ * Discrete segmented progress.
+ *
+ * Countable rather than continuous, which is the reference's signature and is
+ * genuinely easier to read at a glance: "seven of twelve" lands faster than a
+ * bar that is 58% full.
+ */
+export function SegBar({
   value,
   max = 100,
-  threshold,
-  tone = "primary",
+  segments = 12,
+  tone,
+  small,
   ariaLabel,
 }: {
   value: number;
   max?: number;
-  threshold?: number;
-  tone?: "primary" | "positive" | "warning" | "negative";
+  segments?: number;
+  tone?: "positive" | "warning" | "negative";
+  small?: boolean;
   ariaLabel: string;
 }) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
-  const color =
-    tone === "positive"
-      ? "var(--positive)"
-      : tone === "warning"
-        ? "var(--warning)"
-        : tone === "negative"
-          ? "var(--negative)"
-          : "var(--primary)";
+  const filled = Math.round(Math.max(0, Math.min(1, value / max)) * segments);
   return (
-    <div style={{ position: "relative" }}>
-      <div
-        className="bar"
-        role="meter"
-        aria-valuenow={Math.round(value)}
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-label={ariaLabel}
-      >
-        <span style={{ width: `${pct}%`, background: color, borderRadius: "var(--radius-pill)" }} />
-      </div>
-      {threshold !== undefined && (
-        <span
-          aria-hidden
-          title="Maintenance threshold"
-          style={{
-            position: "absolute",
-            left: `${Math.max(0, Math.min(100, (threshold / max) * 100))}%`,
-            top: -3,
-            width: 2,
-            height: 14,
-            background: "var(--text-muted)",
-            borderRadius: 1,
-          }}
-        />
-      )}
+    <div
+      className={`segbar ${small ? "segbar-sm" : ""}`}
+      role="meter"
+      aria-valuenow={Math.round(value)}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-label={ariaLabel}
+    >
+      {Array.from({ length: segments }, (_, i) => (
+        <span key={i} data-on={i < filled} data-tone={tone} />
+      ))}
     </div>
   );
 }
@@ -306,5 +379,49 @@ export function Legend({ items }: { items: { label: string; color: string }[] })
         </span>
       ))}
     </div>
+  );
+}
+
+/** The front-page banner: lime gradient, soft blobs, headline, pill CTA. */
+export function Hero({
+  eyebrow,
+  title,
+  highlight,
+  body,
+  cta,
+  onCta,
+}: {
+  eyebrow?: string;
+  title: string;
+  highlight?: string;
+  body?: ReactNode;
+  cta?: string;
+  onCta?: () => void;
+}) {
+  return (
+    <section className="hero">
+      <div className="hero-blobs" aria-hidden>
+        <span className="hero-blob" style={{ width: 168, height: 168, right: "6%", top: "-28%" }} />
+        <span className="hero-blob" style={{ width: 96, height: 96, right: "23%", bottom: "-18%", opacity: 0.75 }} />
+        <span className="hero-blob" style={{ width: 54, height: 54, right: "38%", top: "22%", opacity: 0.6 }} />
+      </div>
+      <div className="hero-body">
+        {eyebrow && (
+          <div style={{ fontWeight: 700, fontSize: 12.5, opacity: 0.7, marginBottom: 10, letterSpacing: "0.04em" }}>
+            {eyebrow}
+          </div>
+        )}
+        <h1>
+          {title}{" "}
+          {highlight && <span className="hero-mark">{highlight}</span>}
+        </h1>
+        {body && <p>{body}</p>}
+        {cta && (
+          <button className="hero-cta" onClick={onCta}>
+            {cta} <span aria-hidden>→</span>
+          </button>
+        )}
+      </div>
+    </section>
   );
 }

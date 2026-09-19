@@ -64,16 +64,53 @@ component knows which it is talking to.
 The `DEMO DATA` badge in the header is driven by `source.kind`, so it disappears
 by itself once the RPC source is wired.
 
-## Design notes that came out of building it
+## The visual language
 
-The palette in `DESIGN.md` was run through a contrast and colour-vision
-validator rather than eyeballed. Two things came back:
+Near-white warm-grey page, pure white cards at a large radius with a soft wide
+shadow and barely any border — separation comes from elevation, not strokes.
+One bright lime carries every active and primary state; everything else is
+neutral. Rows inside cards sit on their own faintly tinted surface rather than
+being divided by lines. Progress is **discrete segments**, not a continuous
+fill, because "seven of twelve" reads faster than a bar that is 58% full.
 
-- **Several brand accents fail contrast on the light surface** — lime is 1.15:1
-  against white, effectively invisible. Charts therefore have their own
-  categorical ramp (`--chart-1..4`), re-stepped per mode rather than flipped.
-  Both sets pass lightness-band, chroma, adjacent-pair CVD separation and
-  contrast.
+The wordmark is the mark — no logo glyph.
+
+### Fonts
+
+Designed for **After** (display) and **Newblack** (text). Both are commercial
+and not redistributed here. `tokens.css` names them first in
+`--font-display` / `--font`, and falls back to Plus Jakarta Sans, which is close
+in construction — geometric, wide apertures, tall x-height.
+
+The fallback is **self-hosted**, not linked from a CDN, so the interface renders
+identically offline, in CI and behind a proxy with no third-party request on
+first paint:
+
+```bash
+python3 scripts/fetch-fonts.py     # refreshes app/public/fonts/
+```
+
+To use the licensed faces: drop `after.woff2` and `newblack.woff2` into
+`app/public/fonts/` and uncomment the two blocks at the top of
+`app/public/fonts/fonts.css`. Nothing else changes.
+
+### Icons
+
+A small hand-built inline-SVG set (`components/ui/Icon.tsx`), drawn on a 24×24
+grid with a 1.8 stroke. The first pass used unicode glyphs (⌕ ◔ ⇄) and they
+rendered at different sizes and baselines across platforms, with some falling
+back to a system font entirely.
+
+## Colour, validated rather than eyeballed
+
+The palette was run through a contrast and colour-vision validator. Two things
+came back:
+
+- **The lime cannot carry data.** At roughly 1.2:1 against white it is
+  invisible as a chart series, so it is a UI accent only — active states,
+  primary buttons, badges — and charts have their own categorical ramp
+  (`--chart-1..4`), re-stepped per mode rather than flipped. Both sets pass
+  lightness-band, chroma, adjacent-pair CVD separation and contrast.
 
 - **Positive and negative are 5.1 ΔE apart under deuteranopia**, below the
   readability floor — so red/green alone is unreadable for roughly 8% of men.

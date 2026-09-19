@@ -8,14 +8,13 @@
       name="description"
       content="Arclis: on-chain access to public markets. Oracle-priced perpetuals on tokenized equities, with a market calendar, corporate actions and a funded counterparty."
     />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Fonts are self-hosted from /fonts (scripts/fetch-fonts.py). No
+         third-party request on first paint, and the interface renders the same
+         offline, in CI and behind a proxy. -->
+    <link rel="preload" href="/fonts/pjs-latin-700.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="/fonts/pjs-latin-800.woff2" as="font" type="font/woff2" crossorigin />
   </head>
-  <body>
+  <body style="background:#eef0ed">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

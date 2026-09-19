@@ -142,7 +142,7 @@ export function Trade({
   return (
     <div className="page">
       <button className="btn btn-sm" style={{ alignSelf: "flex-start" }} onClick={onBack}>
-        ← Markets
+        ← Overview
       </button>
 
       {/* --- market header --- */}

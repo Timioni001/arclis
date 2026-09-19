@@ -12,7 +12,7 @@
 import { useMemo, useState } from "react";
 import type { LpPosition, MarketView } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
-import { Button, Card, Delta, Metric, Meter, Notice, NumberField, Row, StatTile } from "../components/ui";
+import { Button, Card, CardLink, Chip, Delta, Icon, ListRow, Metric, Notice, NumberField, Row, SegBar, StatTile } from "../components/ui";
 import { ExposureBreakdown } from "../components/protocol";
 import { duration, usd, pctPlain } from "../lib/format";
 
@@ -115,12 +115,13 @@ export function Liquidity({
             size="lg"
           />
           <div style={{ marginTop: "var(--space-3)" }}>
-            <Meter
+            <SegBar
               value={stats.util === null ? 100 : Number(stats.util) / 100}
               max={view.market.maxUtilizationBps / 100}
+              segments={14}
               tone={
                 stats.util !== null && Number(stats.util) < view.market.maxUtilizationBps * 0.7
-                  ? "positive"
+                  ? undefined
                   : "warning"
               }
               ariaLabel="Pool utilisation against its cap"
@@ -218,28 +219,43 @@ export function Liquidity({
         </div>
       </div>
 
-      <Card title="Pool solvency" note="Where a winning trader's money comes from">
-        <div className="stat-tiles">
-          <StatTile label="LP vault balance" value={usd(view.pool.vaultBalance)} />
-          <StatTile
-            label="Owed to traders"
-            value={<Delta value={stats.traderPnl}>{usd(stats.traderPnl)}</Delta>}
-            sub="mark-to-market liability"
-          />
-          <StatTile label="Pool NAV" value={usd(stats.nav)} />
-          <StatTile label="Insurance fund" value={usd(view.market.insuranceBalance)} />
-          <StatTile label="Pool-wide free liquidity" value={usd(stats.free)} sub="across all LPs" />
-          <StatTile
-            label="Bad debt"
-            value={usd(view.market.badDebt)}
-            sub={view.market.badDebt === 0n ? "none" : "socialised — recorded on-chain"}
-          />
-        </div>
-        <div style={{ marginTop: "var(--space-4)" }} className="metric-sub">
-          Shortfalls are absorbed in order: insurance first, then LP capital, then socialised and
-          recorded on-chain. Bad debt is never hidden.
-        </div>
-      </Card>
+      <div className="split-2">
+        <Card title="Pool solvency" note="Where a winning trader's money comes from" action={<CardLink>Docs</CardLink>}>
+          <div className="stat-tiles">
+            <StatTile label="LP vault balance" value={usd(view.pool.vaultBalance)} />
+            <StatTile
+              label="Owed to traders"
+              value={<Delta value={stats.traderPnl}>{usd(stats.traderPnl)}</Delta>}
+              sub="mark-to-market"
+            />
+            <StatTile label="Pool NAV" value={usd(stats.nav)} />
+            <StatTile label="Pool-wide free" value={usd(stats.free)} sub="across all LPs" />
+          </div>
+        </Card>
+
+        <Card title="Loss waterfall" note="Every shortfall is assigned, never absorbed silently">
+          <div className="rows">
+            <ListRow
+              icon={<Chip accent><Icon name="shield" /></Chip>}
+              title="Insurance fund"
+              sub="Capitalised by fees and liquidation penalties"
+              value={usd(view.market.insuranceBalance)}
+            />
+            <ListRow
+              icon={<Chip><Icon name="droplet" /></Chip>}
+              title="LP capital"
+              sub="What LPs are paid the funding and fees for"
+              value={usd(stats.nav > 0n ? stats.nav : 0n)}
+            />
+            <ListRow
+              icon={<Chip tone={view.market.badDebt === 0n ? "positive" : "negative"}><Icon name={view.market.badDebt === 0n ? "check" : "alert"} /></Chip>}
+              title="Socialised bad debt"
+              sub={view.market.badDebt === 0n ? "None recorded" : "Recorded on-chain, never hidden"}
+              value={usd(view.market.badDebt)}
+            />
+          </div>
+        </Card>
+      </div>
     </div>
   );
 }

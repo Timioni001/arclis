@@ -96,7 +96,7 @@ export function Treasury({
               </div>
 
               <div>
-                <div className="stat-tiles">
+                <div className="stat-tiles" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))" }}>
                   <StatTile label="Hedged NAV" value={usd(exp.nav)} sub="what the agent actually has" />
                   <StatTile
                     label="If unhedged"
