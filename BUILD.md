@@ -216,6 +216,31 @@ Step two above is what fixes it: `--adopt` points `declare_id!`, `Anchor.toml`
 and `idl/` at whatever key is on disk. The rebuild afterwards is not optional,
 because the old ID is compiled into the `.so`.
 
+The consequence is that **your program ID is a local fact**, and three tracked
+files carry it. `git pull` will then refuse to merge over them:
+
+```
+error: Your local changes to the following files would be overwritten by merge
+```
+
+Stash them before pulling. There is nothing to preserve: the script re-adopts
+your key on the next run.
+
+```bash
+git stash push -m "local program id" \
+  programs/arclis/src/lib.rs Anchor.toml idl/arclis.json idl/arclis.ts
+git pull
+bash scripts/anchor-test.sh
+```
+
+If a pull is blocked by `Cargo.lock` or `programs/arclis/Cargo.toml`, stash
+those too, and do not restore them. `Cargo.lock` in this repo is deliberately
+pinned and audited against the rustc inside platform-tools; a locally
+re-resolved one can reintroduce the edition-2024 wall. The `idl-build` feature
+that earlier instructions had you add by hand has been in
+`programs/arclis/Cargo.toml` since the restructure, so a local copy of it is
+redundant.
+
 ### The platform-tools notice
 
 ```

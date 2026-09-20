@@ -78,6 +78,28 @@ if [ "$DECLARED" != "$ON_DISK" ]; then
   warn "declare_id! was $DECLARED, keypair is $ON_DISK; rebuilding against the new ID"
   anchor build --no-idl || die "rebuild after the ID sync failed"
   ok "rebuilt against $ON_DISK"
+
+  # Say this plainly, because it will bite on the next `git pull`. The keypair
+  # lives in the gitignored `target/`, so every clone generates its own and the
+  # program ID becomes a local fact. Three tracked files now differ from the
+  # remote, and git will refuse to merge over them.
+  cat <<NOTE
+
+  ${yellow}Note:${off} this machine's program ID is now ${bold}${ON_DISK}${off}, which differs
+  from the one in the repository. Three tracked files were rewritten to match:
+
+      programs/arclis/src/lib.rs   Anchor.toml   idl/arclis.json
+
+  That is expected. The keypair lives in the gitignored target/ directory, so
+  every clone has its own ID, and these files are how the program learns it.
+
+  It does mean \`git pull\` will refuse to merge over them. Before pulling:
+
+      git stash push -m "local program id" programs/arclis/src/lib.rs Anchor.toml idl/arclis.json idl/arclis.ts
+      git pull
+      bash scripts/anchor-test.sh    # re-adopts your key; no need to unstash
+
+NOTE
 else
   ok "program ID $ON_DISK"
 fi
