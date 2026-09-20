@@ -722,26 +722,22 @@ describe("arclis", () => {
     // halve the request each time it refuses - so the initial-margin maths
     // stays in one place, on chain.
     const withdraw = (amount: number) =>
-      program.methods
-        .withdrawCollateral(new BN(amount))
-        .accounts({
-          owner: payer.publicKey,
-          config: configPda,
-          market: marketPda,
-          oracle: oraclePda,
-          position: positionPda,
-          ownerTokenAccount: traderAta,
-          vault: vaultPda,
-          pool: poolPda,
-          poolVault: poolVaultPda,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        });
+      program.methods.withdrawCollateral(new BN(amount)).accounts({
+        owner: payer.publicKey,
+        config: configPda,
+        market: marketPda,
+        oracle: oraclePda,
+        position: positionPda,
+        ownerTokenAccount: traderAta,
+        vault: vaultPda,
+        pool: poolPda,
+        poolVault: poolVaultPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      });
 
     const breachesMargin = (e: any) =>
       e?.error?.errorCode?.code === "WithdrawalBreaksMargin" ||
-      (e?.logs ?? []).some((l: string) =>
-        l.includes("WithdrawalBreaksMargin"),
-      );
+      (e?.logs ?? []).some((l: string) => l.includes("WithdrawalBreaksMargin"));
 
     const startingCollateral = (
       await program.account.position.fetch(positionPda)
@@ -936,9 +932,9 @@ describe("arclis", () => {
     const insuranceDrawn =
       mBefore.insuranceBalance.toNumber() - mAfter.insuranceBalance.toNumber();
     const poolAbsorbed =
-      poolAfter.absorbedBadDebt.toNumber() - poolBefore.absorbedBadDebt.toNumber();
-    const socialized =
-      mAfter.badDebt.toNumber() - mBefore.badDebt.toNumber();
+      poolAfter.absorbedBadDebt.toNumber() -
+      poolBefore.absorbedBadDebt.toNumber();
+    const socialized = mAfter.badDebt.toNumber() - mBefore.badDebt.toNumber();
 
     assert.isAbove(
       insuranceDrawn + poolAbsorbed + socialized,
