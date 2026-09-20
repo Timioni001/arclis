@@ -676,47 +676,72 @@ describe("arclis", () => {
   });
 
   it("liquidates an underwater position and pays the liquidator", async () => {
+    const liquidate = () =>
+      program.methods
+        .liquidate()
+        .accounts({
+          liquidator: liquidator.publicKey,
+          liquidatorTokenAccount: liquidatorAta,
+          config: configPda,
+          market: marketPda,
+          oracle: oraclePda,
+          position: positionPda,
+          vault: vaultPda,
+          pool: poolPda,
+          poolVault: poolVaultPda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        })
+        .signers([liquidator]);
+
+    // PositionHealthy means "not underwater yet", which is this loop's answer
+    // to keep walking. Any other rejection is a real failure and must not be
+    // swallowed by a retry.
+    const stillHealthy = (e: any) =>
+      e?.error?.errorCode?.code === "PositionHealthy" ||
+      (e?.logs ?? []).some((l: string) => l.includes("PositionHealthy"));
+
+    const liqBefore = await getAccount(conn, liquidatorAta);
+
     // Walk the price down in steps, because a single move past the 10%
     // deviation cap would be refused by the oracle. That cap is the reason a
     // liquidation test cannot just set the price to zero.
-    for (let i = 0; i < 12; i++) {
+    //
+    // Whether the position is underwater is settled by asking the program,
+    // not by recomputing its margin maths here. This test used to carry its
+    // own equity estimate, and that estimate was wrong twice over. It read
+    // `size` and `entry_price` straight off the account, so the stock split
+    // earlier in this suite skewed it: unrealised PnL is not invariant under
+    // a naive raw computation the way notional is. And it ignored the
+    // dividend this long is owed, which `sync_and_settle` credits to
+    // collateral before the health check runs. Both errors pushed the same
+    // way - the loop stopped while the position was still healthy, then
+    // demanded a liquidation the program was right to refuse.
+    //
+    // A failed liquidation changes no state, so attempting one is a free and
+    // exact probe. The only authority on whether a position is liquidatable
+    // is the code that liquidates it.
+    let liquidated = false;
+    for (let i = 0; i < 20 && !liquidated; i++) {
       const o = await program.account.priceOracle.fetch(oraclePda);
       const next = Math.floor(o.price.toNumber() * 0.91);
-      if (next <= 0) break;
+      assert.isAbove(next, 0, "walked the price to zero without liquidating");
       await program.methods
         .updatePriceOracle(new BN(next), new BN(0))
         .accounts({ authority: payer.publicKey, oracle: oraclePda })
         .rpc();
 
-      const pos = await program.account.position.fetch(positionPda);
-      const m = await program.account.market.fetch(marketPda);
-      // Rough equity check: collateral plus unrealised PnL against maintenance.
-      const pnl =
-        (pos.size.toNumber() * (next - pos.entryPrice.toNumber())) /
-        PRICE_SCALE;
-      const equity = pos.collateral.toNumber() + pnl;
-      const notional = (pos.size.toNumber() * next) / PRICE_SCALE;
-      if (equity < (notional * m.maintenanceMarginBps) / 10_000) break;
+      try {
+        await liquidate().rpc();
+        liquidated = true;
+      } catch (e: any) {
+        if (!stillHealthy(e)) throw e;
+      }
     }
 
-    const liqBefore = await getAccount(conn, liquidatorAta);
-
-    await program.methods
-      .liquidate()
-      .accounts({
-        liquidator: liquidator.publicKey,
-        liquidatorTokenAccount: liquidatorAta,
-        config: configPda,
-        market: marketPda,
-        oracle: oraclePda,
-        position: positionPda,
-        vault: vaultPda,
-        pool: poolPda,
-        poolVault: poolVaultPda,
-        tokenProgram: TOKEN_PROGRAM_ID,
-      })
-      .signers([liquidator])
-      .rpc();
+    assert.isTrue(
+      liquidated,
+      "twenty steps of -9% did not put the position below maintenance",
+    );
 
     const pos = await program.account.position.fetch(positionPda);
     const liqAfter = await getAccount(conn, liquidatorAta);
