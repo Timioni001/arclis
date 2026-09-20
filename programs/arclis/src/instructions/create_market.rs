@@ -34,6 +34,24 @@ impl MarketParams {
     /// thing standing between a trader and a market deliberately configured to
     /// be unsurvivable. Each one is a hard limit, not a default.
     pub fn validate(&self) -> Result<u16> {
+        // Market creation is permissionless, so a rejection has to say which
+        // knob was wrong and what it actually received. "InvalidLeverageParam"
+        // on a value the caller believes it sent correctly is unactionable,
+        // and it is exactly the case where the bytes on the wire and the bytes
+        // the program read may differ.
+        msg!(
+            "create_market params: leverage={} maintenance_bps={} fee_bps={} penalty_bps={} interval={} sensitivity_bps={} max_oi={} skew_bps={} util_bps={}",
+            self.max_leverage,
+            self.maintenance_margin_bps,
+            self.taker_fee_bps,
+            self.liquidation_penalty_bps,
+            self.funding_interval_secs,
+            self.funding_sensitivity_bps,
+            self.max_open_interest,
+            self.max_skew_bps,
+            self.max_utilization_bps
+        );
+
         require!(
             (MIN_LEVERAGE_CAP..=MAX_LEVERAGE_CAP).contains(&self.max_leverage),
             ArclisError::InvalidLeverageParam
@@ -185,4 +203,48 @@ pub fn handler(ctx: Context<CreateMarket>, params: MarketParams) -> Result<()> {
         funding_interval_secs: market.funding_interval_secs,
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::*;
+
+    /// The exact parameters `tests/arclis.ts` sends. If this passes and the
+    /// integration test still gets InvalidLeverageParam, the values are not
+    /// reaching the program intact and the fault is on the wire, not here.
+    fn integration_params() -> MarketParams {
+        MarketParams {
+            max_leverage: 10,
+            maintenance_margin_bps: 500,
+            taker_fee_bps: 10,
+            liquidation_penalty_bps: 500,
+            funding_interval_secs: 3600,
+            funding_sensitivity_bps: 100,
+            max_open_interest: 1_000_000_000_000,
+            max_skew_bps: 10_000,
+            max_utilization_bps: 8_000,
+        }
+    }
+
+    #[test]
+    fn the_integration_suites_parameters_are_valid() {
+        let initial = integration_params()
+            .validate()
+            .expect("the integration suite's own market parameters must validate");
+        assert_eq!(initial, 600, "maintenance 500 plus the 100 bps buffer");
+    }
+
+    #[test]
+    fn borsh_round_trips_the_parameters_byte_for_byte() {
+        // The wire format is the thing under suspicion, so assert it directly:
+        // the first byte must be max_leverage, and a round trip must be exact.
+        let params = integration_params();
+        let bytes = params.try_to_vec().expect("serialise");
+        assert_eq!(bytes[0], 10, "max_leverage must be the first byte");
+        assert_eq!(u16::from_le_bytes([bytes[1], bytes[2]]), 500);
+
+        let back = MarketParams::try_from_slice(&bytes).expect("deserialise");
+        assert_eq!(back.max_leverage, 10);
+        assert_eq!(back.max_utilization_bps, 8_000);
+    }
 }

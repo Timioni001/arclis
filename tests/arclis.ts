@@ -203,30 +203,44 @@ describe("arclis", () => {
   });
 
   it("creates a market permissionlessly", async () => {
-    await program.methods
-      .createMarket({
-        maxLeverage: 10,
-        maintenanceMarginBps: 500,
-        takerFeeBps: 10,
-        liquidationPenaltyBps: 500,
-        fundingIntervalSecs: new BN(3600),
-        fundingSensitivityBps: 100,
-        maxOpenInterest: new BN(1_000_000 * BASE_SCALE),
-        maxSkewBps: 10_000,
-        maxUtilizationBps: 8_000,
-      })
-      .accounts({
-        creator: payer.publicKey,
-        config: configPda,
-        oracle: oraclePda,
-        market: marketPda,
-        quoteMint,
-        vault: vaultPda,
-        tokenProgram: TOKEN_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
-      })
-      .rpc();
+    // Wrapped so a rejection prints the program's own logs. Anchor's thrown
+    // error carries them, mocha does not show them, and they contain the
+    // `msg!` that says which parameter the program actually received.
+    const build = () =>
+      program.methods
+        .createMarket({
+          maxLeverage: 10,
+          maintenanceMarginBps: 500,
+          takerFeeBps: 10,
+          liquidationPenaltyBps: 500,
+          fundingIntervalSecs: new BN(3600),
+          fundingSensitivityBps: 100,
+          maxOpenInterest: new BN(1_000_000 * BASE_SCALE),
+          maxSkewBps: 10_000,
+          maxUtilizationBps: 8_000,
+        })
+        .accounts({
+          creator: payer.publicKey,
+          config: configPda,
+          oracle: oraclePda,
+          market: marketPda,
+          quoteMint,
+          vault: vaultPda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+          rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+        });
+
+    try {
+      await build().rpc();
+    } catch (e: any) {
+      const logs: string[] = e?.logs ?? [];
+      const received = logs.find((l) => l.includes("create_market params:"));
+      console.error("\n  program logs:");
+      for (const l of logs) console.error(`    ${l}`);
+      if (received) console.error(`\n  the program received: ${received}\n`);
+      throw e;
+    }
 
     const m = await program.account.market.fetch(marketPda);
     assert.equal(m.maxLeverage, 10);
