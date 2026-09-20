@@ -765,6 +765,7 @@ describe("arclis", () => {
     );
 
     const liqBefore = await getAccount(conn, liquidatorAta);
+    const poolBefore = await program.account.liquidityPool.fetch(poolPda);
 
     // Now walk the price down. Steps of 2%, not the 9% the oracle deviation
     // cap would allow: from just above a 6% initial margin, a 9% move clears
@@ -820,6 +821,18 @@ describe("arclis", () => {
       "a liquidator that is not paid is a liquidator that never runs",
     );
     assert.equal(m.openInterestLong.toNumber(), 0);
+
+    // The pool stood on the other side of this trade, so liquidating it has
+    // to move the pool's books. `liquidate` used to flatten the position and
+    // pay the liquidator without ever settling the trader's PnL against the
+    // pool, which left the vault short by the position's unrealised gain and
+    // the LPs holding a counterparty result they were never credited with.
+    const poolAfter = await program.account.liquidityPool.fetch(poolPda);
+    assert.notEqual(
+      poolAfter.realizedPnl.toString(),
+      poolBefore.realizedPnl.toString(),
+      "a liquidation that does not settle with the pool leaves the vault short",
+    );
   });
 
   // -------------------------------------------------------------------------

@@ -192,6 +192,64 @@ pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
         }
     }
 
+    // --- settle this position's PnL against the pool -------------------------
+    //
+    // `close_position` does this; `liquidate` did not, so a liquidated
+    // trader's counterparty was never actually paid. The vault holds
+    // `collateral_before` for this position. After the waterfall it still owes
+    // `trader_remainder` to the trader, `insurance_cut` to the fund and
+    // `liquidator_reward` to whoever sent this transaction. Whatever is left
+    // over is the trader's realised loss, and it belongs to the pool that
+    // stood on the other side of it.
+    //
+    // A negative remainder means the opposite: the position was liquidated
+    // while still in profit, which is what thin margin rather than a bad mark
+    // looks like, and the pool owes the vault. That is the case the
+    // reconciliation test caught - the vault was short by exactly the
+    // liquidated position's unrealised gain.
+    //
+    // Derived from `outcome` rather than from `equity - collateral_before`,
+    // because those differ precisely when the position is underwater: the
+    // part of the loss the collateral cannot cover is bad debt, and the
+    // waterfall above already assigned it. This figure is the part that is
+    // actually funded.
+    //
+    // A transfer only, never `settle_realized_pnl`: `total_collateral` already
+    // moved by this position's collateral delta above, and that delta includes
+    // the PnL. Booking it again would count it twice.
+    let funded_realized = i128::from(outcome.trader_remainder)
+        .checked_add(i128::from(outcome.liquidator_reward))
+        .and_then(|v| v.checked_add(i128::from(outcome.insurance_cut)))
+        .and_then(|v| v.checked_sub(i128::from(collateral_before)))
+        .ok_or(ArclisError::MathOverflow)?;
+
+    if funded_realized != 0 {
+        let oracle_key = ctx.accounts.oracle.key();
+        settle_with_pool(
+            funded_realized,
+            &ctx.accounts.market,
+            &ctx.accounts.vault,
+            &mut ctx.accounts.pool,
+            &ctx.accounts.pool_vault,
+            &ctx.accounts.token_program,
+            &oracle_key,
+        )?;
+
+        // Both vaults just moved. Every guard below reads a cached balance,
+        // and a stale read is how a solvency check passes against money that
+        // is no longer there.
+        ctx.accounts.vault.reload()?;
+        ctx.accounts.pool_vault.reload()?;
+
+        emit!(PoolSettled {
+            pool: ctx.accounts.pool.key(),
+            market: ctx.accounts.market.key(),
+            amount: funded_realized,
+            reason: SettlementReason::Liquidation,
+            pool_realized_pnl_after: ctx.accounts.pool.realized_pnl,
+        });
+    }
+
     // The pool's share of the shortfall is a real transfer out of LP capital
     // into the market vault, which is short by exactly that much.
     if pool_absorbed > 0 {
@@ -224,6 +282,7 @@ pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
 
     // --- pay the liquidator --------------------------------------------------
     if liquidator_reward > 0 {
+        ctx.accounts.vault.reload()?;
         ctx.accounts
             .market
             .require_payable(ctx.accounts.vault.amount, liquidator_reward)?;
