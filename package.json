@@ -20,15 +20,16 @@
     "keeper": "ts-node keeper/src/run.ts",
     "keeper:test": "npm --prefix app exec -- vitest run --root .. keeper pipeline",
     "registry:build": "ts-node pipeline/src/run.ts",
-    "registry:prerender": "ts-node pipeline/src/prerender.ts"
+    "registry:prerender": "ts-node pipeline/src/prerender.ts",
+    "assistant": "tsx server/dev.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.127.0",
     "@coral-xyz/anchor": "^0.30.1",
+    "@meteora-ag/dynamic-bonding-curve-sdk": "^1.5.12",
     "@solana/spl-token": "^0.4.6",
     "@solana/web3.js": "^1.95.0",
-    "@meteora-ag/dynamic-bonding-curve-sdk": "^1.5.12",
-    "decimal.js": "^10.4.3",
-    "@anthropic-ai/sdk": "^0.70.0"
+    "decimal.js": "^10.4.3"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.5",
@@ -38,8 +39,9 @@
     "mocha": "^10.4.0",
     "prettier": "^3.3.0",
     "ts-mocha": "^10.0.0",
-    "typescript": "^5.4.5",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "tsx": "^4.23.15",
+    "typescript": "^5.4.5"
   },
   "description": "Arclis - on-chain access to public markets."
 }
