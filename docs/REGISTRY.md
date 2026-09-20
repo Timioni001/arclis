@@ -151,3 +151,41 @@ app/src/screens/
 app/src/styles/
   registry.css    its own stylesheet; denser and more editorial than the app
 ```
+
+## The assistant
+
+`server/assistant.ts` puts Claude in front of the scoring above, with **tools
+rather than a prompt full of pasted numbers**. `lookup_token` calls the same
+`assessBacking` / `assessDeviation` / `assessLiquidity` functions this page
+renders, so the assistant and the page cannot disagree. The model does
+language; the scoring does arithmetic; the arithmetic is the part with tests.
+
+It answers the question the registry exists for and a holder cannot answer
+themselves: *what am I actually holding, and should this number worry me?* It
+refuses to give investment advice, says when a price gap is the clock rather
+than a mispricing, and says plainly when it has no data.
+
+The API key lives on the server. Anything prefixed `VITE_` is compiled into the
+JavaScript every visitor downloads, so a key there is a published key. With no
+key configured the endpoint returns 503 and the interface does not render the
+assistant at all, rather than rendering one that fails.
+
+### The Clawpump tool
+
+`list_launches` is the third tool and the one that is not obvious. Clawpump is
+where a token launches, Meteora's DBC is what it launches on, and Arclis already
+builds DBC configs whose **quote token is a tokenized stock**: contributors pay
+in AAPLx rather than SOL.
+
+So a stock-quoted launch inherits the backing of the thing people are paying in.
+Raising into a redeemable, custodied certificate is materially different from
+raising into a synthetic tracker holding nothing, and on a price chart those are
+identical. Contributors cannot see it and the launchpad has no reason to show
+it.
+
+The tool resolves each launch's quote token to its registry entry and returns
+that token's own backing tier and claim score alongside the launch. Clawpump to
+Meteora to the registry, and the answer at the end is one only a neutral party
+holding both datasets can give.
+
+See `server/README.md` for deployment.

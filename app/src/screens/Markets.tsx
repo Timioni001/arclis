@@ -23,7 +23,8 @@ import {
 } from "../components/ui";
 import { SessionBadge } from "../components/protocol";
 import { Sparkline } from "../components/charts/PriceChart";
-import { bpsToPct, confidencePct, pct, usd } from "../lib/format";
+import { bpsToPct, confidencePct, pct, toPrice, usd } from "../lib/format";
+import { PriceTicker } from "../components/ui/data";
 
 export function Markets({
   markets,
@@ -129,7 +130,7 @@ export function Markets({
                 }
                 title={mv.oracle.symbol}
                 sub={mv.oracle.name}
-                value={usd(mv.oracle.price, { compact: false })}
+                value={<PriceTicker value={toPrice(mv.oracle.price)} />}
                 meta={
                   <Delta value={mv.changePct24h}>{pct(mv.changePct24h)}</Delta>
                 }

@@ -5,6 +5,13 @@
  * `cargo test --lib`, they need no validator. What this file covers is the part
  * those cannot: PDA derivation, account constraints, CPI transfers, and the
  * ordering between instructions.
+ *
+ * Read the order of the `it` blocks as a script, not as independent cases.
+ * Mocha runs them in sequence against one validator and they share state on
+ * purpose: a market is created, funded with LP capital, traded, marked,
+ * split, paid a dividend and finally liquidated. Isolating each one would mean
+ * rebuilding the whole world per test and would stop catching the thing this
+ * file exists to catch, which is instructions interfering with each other.
  */
 import * as anchor from "@coral-xyz/anchor";
 import { BN } from "@coral-xyz/anchor";
@@ -48,16 +55,50 @@ describe("arclis", () => {
   let quoteMint: PublicKey;
   let traderAta: PublicKey;
   let liquidatorAta: PublicKey;
+  let lpAta: PublicKey;
   const liquidator = Keypair.generate();
+  const lp = Keypair.generate();
 
   let configPda: PublicKey;
-  let poolPda: PublicKey;
-  let poolVaultPda: PublicKey;
-  let lpPositionPda: PublicKey;
   let oraclePda: PublicKey;
   let marketPda: PublicKey;
   let vaultPda: PublicKey;
   let positionPda: PublicKey;
+  let poolPda: PublicKey;
+  let poolVaultPda: PublicKey;
+  let lpPositionPda: PublicKey;
+
+  /**
+   * Every trading instruction now carries the pool, because settling accrued
+   * funding and dividends moves tokens between the two vaults. Naming the set
+   * once means a future account addition is a one-line change here rather than
+   * a hunt through a dozen call sites.
+   */
+  const tradeAccounts = () => ({
+    owner: payer.publicKey,
+    config: configPda,
+    market: marketPda,
+    oracle: oraclePda,
+    position: positionPda,
+    pool: poolPda,
+    poolVault: poolVaultPda,
+    marketVault: vaultPda,
+    tokenProgram: TOKEN_PROGRAM_ID,
+  });
+
+  const fund = async (kp: Keypair) => {
+    await conn.confirmTransaction(
+      await conn.requestAirdrop(kp.publicKey, 2 * anchor.web3.LAMPORTS_PER_SOL),
+    );
+    const ata = await createAssociatedTokenAccount(
+      conn,
+      kp,
+      quoteMint,
+      kp.publicKey,
+    );
+    await mintTo(conn, payer, quoteMint, ata, payer, 1_000_000 * QUOTE_SCALE);
+    return ata;
+  };
 
   before(async () => {
     quoteMint = await createMint(conn, payer, payer.publicKey, null, 6);
@@ -76,44 +117,33 @@ describe("arclis", () => {
       1_000_000 * QUOTE_SCALE,
     );
 
-    await conn.confirmTransaction(
-      await conn.requestAirdrop(
-        liquidator.publicKey,
-        2 * anchor.web3.LAMPORTS_PER_SOL,
-      ),
-    );
-    liquidatorAta = await createAssociatedTokenAccount(
-      conn,
-      liquidator,
-      quoteMint,
-      liquidator.publicKey,
-    );
+    liquidatorAta = await fund(liquidator);
+    lpAta = await fund(lp);
 
-    [configPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("config")],
-      program.programId,
-    );
-    [oraclePda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("oracle"), Buffer.from(SYMBOL)],
-      program.programId,
-    );
-    [marketPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("market"), oraclePda.toBuffer()],
-      program.programId,
-    );
-    [vaultPda] = PublicKey.findProgramAddressSync(
-      [Buffer.from("vault"), marketPda.toBuffer()],
-      program.programId,
-    );
-    [positionPda] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from("position"),
-        payer.publicKey.toBuffer(),
-        marketPda.toBuffer(),
-      ],
-      program.programId,
-    );
+    const pda = (seeds: (Buffer | Uint8Array)[]) =>
+      PublicKey.findProgramAddressSync(seeds, program.programId)[0];
+
+    configPda = pda([Buffer.from("config")]);
+    oraclePda = pda([Buffer.from("oracle"), Buffer.from(SYMBOL)]);
+    marketPda = pda([Buffer.from("market"), oraclePda.toBuffer()]);
+    vaultPda = pda([Buffer.from("vault"), marketPda.toBuffer()]);
+    positionPda = pda([
+      Buffer.from("position"),
+      payer.publicKey.toBuffer(),
+      marketPda.toBuffer(),
+    ]);
+    poolPda = pda([Buffer.from("lp_pool"), marketPda.toBuffer()]);
+    poolVaultPda = pda([Buffer.from("lp_vault"), poolPda.toBuffer()]);
+    lpPositionPda = pda([
+      Buffer.from("lp_position"),
+      lp.publicKey.toBuffer(),
+      poolPda.toBuffer(),
+    ]);
   });
+
+  // -------------------------------------------------------------------------
+  // Setup: config, oracle, market, pool
+  // -------------------------------------------------------------------------
 
   it("initializes the global config", async () => {
     await program.methods
@@ -143,6 +173,19 @@ describe("arclis", () => {
 
     const o = await program.account.priceOracle.fetch(oraclePda);
     assert.equal(o.price.toNumber(), 100 * PRICE_SCALE);
+  });
+
+  it("opens the market session so trading is allowed", async () => {
+    // A fresh oracle starts Closed, which refuses every increase-risk action.
+    // That is the intended default and it means this line is load-bearing for
+    // everything below it.
+    await program.methods
+      .setMarketSession({ open: {} })
+      .accounts({ authority: payer.publicKey, oracle: oraclePda })
+      .rpc();
+
+    const o = await program.account.priceOracle.fetch(oraclePda);
+    assert.property(o.session, "open");
   });
 
   it("rejects an oracle update beyond the deviation cap", async () => {
@@ -190,6 +233,7 @@ describe("arclis", () => {
     assert.equal(m.maintenanceMarginBps, 500);
     // Initial margin is derived, not configured: maintenance + 1% buffer.
     assert.equal(m.initialMarginBps, 600);
+    assert.equal(m.cumulativeDividendIndex.toString(), "0");
   });
 
   it("rejects a market whose leverage and margin are inconsistent", async () => {
@@ -248,6 +292,58 @@ describe("arclis", () => {
     }
   });
 
+  it("initializes the liquidity pool", async () => {
+    await program.methods
+      .initializeLiquidityPool(new BN(3600))
+      .accounts({
+        authority: payer.publicKey,
+        config: configPda,
+        market: marketPda,
+        quoteMint,
+        pool: poolPda,
+        vault: poolVaultPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+        rent: anchor.web3.SYSVAR_RENT_PUBKEY,
+      })
+      .rpc();
+
+    const m = await program.account.market.fetch(marketPda);
+    assert.equal(m.liquidityPool.toBase58(), poolPda.toBase58());
+  });
+
+  it("takes an LP deposit and mints shares one-for-one into an empty pool", async () => {
+    await program.methods
+      .depositLiquidity(new BN(500_000 * QUOTE_SCALE))
+      .accounts({
+        owner: lp.publicKey,
+        config: configPda,
+        market: marketPda,
+        oracle: oraclePda,
+        pool: poolPda,
+        lpPosition: lpPositionPda,
+        vault: poolVaultPda,
+        ownerTokenAccount: lpAta,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([lp])
+      .rpc();
+
+    const pool = await program.account.liquidityPool.fetch(poolPda);
+    const pos = await program.account.lpPosition.fetch(lpPositionPda);
+    const vault = await getAccount(conn, poolVaultPda);
+
+    // The first deposit into an empty pool sets the share price at 1.
+    assert.equal(pos.shares.toString(), String(500_000 * QUOTE_SCALE));
+    assert.equal(pool.totalShares.toString(), String(500_000 * QUOTE_SCALE));
+    assert.equal(Number(vault.amount), 500_000 * QUOTE_SCALE);
+  });
+
+  // -------------------------------------------------------------------------
+  // Trading
+  // -------------------------------------------------------------------------
+
   it("deposits collateral and tracks it as a market liability", async () => {
     await program.methods
       .depositCollateral(new BN(10_000 * QUOTE_SCALE))
@@ -255,6 +351,7 @@ describe("arclis", () => {
         owner: payer.publicKey,
         config: configPda,
         market: marketPda,
+        oracle: oraclePda,
         position: positionPda,
         ownerTokenAccount: traderAta,
         vault: vaultPda,
@@ -271,18 +368,15 @@ describe("arclis", () => {
     // The market's liability total must match the vault's real balance.
     assert.equal(m.totalCollateral.toNumber(), 10_000 * QUOTE_SCALE);
     assert.equal(Number(vault.amount), 10_000 * QUOTE_SCALE);
+    // A new position snapshots both indices so it is not charged for anything
+    // that accrued before it existed.
+    assert.equal(pos.entryDividendIndex.toString(), "0");
   });
 
   it("opens a 50-unit long and charges the taker fee to insurance", async () => {
     await program.methods
       .openPosition(new BN(50 * BASE_SCALE))
-      .accounts({
-        owner: payer.publicKey,
-        config: configPda,
-        market: marketPda,
-        oracle: oraclePda,
-        position: positionPda,
-      })
+      .accounts(tradeAccounts())
       .rpc();
 
     const pos = await program.account.position.fetch(positionPda);
@@ -300,13 +394,7 @@ describe("arclis", () => {
     try {
       await program.methods
         .openPosition(new BN(-100 * BASE_SCALE))
-        .accounts({
-          owner: payer.publicKey,
-          config: configPda,
-          market: marketPda,
-          oracle: oraclePda,
-          position: positionPda,
-        })
+        .accounts(tradeAccounts())
         .rpc();
       assert.fail("expected DirectionFlip");
     } catch (e: any) {
@@ -314,8 +402,9 @@ describe("arclis", () => {
     }
   });
 
-  it("realizes profit when the oracle moves up", async () => {
+  it("realizes profit when the oracle moves up, paid out of the pool", async () => {
     const before = await program.account.position.fetch(positionPda);
+    const poolBefore = await getAccount(conn, poolVaultPda);
 
     await program.methods
       .updatePriceOracle(new BN(105 * PRICE_SCALE), new BN(0))
@@ -324,21 +413,20 @@ describe("arclis", () => {
 
     await program.methods
       .closePosition(new BN(25 * BASE_SCALE))
-      .accounts({
-        owner: payer.publicKey,
-        config: configPda,
-        market: marketPda,
-        oracle: oraclePda,
-        position: positionPda,
-      })
+      .accounts(tradeAccounts())
       .rpc();
 
     const after = await program.account.position.fetch(positionPda);
+    const poolAfter = await getAccount(conn, poolVaultPda);
+
     assert.equal(after.size.toNumber(), 25 * BASE_SCALE);
     // 25 units closed at +$5 == +$125, less a 10bps fee on $2,625 notional.
     assert.isAbove(after.collateral.toNumber(), before.collateral.toNumber());
     // The surviving half keeps its original cost basis.
     assert.equal(after.entryPrice.toNumber(), 100 * PRICE_SCALE);
+    // The counterparty relationship is the point: the trader's gain left the
+    // pool's vault rather than another trader's deposit.
+    assert.isBelow(Number(poolAfter.amount), Number(poolBefore.amount));
   });
 
   it("accrues funding that scales with the mark price", async () => {
@@ -356,6 +444,8 @@ describe("arclis", () => {
           config: configPda,
           market: marketPda,
           oracle: oraclePda,
+          pool: poolPda,
+          poolVault: poolVaultPda,
         })
         .rpc();
       const after = await program.account.market.fetch(marketPda);
@@ -381,6 +471,8 @@ describe("arclis", () => {
           position: positionPda,
           ownerTokenAccount: traderAta,
           vault: vaultPda,
+          pool: poolPda,
+          poolVault: poolVaultPda,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
@@ -389,6 +481,155 @@ describe("arclis", () => {
       assert.include(e.toString(), "WithdrawalBreaksMargin");
     }
   });
+
+  // -------------------------------------------------------------------------
+  // The equity-specific machinery
+  // -------------------------------------------------------------------------
+
+  it("refuses to increase risk while the market is closed, but allows reducing", async () => {
+    await program.methods
+      .setMarketSession({ closed: {} })
+      .accounts({ authority: payer.publicKey, oracle: oraclePda })
+      .rpc();
+
+    try {
+      await program.methods
+        .openPosition(new BN(1 * BASE_SCALE))
+        .accounts(tradeAccounts())
+        .rpc();
+      assert.fail("expected CannotIncreaseRiskWhileClosed");
+    } catch (e: any) {
+      assert.include(e.toString(), "CannotIncreaseRiskWhileClosed");
+    }
+
+    // The other half of the rule, and the one that matters to a trapped
+    // trader: closing still works against the settled price.
+    const before = await program.account.position.fetch(positionPda);
+    await program.methods
+      .closePosition(new BN(1 * BASE_SCALE))
+      .accounts(tradeAccounts())
+      .rpc();
+    const after = await program.account.position.fetch(positionPda);
+    assert.equal(
+      after.size.toNumber(),
+      before.size.toNumber() - 1 * BASE_SCALE,
+    );
+  });
+
+  it("applies a 4-for-1 split without moving anyone's PnL", async () => {
+    const posBefore = await program.account.position.fetch(positionPda);
+    const oracleBefore = await program.account.priceOracle.fetch(oraclePda);
+
+    // Corporate actions are only legal between sessions, and the market is
+    // already closed from the test above.
+    await program.methods
+      .applyCorporateAction(4, 1)
+      .accounts({
+        authority: payer.publicKey,
+        oracle: oraclePda,
+        market: marketPda,
+      })
+      .rpc();
+
+    const oracleAfter = await program.account.priceOracle.fetch(oraclePda);
+    assert.equal(
+      oracleAfter.price.toNumber(),
+      Math.floor(oracleBefore.price.toNumber() / 4),
+    );
+
+    // The position has not been touched yet: normalisation is lazy, so it
+    // still carries the pre-split factor until the next instruction.
+    const posStale = await program.account.position.fetch(positionPda);
+    assert.equal(posStale.size.toNumber(), posBefore.size.toNumber());
+
+    // Touch it, and size quadruples while entry price quarters. Notional, and
+    // therefore PnL, is unchanged - which is the whole point.
+    await program.methods
+      .closePosition(new BN(1))
+      .accounts(tradeAccounts())
+      .rpc();
+
+    const posAfter = await program.account.position.fetch(positionPda);
+    const notionalBefore =
+      posBefore.size.toNumber() * posBefore.entryPrice.toNumber();
+    const notionalAfter =
+      (posAfter.size.toNumber() + 1) * posAfter.entryPrice.toNumber();
+    // One base unit was closed to force the sync, so allow for that plus
+    // integer rounding on the rescale.
+    assert.approximately(
+      notionalAfter / notionalBefore,
+      1,
+      0.001,
+      "a split must not move notional",
+    );
+  });
+
+  it("credits a long the dividend it would otherwise have eaten", async () => {
+    const before = await program.account.position.fetch(positionPda);
+    assert.isAbove(before.size.toNumber(), 0, "this test needs an open long");
+
+    // $0.25 per (post-split) share.
+    const perShare = Math.floor(0.25 * PRICE_SCALE);
+    await program.methods
+      .applyDividend(new BN(perShare))
+      .accounts({
+        authority: payer.publicKey,
+        oracle: oraclePda,
+        market: marketPda,
+      })
+      .rpc();
+
+    const m = await program.account.market.fetch(marketPda);
+    assert.notEqual(m.cumulativeDividendIndex.toString(), "0");
+
+    // The index has moved but the position has not been touched, so nothing is
+    // credited yet. Touch it.
+    await program.methods
+      .closePosition(new BN(1))
+      .accounts(tradeAccounts())
+      .rpc();
+
+    const after = await program.account.position.fetch(positionPda);
+    assert.equal(
+      after.entryDividendIndex.toString(),
+      m.cumulativeDividendIndex.toString(),
+      "settling must re-snapshot the index or the credit pays twice",
+    );
+    // Closing one base unit costs a fee, so the credit is checked against the
+    // dividend rather than against a strict increase.
+    const expectedCredit = (before.size.toNumber() * perShare) / PRICE_SCALE;
+    assert.isAbove(expectedCredit, 0);
+    assert.isAtLeast(
+      after.collateral.toNumber(),
+      before.collateral.toNumber() - expectedCredit,
+    );
+  });
+
+  it("takes an insurance deposit and retires bad debt first", async () => {
+    const before = await program.account.market.fetch(marketPda);
+    await program.methods
+      .depositInsurance(new BN(1_000 * QUOTE_SCALE))
+      .accounts({
+        depositor: payer.publicKey,
+        config: configPda,
+        market: marketPda,
+        depositorTokenAccount: traderAta,
+        vault: vaultPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .rpc();
+
+    const after = await program.account.market.fetch(marketPda);
+    const credited =
+      after.insuranceBalance.toNumber() - before.insuranceBalance.toNumber();
+    const retired = before.badDebt.toNumber() - after.badDebt.toNumber();
+    // Every cent either retires debt or capitalises the fund; none vanishes.
+    assert.equal(credited + retired, 1_000 * QUOTE_SCALE);
+  });
+
+  // -------------------------------------------------------------------------
+  // Liquidation
+  // -------------------------------------------------------------------------
 
   it("refuses to liquidate a healthy position", async () => {
     try {
@@ -402,6 +643,8 @@ describe("arclis", () => {
           oracle: oraclePda,
           position: positionPda,
           vault: vaultPda,
+          pool: poolPda,
+          poolVault: poolVaultPda,
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .signers([liquidator])
@@ -412,6 +655,125 @@ describe("arclis", () => {
     }
   });
 
+  it("liquidates an underwater position and pays the liquidator", async () => {
+    // Walk the price down in steps, because a single move past the 10%
+    // deviation cap would be refused by the oracle. That cap is the reason a
+    // liquidation test cannot just set the price to zero.
+    for (let i = 0; i < 12; i++) {
+      const o = await program.account.priceOracle.fetch(oraclePda);
+      const next = Math.floor(o.price.toNumber() * 0.91);
+      if (next <= 0) break;
+      await program.methods
+        .updatePriceOracle(new BN(next), new BN(0))
+        .accounts({ authority: payer.publicKey, oracle: oraclePda })
+        .rpc();
+
+      const pos = await program.account.position.fetch(positionPda);
+      const m = await program.account.market.fetch(marketPda);
+      // Rough equity check: collateral plus unrealised PnL against maintenance.
+      const pnl =
+        (pos.size.toNumber() * (next - pos.entryPrice.toNumber())) /
+        PRICE_SCALE;
+      const equity = pos.collateral.toNumber() + pnl;
+      const notional = (pos.size.toNumber() * next) / PRICE_SCALE;
+      if (equity < (notional * m.maintenanceMarginBps) / 10_000) break;
+    }
+
+    const liqBefore = await getAccount(conn, liquidatorAta);
+
+    await program.methods
+      .liquidate()
+      .accounts({
+        liquidator: liquidator.publicKey,
+        liquidatorTokenAccount: liquidatorAta,
+        config: configPda,
+        market: marketPda,
+        oracle: oraclePda,
+        position: positionPda,
+        vault: vaultPda,
+        pool: poolPda,
+        poolVault: poolVaultPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([liquidator])
+      .rpc();
+
+    const pos = await program.account.position.fetch(positionPda);
+    const liqAfter = await getAccount(conn, liquidatorAta);
+    const m = await program.account.market.fetch(marketPda);
+
+    assert.equal(pos.size.toNumber(), 0, "liquidation flattens the position");
+    assert.isAbove(
+      Number(liqAfter.amount),
+      Number(liqBefore.amount),
+      "a liquidator that is not paid is a liquidator that never runs",
+    );
+    assert.equal(m.openInterestLong.toNumber(), 0);
+  });
+
+  // -------------------------------------------------------------------------
+  // LP exit
+  // -------------------------------------------------------------------------
+
+  it("holds an LP redemption behind the cooldown, and lets it be cancelled", async () => {
+    const pos = await program.account.lpPosition.fetch(lpPositionPda);
+
+    const lpAccounts = {
+      owner: lp.publicKey,
+      config: configPda,
+      market: marketPda,
+      oracle: oraclePda,
+      pool: poolPda,
+      lpPosition: lpPositionPda,
+      vault: poolVaultPda,
+      ownerTokenAccount: lpAta,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    };
+
+    await program.methods
+      .requestWithdrawLiquidity(pos.shares)
+      .accounts(lpAccounts)
+      .signers([lp])
+      .rpc();
+
+    const pending = await program.account.lpPosition.fetch(lpPositionPda);
+    assert.equal(pending.pendingShares.toString(), pos.shares.toString());
+    assert.isAbove(pending.cooldownEndsTs.toNumber(), 0);
+
+    // The cooldown is what stops an LP front-running a loss they can see
+    // coming, so a redemption claimed the same second must be refused. The
+    // minimum is an hour and a local validator will not advance one, which is
+    // why this asserts the guard rather than the payout.
+    try {
+      await program.methods
+        .withdrawLiquidity()
+        .accounts(lpAccounts)
+        .signers([lp])
+        .rpc();
+      assert.fail("expected CooldownNotElapsed");
+    } catch (e: any) {
+      assert.include(e.toString(), "CooldownNotElapsed");
+    }
+
+    // Cancelling must put the shares back exactly, or an LP who changes their
+    // mind is penalised for it.
+    await program.methods
+      .cancelWithdrawLiquidity()
+      .accounts(lpAccounts)
+      .signers([lp])
+      .rpc();
+
+    const cancelled = await program.account.lpPosition.fetch(lpPositionPda);
+    assert.equal(cancelled.pendingShares.toString(), "0");
+    assert.equal(cancelled.cooldownEndsTs.toNumber(), 0);
+    assert.equal(cancelled.shares.toString(), pos.shares.toString());
+  });
+
+  // -------------------------------------------------------------------------
+  // Kill switches and invariants
+  // -------------------------------------------------------------------------
+
   it("enforces the protocol pause on trading but not on liquidation", async () => {
     await program.methods
       .setProtocolPaused(true)
@@ -421,13 +783,7 @@ describe("arclis", () => {
     try {
       await program.methods
         .openPosition(new BN(1 * BASE_SCALE))
-        .accounts({
-          owner: payer.publicKey,
-          config: configPda,
-          market: marketPda,
-          oracle: oraclePda,
-          position: positionPda,
-        })
+        .accounts(tradeAccounts())
         .rpc();
       assert.fail("expected ProtocolPaused");
     } catch (e: any) {

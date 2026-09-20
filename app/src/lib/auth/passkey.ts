@@ -274,9 +274,7 @@ async function assertPrf(credentialId: ArrayBuffer): Promise<ArrayBuffer> {
  * The returned `CryptoKey` is non-extractable, so even after unlocking, the
  * private key cannot be read back out of the page. It signs and nothing else.
  */
-export async function unlockPasskeyAccount(
-  account: StoredAccount,
-): Promise<{
+export async function unlockPasskeyAccount(account: StoredAccount): Promise<{
   address: string;
   sign: (message: Uint8Array) => Promise<Uint8Array>;
 }> {

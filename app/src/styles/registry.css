@@ -573,3 +573,31 @@
     flex: 1;
   }
 }
+
+/* The counters in the hero meta line, and the explainer above the results. */
+.registry-hero-unit {
+  color: var(--text-secondary);
+}
+.registry-hero-meta .counter-value {
+  font-weight: 700;
+}
+
+.registry-explainer {
+  padding: var(--space-5);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+}
+.registry-explainer .stepper-body p {
+  margin: 0;
+  max-width: 78ch;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+@media (max-width: 760px) {
+  .registry-explainer {
+    padding: var(--space-4);
+    border-radius: var(--radius-lg);
+  }
+}

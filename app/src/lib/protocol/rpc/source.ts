@@ -1,0 +1,263 @@
+/**
+ * The chain-backed `DataSource`.
+ *
+ * # Why it holds a snapshot instead of fetching per call
+ *
+ * `DataSource` is synchronous, and every screen calls it during render. That
+ * was a deliberate choice when the only implementation was in-memory, and it
+ * is worth preserving: making it async would turn six screens into loading-state
+ * machines for no gain, because they all want the same consistent view of the
+ * world anyway.
+ *
+ * So this implementation fetches into a snapshot and serves the snapshot. One
+ * `refresh()` reads every account the interface needs in a small number of
+ * batched calls, and the screens see a single coherent moment rather than a
+ * dozen reads interleaved with block production. A market whose oracle is one
+ * slot newer than its pool is exactly the kind of inconsistency that makes a
+ * NAV look wrong.
+ *
+ * # What it does not do
+ *
+ * It does not sign, send, or simulate anything. Reads and writes are separate
+ * files on purpose, so a bug in the transaction layer cannot corrupt what the
+ * interface displays, and a read-only deployment is the default rather than a
+ * configuration.
+ */
+
+import { Connection, PublicKey } from "@solana/web3.js";
+import type {
+  ActivityEvent,
+  Candle,
+  CorporateAction,
+  LpPosition,
+  MarketView,
+  Position,
+  Treasury,
+} from "../types";
+import type { DataSource } from "../mock";
+import {
+  decodeLpPosition,
+  decodeMarket,
+  decodeOracle,
+  decodePool,
+  decodePosition,
+} from "./decode";
+import { lpPositionPda, marketAddresses, positionPda } from "./pdas";
+
+/**
+ * A source that reads a chain, and can say when it last managed to.
+ *
+ * `refresh` is separate from the read methods so the caller decides the
+ * cadence. `lastError` is a field rather than a thrown exception because a
+ * failed poll must not blank the interface: the previous snapshot is still the
+ * best information available, and the banner says how old it is.
+ */
+export interface LiveDataSource extends DataSource {
+  refresh(): Promise<void>;
+  /**
+   * Re-point at a different account, or at none. Does not itself refetch.
+   *
+   * Takes base58 rather than a `PublicKey` so the caller does not have to
+   * import `@solana/web3.js` just to change who is signed in.
+   */
+  setOwner(owner: string | null): void;
+  readonly loadedAt: number | null;
+  readonly lastError: string | null;
+  readonly endpoint: string;
+}
+
+interface Snapshot {
+  markets: MarketView[];
+  positions: Position[];
+  lpPositions: LpPosition[];
+}
+
+const EMPTY: Snapshot = { markets: [], positions: [], lpPositions: [] };
+
+export interface RpcSourceOptions {
+  endpoint: string;
+  programId: PublicKey;
+  symbols: string[];
+  /** The connected account, when there is one. Null means read-only. */
+  owner?: PublicKey | null;
+  /** Company names by ticker, resolved off-chain. */
+  names?: Record<string, string>;
+  connection?: Connection;
+}
+
+export function rpcSource(options: RpcSourceOptions): LiveDataSource {
+  const connection =
+    options.connection ?? new Connection(options.endpoint, "confirmed");
+
+  let snapshot: Snapshot = EMPTY;
+  let loadedAt: number | null = null;
+  let lastError: string | null = null;
+  let owner: PublicKey | null = options.owner ?? null;
+
+  async function refresh(): Promise<void> {
+    try {
+      const derived = options.symbols.map((symbol) => ({
+        symbol,
+        ...marketAddresses(options.programId, symbol),
+      }));
+
+      // One batched read for every market's oracle, market, pool and both
+      // vaults. `getMultipleAccountsInfo` caps at 100 keys per call, and five
+      // keys per market means twenty markets per batch, so chunk rather than
+      // assume.
+      const keys: PublicKey[] = [];
+      for (const d of derived) {
+        keys.push(d.oracle, d.market, d.pool, d.poolVault, d.marketVault);
+      }
+      if (owner) {
+        for (const d of derived) {
+          keys.push(
+            positionPda(options.programId, owner, d.market),
+            lpPositionPda(options.programId, owner, d.pool),
+          );
+        }
+      }
+
+      const infos = await getMultiple(connection, keys);
+
+      const markets: MarketView[] = [];
+      const positions: Position[] = [];
+      const lpPositions: LpPosition[] = [];
+
+      derived.forEach((d, i) => {
+        const base = i * 5;
+        const oracleInfo = infos[base];
+        const marketInfo = infos[base + 1];
+        const poolInfo = infos[base + 2];
+        const poolVaultInfo = infos[base + 3];
+
+        // A market whose accounts are not all present is skipped rather than
+        // half-rendered. Half a market is worse than no market: the screens
+        // would show a real oracle price beside a zeroed pool and imply
+        // solvency that is not there.
+        if (!oracleInfo || !marketInfo || !poolInfo) return;
+
+        const oracle = decodeOracle(d.oracle, oracleInfo.data, {
+          name: options.names?.[d.symbol],
+        });
+        const market = decodeMarket(d.market, marketInfo.data);
+        const pool = decodePool(
+          d.pool,
+          poolInfo.data,
+          poolVaultInfo ? tokenAccountAmount(poolVaultInfo.data) : 0n,
+        );
+
+        markets.push({
+          market,
+          oracle,
+          pool,
+          // Candles and 24h stats come from an indexer over the event stream,
+          // not from account state. Empty is the honest value until one exists,
+          // and the chart renders its own empty state rather than inventing a
+          // line.
+          candles: [] as Candle[],
+          volume24h: 0n,
+          changePct24h: 0,
+        });
+      });
+
+      if (owner) {
+        const ownerBase = derived.length * 5;
+        derived.forEach((d, i) => {
+          const posInfo = infos[ownerBase + i * 2];
+          const lpInfo = infos[ownerBase + i * 2 + 1];
+          if (posInfo) {
+            positions.push(
+              decodePosition(
+                positionPda(options.programId, owner!, d.market),
+                posInfo.data,
+              ),
+            );
+          }
+          if (lpInfo) {
+            lpPositions.push(
+              decodeLpPosition(
+                lpPositionPda(options.programId, owner!, d.pool),
+                lpInfo.data,
+              ),
+            );
+          }
+        });
+      }
+
+      snapshot = { markets, positions, lpPositions };
+      loadedAt = Math.floor(Date.now() / 1000);
+      lastError = null;
+    } catch (e) {
+      // Keep the previous snapshot. A dropped poll is a stale interface, which
+      // is recoverable; a blanked one looks like the protocol failed.
+      lastError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  return {
+    kind: "rpc",
+    get loadedAt() {
+      return loadedAt;
+    },
+    get lastError() {
+      return lastError;
+    },
+    endpoint: options.endpoint,
+    refresh,
+    setOwner(next) {
+      owner = next ? new PublicKey(next) : null;
+      // The previous snapshot's positions belong to whoever was signed in
+      // before. Keeping them would show one account's positions to another.
+      snapshot = { ...snapshot, positions: [], lpPositions: [] };
+    },
+
+    wallet: () => owner?.toBase58() ?? null,
+    markets: () => snapshot.markets,
+    market: (symbol) =>
+      snapshot.markets.find((mv) => mv.oracle.symbol === symbol),
+    positions: () =>
+      snapshot.positions.filter((p) => p.size !== 0n || p.collateral > 0n),
+    positionFor: (marketAddress) =>
+      snapshot.positions.find((p) => p.market === marketAddress),
+    lpPosition: (poolAddress) =>
+      snapshot.lpPositions.find((p) => p.pool === poolAddress),
+
+    // Treasuries, corporate actions and activity are all event-stream or
+    // scan-based rather than derivable from a known address, so they need an
+    // indexer. Returning empty is what the screens' empty states are for.
+    treasuries: () => [] as Treasury[],
+    treasuryPosition: () => undefined,
+    corporateActions: () => [] as CorporateAction[],
+    activity: () => [] as ActivityEvent[],
+  };
+}
+
+/** `getMultipleAccountsInfo` caps at 100 keys, so chunk and flatten. */
+async function getMultiple(connection: Connection, keys: PublicKey[]) {
+  const out: (Awaited<ReturnType<Connection["getAccountInfo"]>> | null)[] = [];
+  for (let i = 0; i < keys.length; i += 100) {
+    const batch = await connection.getMultipleAccountsInfo(
+      keys.slice(i, i + 100),
+    );
+    out.push(...batch);
+  }
+  return out;
+}
+
+/**
+ * Read an SPL token account's `amount` without pulling in the full token
+ * program decoder.
+ *
+ * The layout is fixed: mint (32), owner (32), then the amount as a
+ * little-endian u64 at offset 64. This is stable across both Token and
+ * Token-2022 for the base fields, which is all that is needed here.
+ */
+export function tokenAccountAmount(data: Buffer | Uint8Array): bigint {
+  if (data.length < 72) return 0n;
+  let amount = 0n;
+  for (let i = 7; i >= 0; i--) {
+    amount = (amount << 8n) | BigInt(data[64 + i]);
+  }
+  return amount;
+}

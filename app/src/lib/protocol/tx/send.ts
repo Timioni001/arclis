@@ -1,0 +1,230 @@
+/**
+ * Signing and sending, and saying something useful when it fails.
+ *
+ * Two signer kinds reach this file and they sign at different levels:
+ *
+ *   - A **wallet** signs a whole transaction. It owns the UX (its own approval
+ *     popup), and some wallets prefer to broadcast themselves, so both
+ *     `signAndSendTransaction` and `signTransaction` are supported and the
+ *     wallet's preference wins.
+ *   - A **passkey account** signs raw bytes. A Solana signature is ed25519 over
+ *     the serialized message, which is exactly what `crypto.subtle.sign`
+ *     produces, so the signature is attached to the transaction directly.
+ *
+ * Both paths simulate first. A simulation costs one RPC round trip and turns
+ * "custom program error: 0x1773" into "the market is closed, so new positions
+ * would be a free bet on the next open" before the user has approved anything.
+ */
+
+import {
+  Connection,
+  PublicKey,
+  Transaction,
+  TransactionInstruction,
+  type SendOptions,
+} from "@solana/web3.js";
+import { errorMessage, errorName } from "../rpc/decode";
+import type { Session } from "../../auth/session";
+import { connectedWallet } from "../../auth/wallet";
+
+export interface SendResult {
+  signature: string;
+  /** The explorer URL, ready to link. */
+  explorer: string;
+}
+
+/**
+ * A failure a person can act on.
+ *
+ * `code` and `name` are present when the program itself rejected, which is the
+ * common case and the one worth explaining. Everything else (a dropped
+ * connection, a rejected approval) carries only `message`.
+ */
+export class TransactionError extends Error {
+  readonly code: number | null;
+  readonly name: string;
+  readonly logs: string[];
+
+  constructor(
+    message: string,
+    opts: { code?: number | null; name?: string; logs?: string[] } = {},
+  ) {
+    super(message);
+    this.code = opts.code ?? null;
+    this.name = opts.name ?? "TransactionError";
+    this.logs = opts.logs ?? [];
+  }
+}
+
+/** Anchor error codes arrive as `custom program error: 0x1770` in the logs. */
+function decodeProgramError(
+  err: unknown,
+  logs: string[],
+): { code: number; name: string; message: string } | null {
+  const haystack = `${JSON.stringify(err ?? "")} ${logs.join(" ")}`;
+
+  const hex = haystack.match(/custom program error: 0x([0-9a-fA-F]+)/);
+  if (hex) {
+    const code = parseInt(hex[1], 16);
+    return {
+      code,
+      name: errorName(code) ?? "UnknownProgramError",
+      message:
+        errorMessage(code) ?? `The program rejected this (code ${code}).`,
+    };
+  }
+
+  // Anchor also logs the name directly, which survives when the numeric form
+  // does not (for instance through some wallet error wrappers).
+  const named = logs.find((l) => l.includes("AnchorError"));
+  const name = named?.match(/Error Code: (\w+)/)?.[1];
+  if (name) {
+    const msg = named.match(/Error Message: (.+?)\.?$/)?.[1];
+    return { code: -1, name, message: msg ?? name };
+  }
+
+  return null;
+}
+
+export interface SendContext {
+  connection: Connection;
+  session: Session;
+  /** Skip the pre-flight simulation. Only for a caller that already ran one. */
+  skipSimulation?: boolean;
+  sendOptions?: SendOptions;
+}
+
+/**
+ * Build, sign, send and confirm.
+ *
+ * Returns the signature. Throws `TransactionError` with a human-readable
+ * message on any failure, including a simulation that fails before anything is
+ * signed, which is the failure worth having.
+ */
+export async function sendInstructions(
+  ctx: SendContext,
+  instructions: TransactionInstruction[],
+): Promise<SendResult> {
+  const { connection, session } = ctx;
+  if (!session.address) {
+    throw new TransactionError("Sign in before sending a transaction.");
+  }
+  const payer = new PublicKey(session.address);
+
+  const tx = new Transaction();
+  tx.add(...instructions);
+  const { blockhash, lastValidBlockHeight } =
+    await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = payer;
+
+  if (!ctx.skipSimulation) {
+    await simulate(connection, tx);
+  }
+
+  const signature = await signAndSend(ctx, tx);
+
+  const confirmation = await connection.confirmTransaction(
+    { signature, blockhash, lastValidBlockHeight },
+    "confirmed",
+  );
+  if (confirmation.value.err) {
+    const logs = await fetchLogs(connection, signature);
+    const decoded = decodeProgramError(confirmation.value.err, logs);
+    throw new TransactionError(
+      decoded?.message ?? "The transaction was rejected on-chain.",
+      { code: decoded?.code, name: decoded?.name, logs },
+    );
+  }
+
+  return { signature, explorer: explorerFor(connection, signature) };
+}
+
+/**
+ * Run the transaction against the current chain state without signing it.
+ *
+ * This is where a closed market, an insufficient balance or a breached margin
+ * check becomes a sentence instead of a hex code, and it happens before the
+ * user is asked to approve anything.
+ */
+export async function simulate(
+  connection: Connection,
+  tx: Transaction,
+): Promise<string[]> {
+  const result = await connection.simulateTransaction(tx);
+  const logs = result.value.logs ?? [];
+  if (result.value.err) {
+    const decoded = decodeProgramError(result.value.err, logs);
+    throw new TransactionError(
+      decoded?.message ?? "This transaction would fail. Nothing was sent.",
+      { code: decoded?.code, name: decoded?.name, logs },
+    );
+  }
+  return logs;
+}
+
+async function signAndSend(ctx: SendContext, tx: Transaction): Promise<string> {
+  const { connection, session } = ctx;
+
+  if (session.method === "wallet") {
+    const wallet = connectedWallet();
+    if (!wallet) {
+      throw new TransactionError(
+        "The wallet connection was lost. Reconnect and try again.",
+      );
+    }
+    return wallet.signAndSend(tx, connection, ctx.sendOptions);
+  }
+
+  if (session.method === "passkey") {
+    if (!session.sign) {
+      throw new TransactionError(
+        "Unlock your account with your passkey before sending a transaction.",
+      );
+    }
+    // A Solana signature is ed25519 over the serialized message, which is what
+    // the passkey-unwrapped key produces. Nothing here needs the private key
+    // itself, and it is non-extractable anyway.
+    const message = tx.serializeMessage();
+    const signature = await session.sign(new Uint8Array(message));
+    tx.addSignature(new PublicKey(session.address!), Buffer.from(signature));
+
+    if (!tx.verifySignatures()) {
+      throw new TransactionError(
+        "The signature did not verify. This is a bug, not a rejected approval.",
+      );
+    }
+    return connection.sendRawTransaction(tx.serialize(), ctx.sendOptions);
+  }
+
+  throw new TransactionError("Sign in before sending a transaction.");
+}
+
+async function fetchLogs(
+  connection: Connection,
+  signature: string,
+): Promise<string[]> {
+  try {
+    const tx = await connection.getTransaction(signature, {
+      maxSupportedTransactionVersion: 0,
+    });
+    return tx?.meta?.logMessages ?? [];
+  } catch {
+    // Logs are a nicety; failing to fetch them must not replace the real error.
+    return [];
+  }
+}
+
+function explorerFor(connection: Connection, signature: string): string {
+  const endpoint = connection.rpcEndpoint;
+  const cluster = endpoint.includes("devnet")
+    ? "?cluster=devnet"
+    : endpoint.includes("testnet")
+      ? "?cluster=testnet"
+      : endpoint.includes("127.0.0.1") || endpoint.includes("localhost")
+        ? "?cluster=custom"
+        : "";
+  return `https://explorer.solana.com/tx/${signature}${cluster}`;
+}
+
+export { decodeProgramError };

@@ -179,10 +179,10 @@ usually two lines to fix.
 
 ## Two things before real money
 
-1. **The program keypair must be rotated.** Its secret key is in this
-   repository's history, which means anyone who has cloned it could take over
-   the deployed program. Fine now, when nothing is deployed. Not fine later.
-   Steps are in `BUILD.md`.
+1. **The program keypair has been rotated, but the old secret is still in
+   git history.** The program now points at a fresh key, so nothing you deploy
+   is at risk. Purge the old file from history anyway before the repository
+   goes public. Steps are in `BUILD.md`.
 
 2. **Nothing is deployed and nothing holds value.** Everything above runs on
    your own machine or a private blockchain that disappears when you stop it.

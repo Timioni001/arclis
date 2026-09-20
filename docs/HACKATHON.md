@@ -291,5 +291,5 @@ output has been run and verified end to end. The gap to mainnet is a funded
 wallet and `anchor build`, not unfinished work.
 
 Before deploying anything that holds value, read **[`BUILD.md`](../BUILD.md)** -
-including the part about rotating the program keypair, whose secret key is in
+including the part about the program keypair rotation, whose old secret is in
 this repository's git history.

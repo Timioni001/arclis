@@ -11,10 +11,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-arclis = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
+arclis = "A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3"
 
 [programs.devnet]
-arclis = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x"
+arclis = "A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3"
 
 [registry]
 url = "https://api.apr.dev"

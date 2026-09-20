@@ -1,0 +1,610 @@
+/*
+ * Splash, reveals, the ambient field, and the components from the build brief.
+ *
+ * One rule governs everything in this file: the *resting* state is the visible
+ * state. Animation only ever plays content in, never holds it out, so a
+ * failed script, a blocked GSAP load or reduced motion leaves a finished page
+ * rather than a blank one.
+ */
+
+/* ==========================================================================
+   Splash
+   ========================================================================== */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  cursor: pointer;
+}
+.splash-inner {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-4);
+}
+.splash-word {
+  display: flex;
+}
+.splash-mask {
+  overflow: hidden;
+  display: inline-block;
+}
+.splash-letter {
+  display: inline-block;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(44px, 9vw, 104px);
+  letter-spacing: -0.05em;
+  line-height: 1;
+}
+.splash-rule {
+  width: min(280px, 52vw);
+  height: 2px;
+  background: linear-gradient(90deg, var(--lime-deep), transparent);
+  border-radius: 2px;
+}
+.splash-tag {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.splash-skip {
+  position: absolute;
+  right: var(--space-6);
+  bottom: var(--space-6);
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+}
+.splash-skip:hover {
+  color: var(--text-primary);
+}
+
+/* ==========================================================================
+   Word reveal
+   ========================================================================== */
+
+.word-reveal {
+  display: block;
+}
+/* The mask is the effect. Without `overflow: hidden` here the words simply
+   slide, and the hard edge they emerge from is what makes it read. */
+.word-mask {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+.word-inner {
+  display: inline-block;
+  will-change: transform;
+}
+.word-accent {
+  color: var(--lime-ink);
+}
+
+/* ==========================================================================
+   Ambient field
+   ========================================================================== */
+
+.ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Sits behind everything. `.app` and its children establish their own
+     stacking above it via `position: relative`. */
+}
+.ambient-canvas,
+.ambient-fallback {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ambient-fallback {
+  background: radial-gradient(
+    60% 50% at 50% 38%,
+    var(--lime-wash) 0%,
+    transparent 70%
+  );
+  opacity: 0.55;
+}
+
+/*
+ * Grain. A large soft gradient bands badly on an 8-bit display, and a very
+ * low-opacity noise texture is the standard fix: it dithers the ramp. Inline
+ * SVG so it costs no request.
+ */
+.ambient-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+:root[data-theme="dark"] .ambient-grain {
+  opacity: 0.05;
+}
+
+/* Content sits above the field. */
+.app {
+  position: relative;
+  z-index: 1;
+}
+
+/* ==========================================================================
+   AddressDisplay
+   ========================================================================== */
+
+.address {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.address-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.address-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--surface-sunken);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: border-color var(--fast) var(--ease-out);
+}
+.address-value:hover {
+  border-color: var(--lime-deep);
+}
+.address-link {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-xs);
+  color: var(--text-secondary);
+}
+.address-link:hover {
+  color: var(--text-primary);
+  background: var(--surface-muted);
+}
+
+/* ==========================================================================
+   AnimatedCounter
+   ========================================================================== */
+
+.counter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+.counter-value {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The shimmering gradient from the design reference, on the metric numerals
+ * only. `background-clip: text` needs a transparent fill, so a browser that
+ * does not support it would render nothing: the `@supports` guard means those
+ * browsers keep a solid, readable number instead.
+ */
+@supports (-webkit-background-clip: text) or (background-clip: text) {
+  .counter-gradient .counter-value {
+    background: linear-gradient(
+      100deg,
+      var(--text-primary) 0%,
+      var(--lime-ink) 38%,
+      var(--text-primary) 76%
+    );
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: counter-shimmer 7s var(--ease-in-out) infinite;
+  }
+}
+@keyframes counter-shimmer {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* ==========================================================================
+   PriceTicker
+   ========================================================================== */
+
+.ticker {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.ticker-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.ticker-value {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  /* The colour transition is one-way fast, one-way slow: the flash arrives
+     instantly and fades out, so a glance catches it but a stare is not
+     strobed. */
+  transition: color 600ms var(--ease-out);
+}
+.ticker[data-direction="up"] .ticker-value {
+  color: var(--positive);
+  transition: none;
+}
+.ticker[data-direction="down"] .ticker-value {
+  color: var(--negative);
+  transition: none;
+}
+.ticker-arrow {
+  font-size: 10px;
+}
+.ticker[data-direction="up"] .ticker-arrow {
+  color: var(--positive);
+}
+.ticker[data-direction="down"] .ticker-arrow {
+  color: var(--negative);
+}
+
+/* ==========================================================================
+   NotificationBell
+   ========================================================================== */
+
+.bell {
+  position: relative;
+}
+.bell-count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--negative);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  /* A ring in the surface colour keeps the badge legible where it overlaps
+     the glyph underneath. */
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* ==========================================================================
+   StepPlayer
+   ========================================================================== */
+
+.stepper {
+  display: grid;
+  gap: var(--space-4);
+}
+.stepper-rail {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.stepper-tab {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.stepper-tab[aria-current="step"] {
+  border-color: var(--lime-deep);
+  color: var(--text-primary);
+}
+.stepper-num {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.stepper-progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  background: var(--lime-deep);
+  animation-name: stepper-fill;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+@keyframes stepper-fill {
+  from {
+    width: 0;
+  }
+  to {
+    width: 100%;
+  }
+}
+.stepper-body {
+  animation: step-in 320ms var(--ease-out);
+}
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   Mono accents
+   ========================================================================== */
+
+/*
+ * JetBrains Mono for anything a reader compares row against row: tickers,
+ * addresses, basis points, timers. It is not a decorative choice; proportional
+ * digits in a column of prices do not align, and misaligned digits are misread
+ * digits.
+ */
+.mono,
+.mono * {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.eyebrow-mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .counter-gradient .counter-value,
+  .stepper-progress,
+  .stepper-body {
+    animation: none !important;
+  }
+  .counter-gradient .counter-value {
+    background: none;
+    color: var(--text-primary);
+    -webkit-text-fill-color: currentColor;
+  }
+}
+
+/* ==========================================================================
+   Assistant
+   ========================================================================== */
+
+.assistant-open {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 13.5px;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--fast) var(--ease-out),
+    transform var(--fast) var(--ease-out);
+}
+.assistant-open:hover {
+  border-color: var(--lime-deep);
+  transform: translateY(-1px);
+}
+
+.assistant-shell {
+  width: 100%;
+}
+.assistant {
+  padding: var(--space-5);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.assistant-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.assistant-head p {
+  margin: var(--space-2) 0 0;
+  max-width: 56ch;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.assistant-close {
+  transform: rotate(45deg);
+  flex: none;
+}
+
+.assistant-log {
+  display: grid;
+  gap: var(--space-3);
+  max-height: 340px;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.assistant-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.assistant-suggestions button {
+  width: 100%;
+  text-align: left;
+  min-height: 40px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+.assistant-suggestions button:hover {
+  border-style: solid;
+  border-color: var(--lime-deep);
+  color: var(--text-primary);
+}
+
+.assistant-turn {
+  font-size: 13.5px;
+  line-height: 1.6;
+  white-space: pre-wrap; /* the model emits paragraphs, not markup */
+}
+.assistant-turn[data-role="user"] {
+  justify-self: end;
+  max-width: 80%;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md) var(--radius-md) var(--radius-xs)
+    var(--radius-md);
+  background: var(--lime-wash);
+  color: var(--text-primary);
+}
+.assistant-turn[data-role="assistant"] {
+  color: var(--text-primary);
+}
+
+.assistant-thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.assistant-dots {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  /* One dot plus two box-shadow copies: a three-dot pulse with one element. */
+  box-shadow:
+    6px 0 0 currentColor,
+    12px 0 0 currentColor;
+  animation: assistant-pulse 1.1s var(--ease-in-out) infinite;
+}
+@keyframes assistant-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.assistant-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--negative);
+  background: var(--negative-wash);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+}
+
+.assistant-compose {
+  display: flex;
+  gap: var(--space-2);
+}
+.assistant-compose input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13.5px;
+  outline: none;
+}
+.assistant-compose input:focus-visible {
+  border-color: var(--lime-deep);
+}
+.assistant-compose button {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--lime);
+  color: var(--on-lime);
+  cursor: pointer;
+}
+.assistant-compose button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .assistant {
+    padding: var(--space-4);
+  }
+  .assistant-log {
+    max-height: 260px;
+  }
+  .assistant-turn[data-role="user"] {
+    max-width: 92%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-dots {
+    animation: none;
+    opacity: 0.6;
+  }
+  .assistant-log {
+    scroll-behavior: auto;
+  }
+}

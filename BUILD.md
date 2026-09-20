@@ -100,24 +100,63 @@ anchor test
 funding, margin, and the liquidation waterfall, in well under a second. It needs
 no Solana toolchain at all.
 
-## Rotate the program keypair before deploying
+## The program keypair has been rotated
 
-`target/deploy/arclis-keypair.json` was committed to this repository's git
-history. That file is the **secret key** for program ID
-`8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x`, so anyone who has ever cloned
-this repo can deploy to and upgrade that program ID.
+**Current program ID: `A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3`**
 
-It has been removed from the working tree and `target/` is now in `.gitignore`,
-but **removing a file from the index does not remove it from history**. Before
-any deployment that holds value:
+### What happened
+
+`target/deploy/perp_engine-keypair.json` was committed to this repository's git
+history. That file was the **secret key** for program ID `8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x`,
+so anyone who has ever cloned this repo can deploy to and upgrade that ID.
+
+### What was done about it
+
+A fresh keypair was generated, `declare_id!` and `Anchor.toml` were synced to
+it, and the old file was deleted from the working tree. `target/` and
+`**/*-keypair.json` are both in `.gitignore`, so it cannot happen again by
+accident.
+
+**`8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x` is burned.** Never deploy to it, never
+fund it, and treat any program found at that address as hostile. It is named
+here on purpose: a burned key you can recognise is safer than one you cannot.
+
+### What is still outstanding
+
+**Removing a file from the index does not remove it from history.** The old
+secret key is still in this repository's git objects. It no longer matters for
+the program the code now points at, but purge it anyway before the repo goes
+public:
+
+```bash
+git filter-repo --path target/deploy/perp_engine-keypair.json --invert-paths
+git push --force
+```
+
+Coordinate with anyone holding a clone first, since this rewrites history.
+
+### Rotating again
+
+The current key is on disk at `target/deploy/arclis-keypair.json` and is *not*
+tracked. If you lose it before deploying, or want a fresh one:
 
 ```bash
 solana-keygen new -o target/deploy/arclis-keypair.json --force
 anchor keys sync     # rewrites declare_id! and Anchor.toml together
 ```
 
-To purge it from history as well, use `git filter-repo` (or BFG) and force-push
-- coordinate with anyone else who has a clone first.
+If you ever need to do this without the Solana toolchain installed:
+
+```bash
+node scripts/rotate-program-key.mjs          # write a key, print the ID
+node scripts/rotate-program-key.mjs --sync   # and rewrite declare_id!/Anchor.toml/IDL
+node scripts/rotate-program-key.mjs --adopt  # sync to a key already on disk
+```
+
+A keypair file is just a JSON array of 64 bytes, the 32-byte ed25519 seed
+followed by the 32-byte public key, so the script's output is byte-identical to
+what `solana-keygen` writes. `--adopt` is the mode to use when someone hands you
+a key to deploy under, or when a generate step ran twice.
 
 ## If you would rather upgrade than pin
 

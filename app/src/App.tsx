@@ -22,7 +22,12 @@ import { Liquidity } from "./screens/Liquidity";
 import { Treasury } from "./screens/Treasury";
 import { Portfolio } from "./screens/Portfolio";
 import { AuthSheet } from "./components/auth/AuthSheet";
-import { shortAddress } from "./lib/format";
+import { Splash } from "./components/motion/Splash";
+import { AmbientShader } from "./components/motion/AmbientShader";
+import { AddressDisplay, NotificationBell } from "./components/ui/data";
+import { useLiveSource } from "./lib/protocol/useLiveSource";
+import { explorerAddress, REFRESH_INTERVAL_MS } from "./lib/config";
+import { ago } from "./lib/format";
 import { Icon } from "./components/ui";
 import { Footer } from "./components/ui/Footer";
 import { GlassPanel } from "./components/ui/Glass";
@@ -82,6 +87,15 @@ export function App({ source }: { source: DataSource }) {
   }, [theme]);
 
   const registry = useMemo(() => modelledRegistry(), []);
+
+  // Drives the RPC source when there is one, and is inert on the mock. The
+  // interval pauses while the tab is hidden; see `useLiveSource`.
+  const liveStatus = useLiveSource(
+    source,
+    session.address,
+    REFRESH_INTERVAL_MS,
+  );
+
   const markets = useMemo(() => source.markets(), [source]);
   const view = source.market(symbol) ?? markets[0];
 
@@ -117,159 +131,184 @@ export function App({ source }: { source: DataSource }) {
   }
 
   return (
-    <div className="app">
-      <GlassPanel
-        weight="chrome"
-        radius={0}
-        className="topbar-shell topbar-glass"
-        innerClassName="topbar"
-        as="header"
-      >
-        {/* The wordmark is the mark. No logo glyph: the name set in the
+    <>
+      <Splash />
+      <AmbientShader />
+      <div className="app">
+        <GlassPanel
+          weight="chrome"
+          radius={0}
+          className="topbar-shell topbar-glass"
+          innerClassName="topbar"
+          as="header"
+        >
+          {/* The wordmark is the mark. No logo glyph: the name set in the
             display face at 800 carries it. */}
-        <div className="wordmark crisp">arclis</div>
+          <div className="wordmark crisp">arclis</div>
 
-        <button
-          className="nav-toggle"
-          aria-expanded={menuOpen}
-          aria-controls="primary-nav"
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          <Icon name={menuOpen ? "plus" : "layers"} size={18} />
-          <span>Menu</span>
-        </button>
+          <button
+            className="nav-toggle"
+            aria-expanded={menuOpen}
+            aria-controls="primary-nav"
+            onClick={() => setMenuOpen(!menuOpen)}
+          >
+            <Icon name={menuOpen ? "plus" : "layers"} size={18} />
+            <span>Menu</span>
+          </button>
 
-        <nav
-          className="nav crisp"
-          id="primary-nav"
-          aria-label="Primary"
-          data-open={menuOpen ? "true" : "false"}
-        >
-          {TABS.map((t) => (
-            <button
-              key={t}
-              className="nav-item"
-              aria-current={t === tab ? "page" : undefined}
-              onClick={() => selectTab(t)}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
+          <nav
+            className="nav crisp"
+            id="primary-nav"
+            aria-label="Primary"
+            data-open={menuOpen ? "true" : "false"}
+          >
+            {TABS.map((t) => (
+              <button
+                key={t}
+                className="nav-item"
+                aria-current={t === tab ? "page" : undefined}
+                onClick={() => selectTab(t)}
+              >
+                {t}
+              </button>
+            ))}
+          </nav>
 
-        <div className="topbar-controls crisp">
-          {source.kind === "mock" && (
-            <span
-              className="pill demo-pill"
-              data-tone="neutral"
-              title="Reading from the in-memory source, not RPC"
-            >
-              <span className="dot" aria-hidden />
-              DEMO DATA
-            </span>
-          )}
+          <div className="topbar-controls crisp">
+            {source.kind === "mock" ? (
+              <span
+                className="pill demo-pill"
+                data-tone="neutral"
+                title="Reading from the in-memory source, not RPC"
+              >
+                <span className="dot" aria-hidden />
+                DEMO DATA
+              </span>
+            ) : (
+              <button
+                className="pill demo-pill"
+                data-tone={liveStatus.lastError ? "halted" : "open"}
+                onClick={liveStatus.refresh}
+                title={
+                  liveStatus.lastError ??
+                  (liveStatus.loadedAt
+                    ? `Last read ${ago(liveStatus.loadedAt, now)}`
+                    : "Reading the chain")
+                }
+              >
+                <span className="dot" aria-hidden />
+                {liveStatus.lastError
+                  ? "RPC ERROR"
+                  : liveStatus.refreshing
+                    ? "SYNCING"
+                    : "LIVE"}
+              </button>
+            )}
 
-          <div className="icon-cluster">
-            <button className="icon-btn" aria-label="Search">
-              <Icon name="search" />
-            </button>
-            <button className="icon-btn" aria-label="Notifications">
-              <Icon name="bell" />
-            </button>
-            <button
-              className="icon-btn"
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
-            >
-              <Icon name={theme === "dark" ? "sun" : "moon"} />
-            </button>
+            <div className="icon-cluster">
+              <button className="icon-btn" aria-label="Search">
+                <Icon name="search" />
+              </button>
+              <NotificationBell count={0} />
+              <button
+                className="icon-btn"
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              >
+                <Icon name={theme === "dark" ? "sun" : "moon"} />
+              </button>
+            </div>
+
+            {session.address ? (
+              <div className="account-cluster">
+                <AddressDisplay
+                  address={session.address}
+                  label={
+                    <Icon
+                      name={session.method === "passkey" ? "shield" : "wallet"}
+                      size={14}
+                    />
+                  }
+                  explorerHref={explorerAddress(session.address)}
+                />
+                {session.capability === "watching" && (
+                  <span className="account-locked">locked</span>
+                )}
+                <button className="account-signout" onClick={signOut}>
+                  Sign out
+                </button>
+              </div>
+            ) : (
+              <button
+                className="btn btn-sm btn-primary"
+                onClick={() => requestSignIn()}
+              >
+                Sign in
+              </button>
+            )}
           </div>
+        </GlassPanel>
 
-          {session.address ? (
-            <button
-              className="account-chip"
-              onClick={signOut}
-              title={`${session.label ?? "Account"} · ${session.address}`}
-            >
-              <Icon
-                name={session.method === "passkey" ? "shield" : "wallet"}
-                size={16}
-              />
-              <span className="num">{shortAddress(session.address)}</span>
-              {session.capability === "watching" && (
-                <span className="account-locked">locked</span>
-              )}
-            </button>
-          ) : (
-            <button
-              className="btn btn-sm btn-primary"
-              onClick={() => requestSignIn()}
-            >
-              Sign in
-            </button>
+        <main>
+          {tab === "Overview" && (
+            <Markets
+              markets={markets}
+              onOpen={openMarket}
+              onExplore={() => setTab("Registry")}
+            />
           )}
-        </div>
-      </GlassPanel>
 
-      <main>
-        {tab === "Overview" && (
-          <Markets
-            markets={markets}
-            onOpen={openMarket}
-            onExplore={() => setTab("Registry")}
-          />
-        )}
+          {tab === "Registry" && (
+            <Registry registry={registry} now={now} onOpenMarket={openMarket} />
+          )}
 
-        {tab === "Registry" && (
-          <Registry registry={registry} now={now} onOpenMarket={openMarket} />
-        )}
+          {tab === "Trade" && view && (
+            <Trade
+              view={view}
+              position={source.positionFor(view.market.address)}
+              corporateActions={source.corporateActions(view.oracle.symbol)}
+              now={now}
+              onBack={() => setTab("Overview")}
+            />
+          )}
 
-        {tab === "Trade" && view && (
-          <Trade
-            view={view}
-            position={source.positionFor(view.market.address)}
-            corporateActions={source.corporateActions(view.oracle.symbol)}
-            now={now}
-            onBack={() => setTab("Overview")}
-          />
-        )}
+          {tab === "Portfolio" && (
+            <Portfolio
+              positions={source.positions()}
+              markets={markets}
+              activity={source.activity(7)}
+              now={now}
+              onOpen={openMarket}
+            />
+          )}
 
-        {tab === "Portfolio" && (
-          <Portfolio
-            positions={source.positions()}
-            markets={markets}
-            activity={source.activity(7)}
-            now={now}
-            onOpen={openMarket}
-          />
-        )}
+          {tab === "Liquidity" && (
+            <Liquidity
+              markets={markets}
+              lpPositions={(p) => source.lpPosition(p)}
+              now={now}
+            />
+          )}
 
-        {tab === "Liquidity" && (
-          <Liquidity
-            markets={markets}
-            lpPositions={(p) => source.lpPosition(p)}
-            now={now}
-          />
-        )}
+          {tab === "Treasuries" && (
+            <Treasury
+              treasuries={source.treasuries()}
+              markets={markets}
+              positionFor={(t) => source.treasuryPosition(t)}
+              now={now}
+            />
+          )}
+        </main>
 
-        {tab === "Treasuries" && (
-          <Treasury
-            treasuries={source.treasuries()}
-            markets={markets}
-            positionFor={(t) => source.treasuryPosition(t)}
-            now={now}
-          />
-        )}
-      </main>
+        <Footer onNavigate={(t) => selectTab(t as Tab)} />
 
-      <Footer onNavigate={(t) => selectTab(t as Tab)} />
-
-      <AuthSheet
-        open={authOpen}
-        reason={authReason}
-        onClose={() => setAuthOpen(false)}
-        onSession={setSession}
-      />
-    </div>
+        <AuthSheet
+          open={authOpen}
+          reason={authReason}
+          onClose={() => setAuthOpen(false)}
+          onSession={setSession}
+        />
+      </div>
+    </>
   );
 }

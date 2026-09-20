@@ -58,6 +58,9 @@ import {
   type Tone,
 } from "../components/ui";
 import { GlassPanel } from "../components/ui/Glass";
+import { Reveal, WordReveal } from "../components/motion/Reveal";
+import { AssistantPanel } from "../components/assistant/AssistantPanel";
+import { AnimatedCounter, StepPlayer } from "../components/ui/data";
 import { ago, usd } from "../lib/format";
 
 /** Backing tiers get their own tone, so the colour is the claim, not a score. */
@@ -135,24 +138,30 @@ export function Registry({
     <div className="page">
       <section className="registry-hero">
         <div className="registry-hero-body">
-          <div className="registry-eyebrow">TOKENIZED EQUITY REGISTRY</div>
-          <h1 className="registry-title">
-            Four issuers. One price chart.
-            <br />
-            <span className="registry-title-mark">Four different things.</span>
-          </h1>
-          <p className="registry-lede">
-            A token called AAPL can be a redeemable claim on a share, a note
-            against custody you cannot reach, or a tracker holding nothing at
-            all. Look any of them up below. No wallet, no sign-in, no execution.
-          </p>
+          <div className="registry-eyebrow eyebrow-mono">
+            Tokenized equity registry
+          </div>
+          <WordReveal
+            as="h1"
+            className="registry-title"
+            text="Four issuers. One price chart. Four different things."
+            accentFrom={5}
+            stagger={0.055}
+          />
+          <Reveal as="p" className="registry-lede" delay={0.1}>
+            Explore tokenized equity instruments and their underlying
+            structures. Each listing provides details on the issuer, underlying
+            claim, custody arrangement, and redemption mechanism.
+          </Reveal>
           <div className="registry-hero-meta crisp">
             <span>
-              <strong>{stocks.length}</strong> tokens
+              <AnimatedCounter value={stocks.length} gradient />
+              <span className="registry-hero-unit"> tokens</span>
             </span>
             <span aria-hidden>·</span>
             <span>
-              <strong>{registry.issuers().length}</strong> issuers
+              <AnimatedCounter value={registry.issuers().length} gradient />
+              <span className="registry-hero-unit"> issuers</span>
             </span>
             <span aria-hidden>·</span>
             <span>Updated {ago(registry.asOf(), now)}</span>
@@ -229,6 +238,61 @@ export function Registry({
           </select>
         </label>
       </GlassPanel>
+
+      <Reveal className="registry-explainer">
+        <StepPlayer
+          duration={7}
+          steps={[
+            {
+              title: "The claim",
+              body: (
+                <p>
+                  A token named after a stock can be a redeemable certificate, a
+                  note against custody you cannot reach, an exchange IOU, or a
+                  tracker holding nothing. The claim score breaks that into four
+                  parts and shows each one, so the number can be argued with
+                  rather than trusted.
+                </p>
+              ),
+            },
+            {
+              title: "The price gap",
+              body: (
+                <p>
+                  A token drifting from the stock it tracks is usually the
+                  clock, not a mispricing. When the reference market is shut its
+                  price is frozen and the token keeps trading, so the tolerance
+                  widens. Past roughly 5% it stops being a spread and starts
+                  meaning redemption is not working.
+                </p>
+              ),
+            },
+            {
+              title: "The exit",
+              body: (
+                <p>
+                  Ranked by what selling actually costs, not by pool size. A
+                  large pool that is mostly one-sided will not let you out, and
+                  total value locked will happily call it the deepest venue.
+                </p>
+              ),
+            },
+            {
+              title: "The mint",
+              body: (
+                <p>
+                  Freeze and mint authorities are read from the chain, not from
+                  the issuer, and reported rather than scored. A freeze
+                  authority is required on a regulated security token and is a
+                  very different fact on one marketed as permissionless.
+                </p>
+              ),
+            },
+          ]}
+        />
+      </Reveal>
+
+      <AssistantPanel />
 
       <div className="registry-grid">
         {rows.map(({ stock, issuer, backing, deviation, liquidity, value }) => (

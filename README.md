@@ -72,9 +72,11 @@ account, not a ticker.
 | | |
 |---|---|
 | Compiles (`cargo check`) | **yes**, clean |
+| Program ID | `A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3` (rotated; the original key's secret was in git history) |
 | Rust unit tests (`cargo test --lib`) | **127 passing**: PnL, funding, margin, liquidation, sessions, splits, dividends, treasury hedging, pool NAV and the loss waterfall |
 | DBC tests (`npm run test:dbc`) | **37 passing**, against the real Meteora SDK, no network |
-| App tests (`npm run app:test`) | **66 passing**: the TypeScript read model against the Rust, plus the registry's scoring |
+| App tests (`npm run app:test`) | **86 passing**: the read model against the Rust, the registry's scoring, and every instruction's account list against the IDL |
+| Integration tests (`anchor test`) | **24 written**, covering the pool, splits, dividends, insurance, session gating and a real liquidation. Never executed: no Solana toolchain in the authoring environment |
 | Interface audit | **clean** across 6 screens x 3 widths x 2 themes: no overflow, clipping, contrast failure or undersized touch target |
 | IDL (`npm run idl`) | **generated**: 26 instructions, committed under `idl/` |
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
@@ -87,9 +89,31 @@ The lockfile has been resolved and audited against the exact rustc that
 fixed. But the SBF build itself and the TypeScript suite have not been executed;
 expect the integration tests to need small corrections on first run.
 
-**Read [`BUILD.md`](BUILD.md) first** if `anchor build` is failing, including
-the note about rotating the program keypair, whose secret key is in this
-repository's git history.
+**Read [`BUILD.md`](BUILD.md) first** if `anchor build` is failing. It also
+records the program keypair rotation: the original key's secret was committed
+to git history, so it was replaced and the old ID is burned.
+
+## Reading a chain
+
+The interface ships reading an in-memory source, which needs no chain and is
+what `npm run app:dev` starts. Point it at a deployment by copying
+`app/.env.example` to `app/.env` and setting:
+
+```bash
+VITE_DATA_SOURCE=rpc
+VITE_CLUSTER=devnet
+VITE_RPC_URL=https://your-provider.example/rpc   # the public endpoints are rate limited
+```
+
+Nothing else changes: `DataSource` is one interface with two implementations,
+and no screen knows which one it is reading. The chain-backed one is imported
+lazily, so a visitor who only reads the registry never downloads a signing
+library.
+
+Transactions are built in `app/src/lib/protocol/tx/`. Every instruction's
+account list is checked against the generated IDL by a unit test, because those
+lists are written positionally by hand against Rust structs and a reordered
+field would otherwise address the wrong accounts silently.
 
 ## Quick start
 
@@ -214,9 +238,9 @@ compiled". It did not compile, and several things were wrong beyond that.
   needs `Error` rather than `PerpError`.
 - `declare_id!` held Anchor's default placeholder and disagreed with
   `Anchor.toml`. Reconciled.
-- `target/` was committed, including `arclis-keypair.json`: the **secret
-  key** for the declared program ID. Removed and gitignored; rotation
-  instructions in `BUILD.md`.
+- `target/` was committed, including the program keypair: the **secret key**
+  for the declared program ID. Removed, gitignored, and the key has since been
+  rotated. The old ID `8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x` is burned; see `BUILD.md`.
 
 **Correctness**
 - **Funding ignored the price.** The index was a bare rate, so
@@ -289,7 +313,8 @@ Listed plainly, because a judge will find them anyway:
 1. `anchor build`, then `anchor test`; fix what the integration suite surfaces.
    **Do this before building more**: the program has never been compiled for
    SBF, and stacking a frontend on top of that means debugging two unknowns.
-2. Rotate the program keypair (`BUILD.md`), its secret key is in git history.
-3. Add an instruction to capitalise the insurance fund directly.
-4. Swap the keeper oracle for Pyth.
-5. Handle dividends alongside splits.
+2. Deploy to devnet and point the interface at it.
+3. Swap the keeper oracle for Pyth, and run a session keeper on a real market
+   calendar.
+4. Run the funding crank and a liquidator, without which the loss waterfall is
+   theoretical.

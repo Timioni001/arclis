@@ -15,14 +15,16 @@
     "app:dev": "npm --prefix app run dev",
     "app:build": "npm --prefix app run build",
     "app:test": "npm --prefix app test",
-    "idl": "python3 scripts/build-idl.py"
+    "idl": "python3 scripts/build-idl.py",
+    "assistant:typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",
     "@solana/spl-token": "^0.4.6",
     "@solana/web3.js": "^1.95.0",
     "@meteora-ag/dynamic-bonding-curve-sdk": "^1.5.12",
-    "decimal.js": "^10.4.3"
+    "decimal.js": "^10.4.3",
+    "@anthropic-ai/sdk": "^0.70.0"
   },
   "devDependencies": {
     "@types/bn.js": "^5.1.5",

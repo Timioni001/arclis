@@ -336,4 +336,4 @@ pool vault and the token program in their account lists.
 | Deployed | **no** |
 
 Before the UI goes anywhere near real money, read [`../BUILD.md`](../BUILD.md) -
-the program keypair's secret key is in git history and must be rotated.
+the program keypair has been rotated, and the old secret is still in git history.
