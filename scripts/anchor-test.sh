@@ -55,8 +55,28 @@ ok "wallet $(solana-keygen pubkey "$WALLET")"
 
 step "1/6  Building the program (skipping Anchor's IDL step)"
 
-anchor build --no-idl || die "anchor build --no-idl failed. That is a real program build failure, not the IDL issue."
+BUILD_LOG="${TMPDIR:-/tmp}/arclis-build.log"
+set +e
+anchor build --no-idl 2>&1 | tee "$BUILD_LOG"
+BUILD_RC=${PIPESTATUS[0]}
+set -e
+[ "$BUILD_RC" -eq 0 ] || die "anchor build --no-idl failed. That is a real program build failure, not the IDL issue."
 ok "program built"
+
+# A stack-offset warning is not cosmetic. SBF gives every function a fixed 4KB
+# stack frame and does not trap on overflow: a frame that needs more simply
+# writes past its end, over whatever is next. When the overflowing function is
+# an Anchor entrypoint, "whatever is next" includes the deserialised
+# instruction arguments, so the program runs on values nobody sent it and
+# rejects them with a validation error that looks like a client bug. This cost
+# a full debugging session once; it does not get to be a silent warning again.
+if grep -q "exceeded max offset" "$BUILD_LOG"; then
+  warn "the program overflows SBF's 4KB stack frame. Arguments and account data"
+  warn "can be silently corrupted. Box the data accounts in the named contexts:"
+  grep "exceeded max offset" "$BUILD_LOG" | sed 's/^/    /'
+else
+  ok "no stack-frame overflows"
+fi
 
 # --- 2. reconcile the program ID -------------------------------------------
 

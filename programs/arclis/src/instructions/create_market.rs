@@ -120,9 +120,9 @@ pub struct CreateMarket<'info> {
     pub creator: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     #[account(
         init,
@@ -131,9 +131,9 @@ pub struct CreateMarket<'info> {
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
-    pub quote_mint: Account<'info, Mint>,
+    pub quote_mint: Box<Account<'info, Mint>>,
 
     #[account(
         init,
@@ -143,7 +143,7 @@ pub struct CreateMarket<'info> {
         token::mint = quote_mint,
         token::authority = market,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

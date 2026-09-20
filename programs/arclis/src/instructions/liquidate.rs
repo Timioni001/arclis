@@ -25,20 +25,20 @@ pub struct Liquidate<'info> {
         mut,
         constraint = liquidator_token_account.mint == vault.mint @ ArclisError::VaultMismatch,
     )]
-    pub liquidator_token_account: Account<'info, TokenAccount>,
+    pub liquidator_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(address = market.oracle @ ArclisError::OracleMismatch)]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     #[account(
         mut,
@@ -46,10 +46,10 @@ pub struct Liquidate<'info> {
         bump = position.bump,
         constraint = position.market == market.key() @ ArclisError::VaultMismatch,
     )]
-    pub position: Account<'info, Position>,
+    pub position: Box<Account<'info, Position>>,
 
     #[account(mut, address = market.vault @ ArclisError::VaultMismatch)]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     /// The counterparty, and the second loss absorber after insurance.
     #[account(
@@ -58,10 +58,10 @@ pub struct Liquidate<'info> {
         seeds = [LiquidityPool::SEED, market.key().as_ref()],
         bump = pool.bump,
     )]
-    pub pool: Account<'info, LiquidityPool>,
+    pub pool: Box<Account<'info, LiquidityPool>>,
 
     #[account(mut, address = pool.vault @ ArclisError::VaultMismatch)]
-    pub pool_vault: Account<'info, TokenAccount>,
+    pub pool_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }

@@ -16,7 +16,7 @@ pub struct InitializeGlobalConfig<'info> {
         seeds = [GlobalConfig::SEED],
         bump
     )]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     /// Label for off-chain insurance accounting. Insurance value itself lives
     /// inside each market vault and is tracked by `Market::insurance_balance`,

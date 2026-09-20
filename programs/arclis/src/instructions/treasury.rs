@@ -38,19 +38,19 @@ pub struct InitializeTreasury<'info> {
     pub authority: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     /// The agent's token, as launched on the bonding curve.
-    pub agent_mint: Account<'info, Mint>,
+    pub agent_mint: Box<Account<'info, Mint>>,
 
     /// The tokenized stock the agent raised in.
-    pub stock_mint: Account<'info, Mint>,
+    pub stock_mint: Box<Account<'info, Mint>>,
 
     /// The perp market used to hedge. Its oracle must price `stock_mint`;
     /// this program cannot verify that link on-chain, so it is recorded and
     /// surfaced in the event for off-chain checking.
     #[account(seeds = [Market::SEED, market.oracle.as_ref()], bump = market.bump)]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(
         init,
@@ -59,7 +59,7 @@ pub struct InitializeTreasury<'info> {
         seeds = [AgentTreasury::SEED, agent_mint.key().as_ref()],
         bump
     )]
-    pub treasury: Account<'info, AgentTreasury>,
+    pub treasury: Box<Account<'info, AgentTreasury>>,
 
     #[account(
         init,
@@ -69,7 +69,7 @@ pub struct InitializeTreasury<'info> {
         token::mint = stock_mint,
         token::authority = treasury,
     )]
-    pub stock_vault: Account<'info, TokenAccount>,
+    pub stock_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -127,7 +127,7 @@ pub struct SetTreasuryPolicy<'info> {
         seeds = [AgentTreasury::SEED, treasury.agent_mint.as_ref()],
         bump = treasury.bump
     )]
-    pub treasury: Account<'info, AgentTreasury>,
+    pub treasury: Box<Account<'info, AgentTreasury>>,
 }
 
 pub fn set_treasury_policy(
@@ -156,26 +156,26 @@ pub struct MoveTreasuryStock<'info> {
     pub authority: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [AgentTreasury::SEED, treasury.agent_mint.as_ref()],
         bump = treasury.bump
     )]
-    pub treasury: Account<'info, AgentTreasury>,
+    pub treasury: Box<Account<'info, AgentTreasury>>,
 
     #[account(
         mut,
         address = treasury.stock_vault @ ArclisError::VaultMismatch
     )]
-    pub stock_vault: Account<'info, TokenAccount>,
+    pub stock_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         constraint = authority_token_account.mint == stock_vault.mint @ ArclisError::TreasuryAssetMismatch,
     )]
-    pub authority_token_account: Account<'info, TokenAccount>,
+    pub authority_token_account: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }
@@ -290,14 +290,14 @@ pub struct RebalanceHedge<'info> {
     pub cranker: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [AgentTreasury::SEED, treasury.agent_mint.as_ref()],
         bump = treasury.bump
     )]
-    pub treasury: Account<'info, AgentTreasury>,
+    pub treasury: Box<Account<'info, AgentTreasury>>,
 
     #[account(
         mut,
@@ -305,10 +305,10 @@ pub struct RebalanceHedge<'info> {
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(address = market.oracle @ ArclisError::OracleMismatch)]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     /// The treasury's own perp position, owned by the treasury PDA.
     #[account(
@@ -317,7 +317,7 @@ pub struct RebalanceHedge<'info> {
         bump = position.bump,
         constraint = position.owner == treasury.key() @ ArclisError::Unauthorized,
     )]
-    pub position: Account<'info, Position>,
+    pub position: Box<Account<'info, Position>>,
 
     /// The counterparty. A treasury hedge is an ordinary position as far as the
     /// pool is concerned, so it settles through the same path as any trader.
@@ -327,13 +327,13 @@ pub struct RebalanceHedge<'info> {
         seeds = [LiquidityPool::SEED, market.key().as_ref()],
         bump = pool.bump,
     )]
-    pub pool: Account<'info, LiquidityPool>,
+    pub pool: Box<Account<'info, LiquidityPool>>,
 
     #[account(mut, address = pool.vault @ ArclisError::VaultMismatch)]
-    pub pool_vault: Account<'info, TokenAccount>,
+    pub pool_vault: Box<Account<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault @ ArclisError::VaultMismatch)]
-    pub market_vault: Account<'info, TokenAccount>,
+    pub market_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }

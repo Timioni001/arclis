@@ -32,16 +32,16 @@ pub struct InitializeLiquidityPool<'info> {
     pub authority: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [Market::SEED, market.oracle.as_ref()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
-    pub quote_mint: Account<'info, Mint>,
+    pub quote_mint: Box<Account<'info, Mint>>,
 
     #[account(
         init,
@@ -50,7 +50,7 @@ pub struct InitializeLiquidityPool<'info> {
         seeds = [LiquidityPool::SEED, market.key().as_ref()],
         bump
     )]
-    pub pool: Account<'info, LiquidityPool>,
+    pub pool: Box<Account<'info, LiquidityPool>>,
 
     #[account(
         init,
@@ -60,7 +60,7 @@ pub struct InitializeLiquidityPool<'info> {
         token::mint = quote_mint,
         token::authority = pool,
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -121,16 +121,16 @@ pub struct LiquidityAction<'info> {
     pub owner: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(address = market.oracle @ ArclisError::OracleMismatch)]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     #[account(
         mut,
@@ -138,7 +138,7 @@ pub struct LiquidityAction<'info> {
         seeds = [LiquidityPool::SEED, market.key().as_ref()],
         bump = pool.bump,
     )]
-    pub pool: Account<'info, LiquidityPool>,
+    pub pool: Box<Account<'info, LiquidityPool>>,
 
     #[account(
         init_if_needed,
@@ -147,19 +147,19 @@ pub struct LiquidityAction<'info> {
         seeds = [LpPosition::SEED, owner.key().as_ref(), pool.key().as_ref()],
         bump
     )]
-    pub lp_position: Account<'info, LpPosition>,
+    pub lp_position: Box<Account<'info, LpPosition>>,
 
     #[account(
         mut,
         address = pool.vault @ ArclisError::VaultMismatch
     )]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     #[account(
         mut,
         constraint = owner_token_account.mint == vault.mint @ ArclisError::VaultMismatch,
     )]
-    pub owner_token_account: Account<'info, TokenAccount>,
+    pub owner_token_account: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,

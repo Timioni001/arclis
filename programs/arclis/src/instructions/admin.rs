@@ -16,7 +16,7 @@ pub struct SetProtocolPaused<'info> {
     pub authority: Signer<'info>,
 
     #[account(mut, seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 }
 
 pub fn set_protocol_paused(ctx: Context<SetProtocolPaused>, paused: bool) -> Result<()> {
@@ -35,10 +35,10 @@ pub struct SetMarketPaused<'info> {
     pub authority: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(mut, seeds = [Market::SEED, market.oracle.as_ref()], bump = market.bump)]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 }
 
 pub fn set_market_paused(ctx: Context<SetMarketPaused>, paused: bool) -> Result<()> {

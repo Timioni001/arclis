@@ -30,20 +30,20 @@ pub struct DepositInsurance<'info> {
     pub depositor: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(mut, seeds = [Market::SEED, market.oracle.as_ref()], bump = market.bump)]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(
         mut,
         constraint = depositor_token_account.owner == depositor.key() @ ArclisError::Unauthorized,
         constraint = depositor_token_account.mint == vault.mint @ ArclisError::VaultMismatch,
     )]
-    pub depositor_token_account: Account<'info, TokenAccount>,
+    pub depositor_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault @ ArclisError::VaultMismatch)]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }

@@ -34,14 +34,14 @@ pub struct ApplyCorporateAction<'info> {
         seeds = [PriceOracle::SEED, oracle.symbol.as_ref()],
         bump = oracle.bump
     )]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     #[account(
         mut,
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 }
 
 /// Apply a split or reverse split.
@@ -106,14 +106,14 @@ pub struct ApplyDividend<'info> {
         seeds = [PriceOracle::SEED, oracle.symbol.as_ref()],
         bump = oracle.bump
     )]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     #[account(
         mut,
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 }
 
 /// Record a cash dividend against every open position at once.

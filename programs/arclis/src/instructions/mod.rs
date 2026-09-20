@@ -9,6 +9,32 @@
 //! 5. write results back to accounts and reconcile market-level accounting
 //! 6. emit an event
 //!
+//! # Every data account is boxed, and has to stay that way
+//!
+//! Each `#[derive(Accounts)]` struct here declares its data accounts as
+//! `Box<Account<'info, T>>` rather than `Account<'info, T>`. That is not a
+//! style preference.
+//!
+//! SBF gives each function a fixed 4KB stack frame and does not trap on
+//! overflow. Anchor generates one function per instruction that deserialises
+//! the arguments, then constructs the whole accounts struct in that same
+//! frame. An unboxed `Account<'info, T>` holds a fully deserialised `T` by
+//! value, so a context holding a `Market`, a couple of `TokenAccount`s and a
+//! `Position` runs past 4KB on its own - and the write past the end lands on
+//! whatever the frame holds next, which includes the instruction arguments.
+//!
+//! The failure mode is not a crash. `create_market` ran with
+//! `max_leverage = 0` and a `max_open_interest` of 2039280 - the rent-exempt
+//! minimum for the vault token account, computed a few lines earlier by the
+//! `init` constraint and written straight over the parameters - and rejected
+//! the caller for sending bad values. The client was correct; the transaction
+//! was correct; everything was correct except the bytes the handler read.
+//!
+//! Boxing moves the account data to the heap and leaves an 8-byte pointer on
+//! the stack. It changes nothing about the IDL, so clients are unaffected.
+//! `scripts/anchor-test.sh` now fails loudly on the compiler's stack-offset
+//! warning, which is the signal that was there all along.
+//!
 //! Keeping that order uniform is what makes the "did this handler forget to
 //! settle funding before resizing?" class of bug visible on inspection.
 

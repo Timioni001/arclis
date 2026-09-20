@@ -234,11 +234,17 @@ describe("arclis", () => {
     try {
       await build().rpc();
     } catch (e: any) {
+      // Print what this client put on the wire alongside what the program read
+      // off it. Verifying the encoder in isolation proves nothing: the two
+      // have to be compared within one run, or a mismatch between them stays
+      // invisible and every explanation stays plausible.
+      const sent = (await build().instruction()).data.toString("hex");
       const logs: string[] = e?.logs ?? [];
       const received = logs.find((l) => l.includes("create_market params:"));
       console.error("\n  program logs:");
       for (const l of logs) console.error(`    ${l}`);
-      if (received) console.error(`\n  the program received: ${received}\n`);
+      console.error(`\n  the client sent:      ${sent}`);
+      if (received) console.error(`  the program received: ${received}\n`);
       throw e;
     }
 

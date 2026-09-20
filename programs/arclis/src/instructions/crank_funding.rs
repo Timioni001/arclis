@@ -28,7 +28,7 @@ pub struct CrankFunding<'info> {
     pub cranker: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
@@ -36,10 +36,10 @@ pub struct CrankFunding<'info> {
         bump = market.bump,
         constraint = !market.paused @ ArclisError::MarketPaused
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(address = market.oracle @ ArclisError::OracleMismatch)]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     /// The market's pool, and its vault. Needed because funding is now scaled
     /// by how hard the pool is working - see `math::funding::funding_rate_bps`.
@@ -48,10 +48,10 @@ pub struct CrankFunding<'info> {
         seeds = [LiquidityPool::SEED, market.key().as_ref()],
         bump = pool.bump,
     )]
-    pub pool: Account<'info, LiquidityPool>,
+    pub pool: Box<Account<'info, LiquidityPool>>,
 
     #[account(address = pool.vault @ ArclisError::VaultMismatch)]
-    pub pool_vault: Account<'info, anchor_spl::token::TokenAccount>,
+    pub pool_vault: Box<Account<'info, anchor_spl::token::TokenAccount>>,
 }
 
 pub fn handler(ctx: Context<CrankFunding>) -> Result<()> {

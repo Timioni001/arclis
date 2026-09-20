@@ -12,17 +12,17 @@ pub struct WithdrawCollateral<'info> {
     pub owner: Signer<'info>,
 
     #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
-    pub config: Account<'info, GlobalConfig>,
+    pub config: Box<Account<'info, GlobalConfig>>,
 
     #[account(
         mut,
         seeds = [Market::SEED, oracle.key().as_ref()],
         bump = market.bump,
     )]
-    pub market: Account<'info, Market>,
+    pub market: Box<Account<'info, Market>>,
 
     #[account(address = market.oracle @ ArclisError::OracleMismatch)]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     #[account(
         mut,
@@ -30,16 +30,16 @@ pub struct WithdrawCollateral<'info> {
         seeds = [Position::SEED, owner.key().as_ref(), market.key().as_ref()],
         bump = position.bump
     )]
-    pub position: Account<'info, Position>,
+    pub position: Box<Account<'info, Position>>,
 
     #[account(
         mut,
         constraint = owner_token_account.mint == vault.mint @ ArclisError::VaultMismatch,
     )]
-    pub owner_token_account: Account<'info, TokenAccount>,
+    pub owner_token_account: Box<Account<'info, TokenAccount>>,
 
     #[account(mut, address = market.vault @ ArclisError::VaultMismatch)]
-    pub vault: Account<'info, TokenAccount>,
+    pub vault: Box<Account<'info, TokenAccount>>,
 
     /// The counterparty. Withdrawing does not itself touch the pool, but the
     /// sync that runs first settles accrued funding and dividends, and those
@@ -50,10 +50,10 @@ pub struct WithdrawCollateral<'info> {
         seeds = [LiquidityPool::SEED, market.key().as_ref()],
         bump = pool.bump,
     )]
-    pub pool: Account<'info, LiquidityPool>,
+    pub pool: Box<Account<'info, LiquidityPool>>,
 
     #[account(mut, address = pool.vault @ ArclisError::VaultMismatch)]
-    pub pool_vault: Account<'info, TokenAccount>,
+    pub pool_vault: Box<Account<'info, TokenAccount>>,
 
     pub token_program: Program<'info, Token>,
 }

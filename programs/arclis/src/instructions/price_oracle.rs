@@ -19,7 +19,7 @@ pub struct InitializePriceOracle<'info> {
         seeds = [PriceOracle::SEED, symbol.as_ref()],
         bump
     )]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 
     pub system_program: Program<'info, System>,
 }
@@ -61,7 +61,7 @@ pub struct UpdatePriceOracle<'info> {
         seeds = [PriceOracle::SEED, oracle.symbol.as_ref()],
         bump = oracle.bump
     )]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 }
 
 /// Push a new price.
@@ -98,7 +98,7 @@ pub struct SetMarketSession<'info> {
         seeds = [PriceOracle::SEED, oracle.symbol.as_ref()],
         bump = oracle.bump
     )]
-    pub oracle: Account<'info, PriceOracle>,
+    pub oracle: Box<Account<'info, PriceOracle>>,
 }
 
 /// Publish the trading state of the underlying venue.
