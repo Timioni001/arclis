@@ -835,6 +835,160 @@ describe("arclis", () => {
     );
   });
 
+  it("draws the bad-debt waterfall in order: insurance, then LPs", async () => {
+    // The handler's bad-debt branch had never run. Until the test above was
+    // fixed, `liquidate` had never succeeded at all, and the solvent branch
+    // is the only one it has exercised since. This is the other half: a
+    // position whose loss is larger than the collateral standing behind it,
+    // which is the case the insurance fund and the pool exist for.
+    const collateral = 2_000 * QUOTE_SCALE;
+    await program.methods
+      .depositCollateral(new BN(collateral))
+      .accounts({
+        owner: payer.publicKey,
+        config: configPda,
+        market: marketPda,
+        oracle: oraclePda,
+        position: positionPda,
+        ownerTokenAccount: traderAta,
+        vault: vaultPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc();
+
+    // Open the largest position the program allows. Bad debt needs leverage:
+    // a thin position liquidates cleanly and never reaches the waterfall.
+    // The size is found by asking the program rather than by restating the
+    // leverage and initial-margin rules here, where they would drift.
+    const o = await program.account.priceOracle.fetch(oraclePda);
+    const price = o.price.toNumber();
+    const tooBig = (e: any) =>
+      /ExceedsMaxLeverage|BelowInitialMargin|OpenInterestCapExceeded|SkewCapExceeded|UtilizationCapExceeded/.test(
+        e.toString(),
+      );
+
+    let size = Math.floor((collateral * 16 * PRICE_SCALE) / price);
+    let opened = false;
+    for (let i = 0; i < 12 && !opened && size > 0; i++) {
+      try {
+        await program.methods
+          .openPosition(new BN(size))
+          .accounts(tradeAccounts())
+          .rpc();
+        opened = true;
+      } catch (e: any) {
+        if (!tooBig(e)) throw e;
+        size = Math.floor(size / 2);
+      }
+    }
+    assert.isTrue(opened, "could not open a position large enough to fail");
+
+    // Five steps of -9% is a ~38% fall. Against a position levered near the
+    // protocol maximum that is several times its own collateral, so equity
+    // ends well below zero and the shortfall is real rather than rounding.
+    for (let i = 0; i < 5; i++) {
+      const cur = await program.account.priceOracle.fetch(oraclePda);
+      const next = Math.floor(cur.price.toNumber() * 0.91);
+      assert.isAbove(next, 0, "ran out of price before reaching bad debt");
+      await program.methods
+        .updatePriceOracle(new BN(next), new BN(0))
+        .accounts({ authority: payer.publicKey, oracle: oraclePda })
+        .rpc();
+    }
+
+    const mBefore = await program.account.market.fetch(marketPda);
+    const poolBefore = await program.account.liquidityPool.fetch(poolPda);
+    const liqBefore = await getAccount(conn, liquidatorAta);
+    assert.isAbove(
+      mBefore.insuranceBalance.toNumber(),
+      0,
+      "this test is only meaningful with something in the insurance fund",
+    );
+
+    await program.methods
+      .liquidate()
+      .accounts({
+        liquidator: liquidator.publicKey,
+        liquidatorTokenAccount: liquidatorAta,
+        config: configPda,
+        market: marketPda,
+        oracle: oraclePda,
+        position: positionPda,
+        vault: vaultPda,
+        pool: poolPda,
+        poolVault: poolVaultPda,
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .signers([liquidator])
+      .rpc();
+
+    const pos = await program.account.position.fetch(positionPda);
+    const mAfter = await program.account.market.fetch(marketPda);
+    const poolAfter = await program.account.liquidityPool.fetch(poolPda);
+    const liqAfter = await getAccount(conn, liquidatorAta);
+
+    // An underwater position pays nobody out of its own equity: there is
+    // none. It is flattened and its collateral is gone.
+    assert.equal(pos.size.toNumber(), 0, "liquidation flattens the position");
+    assert.equal(pos.collateral.toNumber(), 0, "no remainder to return");
+
+    const insuranceDrawn =
+      mBefore.insuranceBalance.toNumber() - mAfter.insuranceBalance.toNumber();
+    const poolAbsorbed =
+      poolAfter.absorbedBadDebt.toNumber() - poolBefore.absorbedBadDebt.toNumber();
+    const socialized =
+      mAfter.badDebt.toNumber() - mBefore.badDebt.toNumber();
+
+    assert.isAbove(
+      insuranceDrawn + poolAbsorbed + socialized,
+      0,
+      "a position closed below zero has to be absorbed by somebody",
+    );
+
+    // The ordering is the whole point of the waterfall, and it is the part a
+    // pure unit test on `absorb_shortfall` cannot prove about the handler:
+    // insurance is first loss, LP capital is second, and socialising across
+    // the remaining traders is the last resort rather than the default.
+    if (poolAbsorbed > 0) {
+      assert.equal(
+        mAfter.insuranceBalance.toNumber(),
+        0,
+        "LPs must not be touched while the insurance fund still has money",
+      );
+    }
+    if (socialized > 0) {
+      assert.equal(
+        mAfter.insuranceBalance.toNumber(),
+        0,
+        "nothing is socialised while insurance remains",
+      );
+    }
+
+    // The liability side has to move with it. `total_collateral` is the
+    // protocol's debt to traders, and a position that no longer exists must
+    // not still be counted in it.
+    assert.isBelow(
+      mAfter.totalCollateral.toNumber(),
+      mBefore.totalCollateral.toNumber(),
+      "the liquidated position is still counted as a liability",
+    );
+
+    // Documenting current behaviour rather than asserting it is correct.
+    // The bad-debt bounty is paid out of the insurance fund *after* the
+    // shortfall has drawn that same fund down, so on a large enough loss it
+    // is empty exactly when the incentive is needed most. The liquidator
+    // here is paid nothing. See the note in docs/FEASIBILITY.md.
+    const paid = Number(liqAfter.amount) - Number(liqBefore.amount);
+    if (mAfter.insuranceBalance.toNumber() === 0) {
+      assert.equal(
+        paid,
+        0,
+        "with insurance drained there is nothing left to pay a bounty from",
+      );
+    }
+  });
+
   // -------------------------------------------------------------------------
   // LP exit
   // -------------------------------------------------------------------------

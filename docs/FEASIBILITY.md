@@ -192,6 +192,43 @@ is listed.
 
 ---
 
+## 6. The liquidation bounty is empty when it is needed
+
+Found by finally driving a position into bad debt on chain, in
+`tests/arclis.ts`.
+
+When a position closes below zero there is no equity to pay a liquidator
+from, so `liquidate` pays a flat bounty out of the insurance fund instead.
+The reasoning in the code is sound: without it nobody liquidates an
+underwater position, the rational liquidator walks away, and the bad debt
+grows. The problem is the order of operations. The shortfall draws the
+insurance fund down first, and the bounty is then capped at whatever is
+left:
+
+```rust
+market.debit_insurance(split.from_insurance)?;      // shortfall, first
+// ...
+let bounty = market.insurance_balance.min(BAD_DEBT_LIQUIDATION_BOUNTY);
+```
+
+So the bounty is funded precisely when it is not needed - a small shortfall
+insurance can absorb - and is zero exactly when it is: a loss large enough
+to exhaust the fund, which is the case where someone has to be paid to act
+fast. The bounty is also `$1`, which does not cover the transaction's own
+cost at any congestion, let alone compensate for the risk of racing other
+liquidators for it.
+
+This is not a bug in the sense of the code doing something other than what
+it says. It is a mechanism that does not hold under the conditions it was
+written for. Fixing it properly means funding the bounty from somewhere
+that a shortfall does not drain - taking it off the top of the pool's
+absorbed amount, or a protocol fee reserve the waterfall never touches -
+and sizing it against gas rather than at a round dollar.
+
+Left as-is and documented rather than changed quietly: it alters who gets
+paid in a liquidation, and that is an economic decision, not a code
+cleanup.
+
 ## What is actually good here
 
 Worth being clear, because the list above is long:
