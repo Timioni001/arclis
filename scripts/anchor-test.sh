@@ -224,8 +224,22 @@ if [ "$RC" -ne 0 ]; then
   # Anchor points at the log and leaves you to find it. Print it here: it is
   # the only thing that says why the validator did not come up.
   if [ -f "$LOG" ]; then
-    step "Validator log (last 40 lines of $LOG)"
-    tail -40 "$LOG"
+    # Strip the once-a-second "Processed Slot" progress line. Forty lines of it
+    # is forty lines of nothing, and it pushes the one line that matters off
+    # the top of the terminal - which is exactly what it did the first time.
+    step "Validator log (last 30 meaningful lines of $LOG)"
+    grep -v "Processed Slot:" "$LOG" | tail -30
+
+    # If the validator processed transactions, it came up fine and the suite
+    # is what failed. Say so, rather than sending someone off to debug a
+    # validator that is working.
+    if grep -q "Processed Slot:" "$LOG"; then
+      step "Where the failure actually is"
+      printf '  The validator started and processed transactions, so it is not the problem.\n'
+      printf '  The suite failed. The lines that say why:\n\n'
+      grep -nE "the client sent|the program received|passing|failing|Error Code|Error Number|AnchorError" "${ARCLIS_LOG:-/dev/null}" 2>/dev/null | head -20 | sed 's/^/    /' || true
+      printf '\n  Full output: re-run with `| tee /tmp/arclis.log` and grep it.\n'
+    fi
   else
     step "No validator log was written"
     printf '  %s does not exist, so the validator died before it could open it.\n' "$LOG"
