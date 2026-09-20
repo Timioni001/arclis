@@ -228,22 +228,62 @@ export function AmbientShader({ intensity = 0.55 }: { intensity?: number }) {
     };
 
     let raf = 0;
+    let lastDraw = 0;
+
+    // Thirty, not sixty. The output is a slowly drifting blurred gradient, so
+    // half the frames are indistinguishable, and this runs behind everything
+    // else on the page rather than instead of it: the budget it gives back
+    // goes to scrolling.
+    const MIN_FRAME_MS = 1000 / 30;
+
+    // There is deliberately no `IntersectionObserver` here. The obvious
+    // optimisation is to stop drawing once this canvas scrolls out of view,
+    // and it cannot work: the canvas fills a `position: fixed` parent, so it
+    // never leaves the viewport and the callback would report `true` forever.
+    // An optimisation that always reports "keep going" is not an
+    // optimisation, it is a comment that looks like one.
+
+    /*
+     * Stop drawing while the page is scrolling.
+     *
+     * This shader and the scroll are spending the same frame budget, and only
+     * one of them is the thing the reader is doing. Drawing on alternate
+     * frames was enough to push those frames past 16.7ms on a machine without
+     * much GPU to spare, which is felt as a stutter in the scroll rather than
+     * seen as a stutter in the gradient.
+     *
+     * Freezing an ambient gradient for the length of a flick is invisible:
+     * nobody is watching the background while the page is moving. It resumes a
+     * beat after the scroll stops, and `u_time` reads the real clock, so it
+     * picks up where it would have been rather than lurching.
+     */
+    let scrolling = false;
+    let idleTimer = 0;
+    const onScroll = () => {
+      scrolling = true;
+      clearTimeout(idleTimer);
+      idleTimer = window.setTimeout(() => {
+        scrolling = false;
+      }, 160);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+
     const start = performance.now();
-    const frame = () => {
-      if (document.hidden) {
-        raf = requestAnimationFrame(frame);
-        return;
-      }
+    const frame = (now: number) => {
+      raf = requestAnimationFrame(frame);
+      if (document.hidden || scrolling) return;
+      if (now - lastDraw < MIN_FRAME_MS) return;
+      lastDraw = now;
+
       resize();
       gl.uniform2f(uResolution, canvas.width, canvas.height);
-      gl.uniform1f(uTime, (performance.now() - start) / 1000);
+      gl.uniform1f(uTime, (now - start) / 1000);
       gl.uniform1f(uIntensity, intensity);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
-      raf = requestAnimationFrame(frame);
     };
 
     syncColours();
-    frame();
+    raf = requestAnimationFrame(frame);
 
     // The palette changes with the theme, so re-read it when the attribute
     // flips rather than rebuilding the whole context.
@@ -255,6 +295,8 @@ export function AmbientShader({ intensity = 0.55 }: { intensity?: number }) {
 
     return () => {
       cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+      clearTimeout(idleTimer);
       observer.disconnect();
       gl.deleteProgram(program);
       gl.deleteShader(vs);

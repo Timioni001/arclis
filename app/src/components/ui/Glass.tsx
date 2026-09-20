@@ -235,12 +235,33 @@ export function GlassPanel({
   const shell = `glass glass-${weight} ${className}`.trim();
   const inner = `glass-inner ${innerClassName}`.trim();
 
+  /*
+   * Chrome never gets the lens, however capable the machine.
+   *
+   * The lens is a displacement filter over what is behind the element, and the
+   * sticky bar is the one surface whose backdrop moves on every frame: the
+   * filter re-runs across the whole bar for every scrolled pixel. Measured at
+   * 1440x900, that alone took the page from 16.7ms per frame to 99.9ms - 60fps
+   * down to 10, with every frame late. Dropping only the filter reference and
+   * keeping the blur restored 16.7ms exactly.
+   *
+   * The frosted `backdrop-filter` in `.topbar-glass` costs nothing measurable
+   * and reads almost the same on a bar this thin. So the lens stays where it
+   * earns its cost, on surfaces that sit still, and the bar is frosted.
+   */
+  const lens = enabled && weight !== "chrome";
+
   // Both branches keep the same two boxes, so a rule written against the inner
   // class applies identically whether or not the lens is running.
-  if (!enabled) {
+  if (!lens) {
+    // `glass-flat` is the opaque finish for anyone who asked for reduced
+    // transparency. Chrome with glass still on is not that case: it wants the
+    // frosted surface `.topbar-glass` already defines, so it takes neither
+    // the lens nor the flat override.
+    const finish = enabled ? "" : " glass-flat";
     return (
       <div
-        className={`${shell} glass-flat`}
+        className={`${shell}${finish}`}
         style={{ borderRadius: radius, ...style }}
       >
         <Tag className={inner}>{children}</Tag>
