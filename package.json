@@ -21,7 +21,8 @@
     "keeper:test": "npm --prefix app exec -- vitest run --root .. keeper pipeline",
     "registry:build": "ts-node pipeline/src/run.ts",
     "registry:prerender": "ts-node pipeline/src/prerender.ts",
-    "assistant": "tsx server/dev.ts"
+    "assistant": "tsx server/dev.ts",
+    "seed": "tsx scripts/seed-local.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

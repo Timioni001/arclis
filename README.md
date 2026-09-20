@@ -171,6 +171,32 @@ anchor build          # the on-chain program (see BUILD.md for toolchain)
 anchor test           # integration, against a local validator
 ```
 
+Run the interface against a real chain rather than the mock data:
+
+```bash
+solana-test-validator --reset     # terminal one
+anchor deploy                     # terminal two
+npm run seed -- --write-env       # config, five markets, pools, open positions
+npm run app:dev
+```
+
+`npm run seed` is idempotent: every step checks whether its account already
+exists, so a re-run after a partial failure resumes instead of starting over,
+and the quote mint is derived from a fixed seed so a second run reuses the
+first run's token. The wallet you connect in the browser is not the wallet
+that ran the script, so fund it too:
+
+```bash
+npm run seed -- --airdrop <your browser wallet pubkey>
+```
+
+Talk to the assistant (needs an Anthropic key, which stays server side):
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # never VITE_-prefixed: that ships it
+npm run assistant                      # prints the VITE_ASSISTANT_URL to set
+```
+
 Plan a stock-quoted launch (read-only, signs nothing):
 
 ```bash

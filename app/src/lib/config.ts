@@ -78,12 +78,24 @@ export const REFRESH_INTERVAL_MS = Number(env.VITE_REFRESH_MS ?? 10_000);
 
 export const EXPLORER_BASE = "https://explorer.solana.com";
 
+/**
+ * Mainnet takes no parameter, devnet takes its name, and a local validator is
+ * `custom` plus the URL. Sending the explorer `?cluster=localnet` produces a
+ * page that silently shows nothing, which is the worst of the three outcomes
+ * because it looks like the transaction failed.
+ */
+function explorerSuffix(): string {
+  if (CLUSTER === "mainnet-beta") return "";
+  if (CLUSTER === "localnet") {
+    return `?cluster=custom&customUrl=${encodeURIComponent(RPC_URL)}`;
+  }
+  return `?cluster=${CLUSTER}`;
+}
+
 export function explorerTx(signature: string): string {
-  const suffix = CLUSTER === "mainnet-beta" ? "" : `?cluster=${CLUSTER}`;
-  return `${EXPLORER_BASE}/tx/${signature}${suffix}`;
+  return `${EXPLORER_BASE}/tx/${signature}${explorerSuffix()}`;
 }
 
 export function explorerAddress(address: string): string {
-  const suffix = CLUSTER === "mainnet-beta" ? "" : `?cluster=${CLUSTER}`;
-  return `${EXPLORER_BASE}/address/${address}${suffix}`;
+  return `${EXPLORER_BASE}/address/${address}${explorerSuffix()}`;
 }
