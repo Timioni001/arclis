@@ -177,6 +177,20 @@ usually two lines to fix.
 
 ---
 
+## If `anchor test` fails with "Building IDL failed"
+
+Use the wrapper instead:
+
+```bash
+bash scripts/anchor-test.sh
+```
+
+Anchor's IDL step re-resolves dependencies, ignores this repo's lockfile, and
+fails on a modern host compiler. Nothing needs it: the IDL is already
+generated and committed. The wrapper builds with `--no-idl`, reconciles the
+program ID with the keypair your build generated, stages the committed IDL,
+and runs the tests. Full explanation in `BUILD.md`.
+
 ## Two things before real money
 
 1. **The program keypair has been rotated, but the old secret is still in

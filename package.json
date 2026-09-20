@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test:unit": "cargo test --lib",
     "test:dbc": "ts-mocha -p ./tsconfig.json -t 20000 'tests/dbc/**/*.test.ts'",
-    "test:integration": "anchor test",
+    "test:integration": "bash scripts/anchor-test.sh",
     "dbc:plan": "ts-node scripts/dbc-plan.ts",
     "dbc:monitor": "ts-node scripts/dbc-monitor.ts",
     "app:dev": "npm --prefix app run dev",

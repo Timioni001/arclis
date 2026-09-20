@@ -24,4 +24,7 @@ cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 tests/**/*.ts"
+# npx rather than yarn: yarn is one more thing to install on a fresh machine,
+# and npm ships with Node. Scoped to tests/arclis.ts so `anchor test` does not
+# also run tests/dbc/, which needs no validator and is run by `npm run test:dbc`.
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/arclis.ts"

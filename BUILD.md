@@ -158,6 +158,74 @@ followed by the 32-byte public key, so the script's output is byte-identical to
 what `solana-keygen` writes. `--adopt` is the mode to use when someone hands you
 a key to deploy under, or when a generate step ran twice.
 
+## `anchor test` fails in the IDL step
+
+The symptom is a wall of errors about `proc_macro::SourceFile` while compiling
+`proc-macro2`, ending in `Error: Building IDL failed`:
+
+```
+error[E0425]: cannot find type `SourceFile` in crate `proc_macro`
+   --> .../proc-macro2-1.0.94/src/wrapper.rs:366:26
+error: could not compile `proc-macro2` (lib) due to 3 previous errors
+Error: Building IDL failed
+```
+
+### What is actually happening
+
+`anchor build` runs two separate compilations. The first cross-compiles the
+program for Solana with the rustc inside platform-tools, and it works. The
+second compiles the program **for the host** with `--features idl-build` to
+extract the IDL, and it is the one that fails.
+
+That second step **re-resolves dependencies and ignores this repo's
+`Cargo.lock`**. You can see it in the error: the lockfile pins `proc-macro2` to
+1.0.107, and the failure is in 1.0.94. All the pinning documented above
+protects the program build and does nothing for the IDL build, because the IDL
+build is not using it. `proc-macro2` 1.0.94 then references
+`proc_macro::SourceFile`, which newer rustc versions removed.
+
+### The fix: do not run that step
+
+Nothing needs it. `scripts/build-idl.py` generates the IDL from the same source
+without Anchor's IDL step, and the result is committed under `idl/`. So:
+
+```bash
+bash scripts/anchor-test.sh
+```
+
+That builds with `--no-idl`, reconciles the program ID, stages the committed
+IDL where `anchor.workspace` looks for it, and runs the suite with
+`--skip-build`. The steps by hand, if you would rather see them:
+
+```bash
+anchor build --no-idl                          # the program, no IDL step
+node scripts/rotate-program-key.mjs --adopt    # sync declare_id! to the keypair
+anchor build --no-idl                          # rebuild if the ID changed
+mkdir -p target/idl target/types
+cp idl/arclis.json target/idl/ && cp idl/arclis.ts target/types/
+anchor test --skip-build
+```
+
+### The program ID trap
+
+`target/` is gitignored, so a fresh clone has **no program keypair**. The first
+`anchor build` generates a random one, which then disagrees with
+`declare_id!`, and every test fails with `DeclaredProgramIdMismatch`.
+
+Step two above is what fixes it: `--adopt` points `declare_id!`, `Anchor.toml`
+and `idl/` at whatever key is on disk. The rebuild afterwards is not optional,
+because the old ID is compiled into the `.so`.
+
+### The platform-tools notice
+
+```
+The latest cargo build-sbf platform-tools (v1.57) is not installed.
+```
+
+Informational. If the build reaches `Finished release [optimized] target(s)`,
+the version you have worked. Installing v1.57 is a large download and is not
+needed for this repo, which targets the Solana 1.18.x pair.
+
 ## If you would rather upgrade than pin
 
 Moving to Anchor 0.31.1 + Agave 2.1.x gets you rustc 1.84.1, which clears the
