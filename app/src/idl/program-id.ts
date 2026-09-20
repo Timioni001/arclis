@@ -2,4 +2,4 @@
 //
 // The address from `declare_id!`, split out so reading it does not
 // pull the whole IDL into the bundle.
-export const PROGRAM_ADDRESS = "A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3";
+export const PROGRAM_ADDRESS = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP";

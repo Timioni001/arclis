@@ -103,6 +103,10 @@ describe("marginRatioBps", () => {
 });
 
 describe("addressesFor", () => {
+  // Any valid pubkey will do: these tests check that derivation is a pure
+  // function of (programId, symbol), not that it matches a deployment. It is
+  // deliberately not kept in step with `declare_id!` - a fixture that tracks
+  // the real program invites someone to "fix" it during a key rotation.
   const programId = new PublicKey(
     "A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3",
   );

@@ -5,7 +5,7 @@
  * Regenerate with:  python3 scripts/build-idl.py
  */
 export type Arclis = {
-  "address": "A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3",
+  "address": "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP",
   "metadata": {
     "name": "arclis",
     "version": "0.1.0",
@@ -3625,7 +3625,7 @@ export type Arclis = {
 };
 
 export const IDL: Arclis = {
-  "address": "A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3",
+  "address": "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP",
   "metadata": {
     "name": "arclis",
     "version": "0.1.0",

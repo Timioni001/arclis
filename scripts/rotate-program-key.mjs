@@ -14,6 +14,7 @@
  *   node scripts/rotate-program-key.mjs             # write a key, print the ID
  *   node scripts/rotate-program-key.mjs --sync      # and rewrite the sources
  *   node scripts/rotate-program-key.mjs --adopt     # sync to the key already on disk
+ *   node scripts/rotate-program-key.mjs --set <pubkey>  # sync to a key held elsewhere
  *
  * `--sync` rewrites `declare_id!`, `Anchor.toml` and the committed IDL, which
  * is what `anchor keys sync` does plus the IDL Anchor leaves alone.
@@ -60,12 +61,36 @@ function currentProgramId() {
   return lib.match(/declare_id!\("([^"]+)"\)/)?.[1] ?? null;
 }
 
+const BURNED = "8KwHVevdqvNrwTCgsTvwQzvWXNsdonHKCi9mrH6gN23x";
+
+const setIndex = process.argv.indexOf("--set");
+const explicit = setIndex === -1 ? null : process.argv[setIndex + 1];
 const adopt = process.argv.includes("--adopt");
-const sync = adopt || process.argv.includes("--sync");
+const sync = adopt || explicit !== null || process.argv.includes("--sync");
 const previous = currentProgramId();
 
 let programId;
-if (adopt) {
+if (explicit !== null) {
+  // The keypair lives with whoever administers the deployment, which is not
+  // necessarily the machine editing the sources. `--adopt` cannot help there:
+  // there is nothing on this disk to adopt.
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(explicit)) {
+    console.error(`\n  "${explicit}" is not a base58 address.\n`);
+    process.exit(1);
+  }
+  if (explicit === BURNED) {
+    console.error(
+      "\n  That is the burned ID. Its secret was committed to git history and\n" +
+        "  is public. Pointing the sources at it would be deploying to a key\n" +
+        "  anyone can sign for.\n",
+    );
+    process.exit(1);
+  }
+  programId = explicit;
+  console.log(`\n  setting sources to ${programId}`);
+  console.log(`  current  ${previous ?? "unknown"}`);
+  console.log("  note     not verified against a keypair; nothing here holds it\n");
+} else if (adopt) {
   if (!existsSync(KEY_PATH)) {
     console.error(`\n  No keypair at ${KEY_PATH.replace(ROOT + "/", "")}. Nothing to adopt.\n`);
     process.exit(1);
@@ -119,6 +144,12 @@ const FILES = [
   "programs/arclis/src/lib.rs",
   "idl/arclis.json",
   "idl/arclis.ts",
+  // The frontend does not read `idl/`; the build copies the IDL and the bare
+  // address into `app/src/idl/` so `config.ts` can import one line instead of
+  // 84KB of JSON. Leaving these out meant a rotation silently left the
+  // interface talking to the old program - reading nothing, erroring never.
+  "app/src/idl/arclis.json",
+  "app/src/idl/program-id.ts",
 ];
 
 let touched = 0;
@@ -135,8 +166,12 @@ for (const rel of FILES) {
 }
 
 console.log(`\n  ${touched} file(s) updated.`);
-if (adopt) {
-  console.log(`  Sources now point at ${programId}.\n`);
+if (adopt || explicit !== null) {
+  // Abandoned, not burned. `--set` and `--adopt` move the sources to another
+  // key; they do not publish the old one. Only a leak burns an ID, and saying
+  // so loosely devalues the word in the one place it has to mean something.
+  console.log(`  Sources now point at ${programId}.`);
+  console.log(`  ${previous} is no longer referenced.\n`);
 } else {
   console.log(`  ${previous} is now burned. Record it somewhere you will recognise it.\n`);
 }

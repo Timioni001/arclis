@@ -69,7 +69,7 @@ use math::session::MarketSession;
 //     anchor keys sync
 //
 // which rotates the pair and rewrites this line and Anchor.toml together.
-declare_id!("A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3");
+declare_id!("BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP");
 
 #[program]
 pub mod arclis {
