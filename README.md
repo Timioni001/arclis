@@ -80,22 +80,26 @@ account, not a ticker.
 |---|---|
 | Compiles (`cargo check`) | **yes**, clean |
 | Program ID | `A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3` (rotated; the original key's secret was in git history) |
-| Rust unit tests (`cargo test --lib`) | **127 passing**: PnL, funding, margin, liquidation, sessions, splits, dividends, treasury hedging, pool NAV and the loss waterfall |
+| Rust unit tests (`cargo test --lib`) | **129 passing**: PnL, funding, margin, liquidation, sessions, splits, dividends, treasury hedging, pool NAV and the loss waterfall |
 | DBC tests (`npm run test:dbc`) | **37 passing**, against the real Meteora SDK, no network |
 | Keeper and pipeline tests (`npm run keeper:test`) | **88 passing**: the NYSE calendar to the minute across holidays and both DST transitions, liquidation health, mint parsing, the depth ladder, and the live-snapshot fallbacks |
-| App tests (`npm run app:test`) | **86 passing**: the read model against the Rust, the registry's scoring, and every instruction's account list against the IDL |
-| Integration tests (`anchor test`) | **24 written**, covering the pool, splits, dividends, insurance, session gating and a real liquidation. Never executed: no Solana toolchain in the authoring environment |
+| App tests (`npm run app:test`) | **104 passing**: the read model against the Rust, the registry's scoring, every instruction's account list against the IDL, and the glass and grid rules that two measured layout bugs came in through |
+| Integration tests (`anchor test`) | **25 written, 24 executed and passing** on a contributor machine, covering the pool, splits, dividends, insurance, session gating, a real liquidation and the bad-debt waterfall. The 25th was added after that run. Not runnable in the authoring environment, which has no Solana toolchain |
 | Interface audit | **clean** across 6 screens x 3 widths x 2 themes: no overflow, clipping, contrast failure or undersized touch target |
 | IDL (`npm run idl`) | **generated**: 26 instructions, committed under `idl/` |
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
-| `anchor build` | **not run here**: no Solana toolchain in the authoring environment |
-| `anchor test` | **not run here**: the suite in `tests/` is written but unverified |
-| Mainnet deployment | **not done**: needs a funded wallet |
+| `anchor build` | **succeeds** on a contributor machine; not runnable in the authoring environment |
+| Local deployment | **done**: `anchor deploy` to a local validator, seeded by `npm run seed` |
+| Devnet / mainnet deployment | **not done**: needs a funded wallet |
 
 The lockfile has been resolved and audited against the exact rustc that
 `anchor build` uses, so the dependency wall that was blocking the build is
-fixed. But the SBF build itself and the TypeScript suite have not been executed;
-expect the integration tests to need small corrections on first run.
+fixed. The SBF build and the integration suite have since been run on a
+machine with the toolchain, and they earned their keep immediately: the suite
+found a silent SBF stack-frame overflow that was corrupting instruction
+arguments, and a liquidation path that never settled the trader's PnL against
+the liquidity pool. Both are fixed and covered. See `docs/FEASIBILITY.md` for
+what the suite has *not* resolved.
 
 **Read [`BUILD.md`](BUILD.md) first** if `anchor build` is failing. It also
 records the program keypair rotation: the original key's secret was committed
@@ -354,23 +358,32 @@ Listed plainly, because a judge will find them anyway:
   and ordered; it does not make it impossible.
 - **A weekend gap will outrun the insurance fund.** Sessions stop anyone opening
   against a frozen price, but a Friday-to-Monday gap still puts leveraged longs
-  underwater before any liquidator can act. Fees now capitalise insurance;
-  there is still no instruction to pay into it directly.
+  underwater before any liquidator can act. Fees capitalise insurance and
+  `deposit_insurance` lets anyone pay into it directly, which together make
+  the fund fundable; neither makes it large enough by itself.
 - **The oracle is one trusted key.** Bounded by staleness, confidence, a
   per-update deviation cap, and now a session state, but not removed. Swap in
   Pyth before anything holds value.
-- **Dividends, mergers and delistings are unhandled.** Only splits are.
+- **Mergers and delistings are unhandled.** Splits and cash dividends are,
+  both through the same cumulative-index mechanism.
+- **The bad-debt liquidation bounty is empty when it is needed.** It is paid
+  out of the insurance fund *after* the shortfall has drawn that fund down, so
+  it is funded for the small losses that do not need it and zero for the large
+  ones that do. Written up as `docs/FEASIBILITY.md` section 6; left as-is
+  because changing it changes who gets paid in a liquidation.
 - **DBC migration cannot be oracle-gated.** Graduation is permissionless with no
   oracle hook, so it can fire while the underlying is shut. The monitor warns;
   nothing can enforce.
-- **`anchor build` and `anchor test` are unverified here**, and nothing is
-  deployed.
+- **Nothing is deployed beyond a local validator.** The build, the suite and
+  the seeded interface all run there; devnet and mainnet do not.
 
 ## Next steps
 
-1. `anchor build`, then `anchor test`; fix what the integration suite surfaces.
-   **Do this before building more**: the program has never been compiled for
-   SBF, and stacking a frontend on top of that means debugging two unknowns.
+1. **Purge the leaked keypair from git history before publishing this
+   repository.** The program ID it belonged to is burned and rotated, so
+   nothing is at risk today, but the secret is still recoverable from one blob
+   in the history and publishing would ship a private key:
+   `git filter-repo --path target/deploy/perp_engine-keypair.json --invert-paths`.
 2. Deploy to devnet and point the interface at it.
 3. Swap the keeper oracle for Pyth, and run a session keeper on a real market
    calendar.

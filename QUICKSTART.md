@@ -73,10 +73,14 @@ price, close, liquidate.
 
 ### If the last two fail
 
-**That is expected, and it is not a setback.** The program has never been
-compiled or run before, this is genuinely the first time anyone will see those
-results. The first run of new code almost always surfaces a few small,
-mechanical problems.
+**That is worth reporting, not worrying about.** Both now build and pass on a
+machine with the toolchain, so a failure here is most likely something about
+this machine rather than the code: a missing Solana install, a stale ledger, or
+the validator needing longer to start than it was given.
+
+The first run of this suite on a new machine did surface two real bugs in the
+program, so it is not impossible that yours finds a third. Either way the log
+says which.
 
 The script tells you where the log is (`/tmp/arclis-build.log` or
 `/tmp/arclis-test.log`). Send me that file and I will fix what it found.

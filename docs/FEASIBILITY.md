@@ -100,10 +100,13 @@ What that closes, and what it does not:
   against the pre-halt print hands the liquidator a position whose real value
   nobody knows.
 
-- **Dividends, mergers, delistings, still unhandled.** Only splits are
-  implemented. A cash dividend mechanically drops the price on the ex-date by
-  roughly the dividend, which the engine would read as a real move. For a
-  low-yield large cap that is small; for a high-yield name it is not.
+- **Dividends, handled. Mergers and delistings, still not.** A cash dividend
+  mechanically drops the price on the ex-date by roughly the dividend, which
+  an engine without a dividend concept reads as a real move against every
+  long. `apply_dividend` records it as a cumulative index on the market and
+  each position settles its share lazily, the same mechanism as funding and
+  splits, so nobody has to iterate positions. Mergers and delistings have no
+  equivalent and would need one.
 
 ## 3. Regulation, and the spot/derivative distinction that matters here
 
@@ -257,14 +260,17 @@ actually applies:
 2. **Keep the perp leg scoped to treasury hedging** rather than a public venue,
    per §3. This is a positioning decision, and it is cheap now and expensive
    later.
-3. **Capitalise the insurance fund before any real weekend.** Fees now flow into
-   it, which they did not before, but a single gap will outrun fee accrual on a
-   young market. There is still no instruction to pay into it directly, that is
-   the most obvious missing piece after the LP vault.
+3. **Capitalise the insurance fund before any real weekend.** Fees flow into
+   it and `deposit_insurance` accepts direct contributions from anyone, with
+   no withdraw counterpart and bad debt retired before the balance is
+   credited. The mechanism is there; a single gap will still outrun whatever
+   is actually in it on a young market, which is a funding problem rather than
+   a code one.
 4. **Swap the keeper oracle for Pyth.** The shape is already Pyth's; the swap
    touches `PriceOracle::validated_price` and the account type in each
    `Accounts` struct.
-5. **Handle dividends** alongside the splits already implemented.
+5. **Fund the liquidation bounty from somewhere a shortfall cannot drain**,
+   per section 6. Today it is empty exactly when it is needed.
 
 The honest summary for a judge: the equity-specific infrastructure, sessions,
 halts, splits, oracle bounds, is real, tested, and the part most teams skip.
