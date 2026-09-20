@@ -253,7 +253,12 @@ a {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .grid-markets {
-  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  /* `min(330px, 100%)` rather than a bare 330px floor. A minmax floor is a
+     hard minimum: on a viewport narrower than the floor the track stays
+     330px wide and the whole page scrolls sideways, which is what happened
+     at 320px. Wrapping it in min() lets the floor collapse to the container
+     when the container is the smaller of the two. */
+  grid-template-columns: repeat(auto-fill, minmax(min(330px, 100%), 1fr));
 }
 .trade-layout {
   display: grid;
@@ -1243,6 +1248,39 @@ input[type="range"]::-moz-range-thumb {
   .card > .table {
     display: block;
     overflow-x: auto;
+  }
+}
+
+/* Below 480px the wordmark, the menu toggle and the control cluster stop
+   fitting on one row. `flex-wrap` above was written for a full-width `.nav`
+   dropping to row two, but on a phone the nav is a toggle and the controls
+   fall into that space instead - where `margin-left: auto` strands them
+   against the right edge beside an empty gap. It reads as a break rather
+   than a layout.
+
+   Dropping the toggle to its icon buys back the ~50px that makes the row
+   fit again. The button keeps its name through `aria-label`. */
+@media (max-width: 479px) {
+  .topbar {
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+  .nav-toggle {
+    padding: 0 var(--space-3);
+  }
+  .nav-toggle span {
+    display: none;
+  }
+}
+
+/* Narrower than any current phone, the row genuinely cannot hold all three.
+   Let it wrap, but as a deliberate full-width second row rather than a
+   right-stranded cluster. */
+@media (max-width: 359px) {
+  .topbar-controls {
+    flex: 0 0 100%;
+    margin-left: 0;
+    justify-content: space-between;
   }
 }
 

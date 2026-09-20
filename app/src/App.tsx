@@ -168,6 +168,10 @@ export function App({ source }: { source: DataSource }) {
             className="nav-toggle"
             aria-expanded={menuOpen}
             aria-controls="primary-nav"
+            // The visible label is hidden on narrow screens to buy back the
+            // width that keeps the bar on one row, so the name has to come
+            // from somewhere that CSS cannot take away.
+            aria-label="Menu"
             onClick={() => setMenuOpen(!menuOpen)}
           >
             <Icon name={menuOpen ? "plus" : "layers"} size={18} />
