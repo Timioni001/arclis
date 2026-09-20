@@ -700,11 +700,77 @@ describe("arclis", () => {
       e?.error?.errorCode?.code === "PositionHealthy" ||
       (e?.logs ?? []).some((l: string) => l.includes("PositionHealthy"));
 
+    // Everything since the market-closed test has run against a closed
+    // market. Pulling collateral out is a risk-increasing action, which the
+    // session matrix correctly refuses there, so reopen the session first.
+    await program.methods
+      .setMarketSession({ open: {} })
+      .accounts({ authority: payer.publicKey, oracle: oraclePda })
+      .rpc();
+
+    // This position cannot be liquidated by price, and no number of oracle
+    // steps would change that. It holds about $10,000 of collateral against
+    // $2,500 of notional. A long's worst case is losing its whole notional,
+    // so even at a price of zero its equity floor is several times the
+    // maintenance requirement; walking the price down just runs out of
+    // iterations. The old 12-step loop was never going to get there either.
+    //
+    // So thin the position out first, which is how real positions become
+    // liquidatable: not by the market moving against a conservative trader,
+    // but by the trader withdrawing margin to the limit and the market moving
+    // afterwards. Find that limit by asking the program - withdraw greedily,
+    // halve the request each time it refuses - so the initial-margin maths
+    // stays in one place, on chain.
+    const withdraw = (amount: number) =>
+      program.methods
+        .withdrawCollateral(new BN(amount))
+        .accounts({
+          owner: payer.publicKey,
+          config: configPda,
+          market: marketPda,
+          oracle: oraclePda,
+          position: positionPda,
+          ownerTokenAccount: traderAta,
+          vault: vaultPda,
+          pool: poolPda,
+          poolVault: poolVaultPda,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        });
+
+    const breachesMargin = (e: any) =>
+      e?.error?.errorCode?.code === "WithdrawalBreaksMargin" ||
+      (e?.logs ?? []).some((l: string) =>
+        l.includes("WithdrawalBreaksMargin"),
+      );
+
+    const startingCollateral = (
+      await program.account.position.fetch(positionPda)
+    ).collateral.toNumber();
+
+    let chunk = startingCollateral;
+    for (let i = 0; i < 40 && chunk > QUOTE_SCALE; i++) {
+      try {
+        await withdraw(chunk).rpc();
+      } catch (e: any) {
+        if (!breachesMargin(e)) throw e;
+        chunk = Math.floor(chunk / 2);
+      }
+    }
+
+    const thinned = await program.account.position.fetch(positionPda);
+    assert.isBelow(
+      thinned.collateral.toNumber(),
+      startingCollateral / 10,
+      "the withdrawal probe did not get the position near initial margin",
+    );
+
     const liqBefore = await getAccount(conn, liquidatorAta);
 
-    // Walk the price down in steps, because a single move past the 10%
-    // deviation cap would be refused by the oracle. That cap is the reason a
-    // liquidation test cannot just set the price to zero.
+    // Now walk the price down. Steps of 2%, not the 9% the oracle deviation
+    // cap would allow: from just above a 6% initial margin, a 9% move clears
+    // the 5% maintenance band entirely and lands in bad debt, and a
+    // liquidator paid out of negative equity is paid nothing. The point of
+    // this test is that liquidation pays.
     //
     // Whether the position is underwater is settled by asking the program,
     // not by recomputing its margin maths here. This test used to carry its
@@ -723,7 +789,7 @@ describe("arclis", () => {
     let liquidated = false;
     for (let i = 0; i < 20 && !liquidated; i++) {
       const o = await program.account.priceOracle.fetch(oraclePda);
-      const next = Math.floor(o.price.toNumber() * 0.91);
+      const next = Math.floor(o.price.toNumber() * 0.98);
       assert.isAbove(next, 0, "walked the price to zero without liquidating");
       await program.methods
         .updatePriceOracle(new BN(next), new BN(0))
@@ -740,7 +806,7 @@ describe("arclis", () => {
 
     assert.isTrue(
       liquidated,
-      "twenty steps of -9% did not put the position below maintenance",
+      "twenty steps of -2% did not put the position below maintenance",
     );
 
     const pos = await program.account.position.fetch(positionPda);
