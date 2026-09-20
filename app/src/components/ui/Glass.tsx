@@ -41,14 +41,26 @@ import { Glass, type GlassOptics } from "@samasante/liquid-glass";
  * as the page behind it scrolls, which reads as motion whether or not anything
  * is animating.
  */
+const GLASS_QUERIES = [
+  "(prefers-reduced-transparency: reduce)",
+  "(prefers-reduced-motion: reduce)",
+];
+
+function glassWanted(): boolean {
+  if (typeof window === "undefined" || !window.matchMedia) return true;
+  return !GLASS_QUERIES.some((q) => window.matchMedia(q).matches);
+}
+
 export function useGlassEnabled(): boolean {
-  const [enabled, setEnabled] = useState(true);
+  // Read on the first render rather than defaulting to true and correcting in
+  // an effect. The effect version mounted the lens for one frame for somebody
+  // who had explicitly asked not to have it - building the filter, attaching
+  // its observers - and then threw it away. A preference that is knowable
+  // synchronously should be honoured synchronously.
+  const [enabled, setEnabled] = useState(glassWanted);
 
   useEffect(() => {
-    const queries = [
-      window.matchMedia("(prefers-reduced-transparency: reduce)"),
-      window.matchMedia("(prefers-reduced-motion: reduce)"),
-    ];
+    const queries = GLASS_QUERIES.map((q) => window.matchMedia(q));
     const update = () => setEnabled(!queries.some((q) => q.matches));
     update();
     for (const q of queries) q.addEventListener("change", update);
