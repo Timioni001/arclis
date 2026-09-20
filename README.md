@@ -44,6 +44,13 @@ Six pieces:
   the hedge survives the agent's own keeper going down.
 - **`src/dbc/`**: launch and monitoring tooling for Meteora DBC pools whose
   quote token is a tokenized stock.
+- **`keeper/`**: the daemons a live market needs. An oracle keeper that
+  publishes prices and sessions off a real NYSE calendar, a funding crank, a
+  liquidator, and a corporate-action watcher. Without them a deployment is a
+  set of accounts nobody can mark or liquidate against.
+- **`pipeline/`**: turns the registry's modelled dataset into a live one. Mint
+  authorities and extensions from `getAccountInfo`, exit depth from a ladder of
+  real Jupiter quotes, and prerendered HTML so the pages are indexable.
 - **Accounts**: connect any Wallet Standard wallet, or create a passkey
   account: an Ed25519 key generated in the browser and encrypted with a secret
   only your Face ID, Touch ID or device PIN can reproduce. No seed phrase, no
@@ -75,6 +82,7 @@ account, not a ticker.
 | Program ID | `A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3` (rotated; the original key's secret was in git history) |
 | Rust unit tests (`cargo test --lib`) | **127 passing**: PnL, funding, margin, liquidation, sessions, splits, dividends, treasury hedging, pool NAV and the loss waterfall |
 | DBC tests (`npm run test:dbc`) | **37 passing**, against the real Meteora SDK, no network |
+| Keeper and pipeline tests (`npm run keeper:test`) | **88 passing**: the NYSE calendar to the minute across holidays and both DST transitions, liquidation health, mint parsing, the depth ladder, and the live-snapshot fallbacks |
 | App tests (`npm run app:test`) | **86 passing**: the read model against the Rust, the registry's scoring, and every instruction's account list against the IDL |
 | Integration tests (`anchor test`) | **24 written**, covering the pool, splits, dividends, insurance, session gating and a real liquidation. Never executed: no Solana toolchain in the authoring environment |
 | Interface audit | **clean** across 6 screens x 3 widths x 2 themes: no overflow, clipping, contrast failure or undersized touch target |
@@ -92,6 +100,30 @@ expect the integration tests to need small corrections on first run.
 **Read [`BUILD.md`](BUILD.md) first** if `anchor build` is failing. It also
 records the program keypair rotation: the original key's secret was committed
 to git history, so it was replaced and the old ID is burned.
+
+## Running a live market
+
+A deployment needs four daemons. They are all permissionless except the oracle:
+
+```bash
+KEEPER_KEYPAIR=./keeper.json RPC_URL=https://api.devnet.solana.com \
+POLYGON_API_KEY=... QUOTE_MINT=<mint> npm run keeper
+```
+
+That publishes prices and sessions off a real NYSE calendar, cranks funding,
+liquidates underwater positions, and applies splits and dividends on their
+ex-date. With no price provider and a local RPC it runs a simulated feed and
+says so; with a non-local RPC it refuses to start rather than publishing
+invented prices to a real market. See [`keeper/README.md`](keeper/README.md).
+
+The registry's live data comes from a separate pipeline, run on a schedule:
+
+```bash
+npm run registry:build        # app/public/registry.json
+npm run registry:prerender    # indexable HTML per token, plus a sitemap
+```
+
+See [`pipeline/README.md`](pipeline/README.md).
 
 ## Reading a chain
 

@@ -16,7 +16,11 @@
     "app:build": "npm --prefix app run build",
     "app:test": "npm --prefix app test",
     "idl": "python3 scripts/build-idl.py",
-    "assistant:typecheck": "tsc --noEmit"
+    "assistant:typecheck": "tsc --noEmit",
+    "keeper": "ts-node keeper/src/run.ts",
+    "keeper:test": "npm --prefix app exec -- vitest run --root .. keeper pipeline",
+    "registry:build": "ts-node pipeline/src/run.ts",
+    "registry:prerender": "ts-node pipeline/src/prerender.ts"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.30.1",

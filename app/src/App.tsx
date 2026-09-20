@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DataSource } from "./lib/protocol/mock";
 import { modelledRegistry } from "./lib/registry/data";
+import { loadRegistry, type LiveRegistry } from "./lib/registry/live";
 import { restoreSession, type Session } from "./lib/auth/session";
 import { forgetAccount } from "./lib/auth/passkey";
 import { Markets } from "./screens/Markets";
@@ -86,7 +87,24 @@ export function App({ source }: { source: DataSource }) {
     }
   }, [theme]);
 
-  const registry = useMemo(() => modelledRegistry(), []);
+  // The modelled dataset renders immediately; a live snapshot replaces it if
+  // the pipeline has written one recently. The fallback direction is the point:
+  // a failed pipeline degrades to a clearly-labelled demo, never to an empty
+  // page or to stale numbers presented as current.
+  const [registry, setRegistry] = useState<LiveRegistry>(() => ({
+    ...modelledRegistry(),
+    failures: [],
+  }));
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadRegistry().then((loaded) => {
+      if (!cancelled) setRegistry(loaded);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Drives the RPC source when there is one, and is inert on the mock. The
   // interval pauses while the tab is hidden; see `useLiveSource`.

@@ -78,7 +78,9 @@ export function Registry({
   now,
   onOpenMarket,
 }: {
-  registry: RegistrySource;
+  registry: RegistrySource & {
+    failures?: Array<{ symbol: string; reason: string }>;
+  };
   now: number;
   onOpenMarket: (symbol: string) => void;
 }) {
@@ -88,6 +90,7 @@ export function Registry({
   const [selected, setSelected] = useState<string | null>(null);
 
   const stocks = registry.stocks();
+  const failures = registry.failures ?? [];
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -169,19 +172,29 @@ export function Registry({
         </div>
       </section>
 
-      {registry.kind === "modelled" && (
+      {registry.kind === "modelled" ? (
         <Notice
           tone="warning"
           title="This is a modelled dataset, not a live feed"
         >
           Every row below is shaped from public issuer disclosures to build and
-          test the pipeline. Before this page goes live, each field is replaced
-          by its source: mint authorities and supply from{" "}
-          <code>getAccountInfo</code>, depth from Jupiter quotes, and structure
-          from the issuer disclosure linked on each row. Do not trade on these
-          numbers.
+          test the pipeline. Run <code>npx ts-node pipeline/src/run.ts</code> to
+          replace it with live data: mint authorities and supply from{" "}
+          <code>getAccountInfo</code>, depth from Jupiter quotes at several
+          sizes, and structure from the issuer disclosure linked on each row. Do
+          not trade on these numbers.
         </Notice>
-      )}
+      ) : failures.length > 0 ? (
+        <Notice
+          tone="warning"
+          title={`${failures.length} token${failures.length === 1 ? "" : "s"} could not be read`}
+        >
+          The rest of this page is live. These were left out rather than filled
+          in from the modelled dataset, because a real claim score beside an
+          invented supply is exactly what this registry exists to stop:{" "}
+          {failures.map((f) => `${f.symbol} (${f.reason})`).join(", ")}.
+        </Notice>
+      ) : null}
 
       <GlassPanel
         weight="chrome"

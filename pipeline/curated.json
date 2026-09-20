@@ -1,0 +1,131 @@
+{
+  "_comment": "The half of the registry that cannot come from a chain. Legal structure, custody, redemption rights and dividend treatment live in documents an issuer publishes, so each one is curated here with a disclosureUrl beside it. Everything else (supply, authorities, extensions, depth, prices) is read live by pipeline/src/run.ts and must never be written here.",
+  "issuers": [
+    {
+      "id": "backed",
+      "name": "Backed Finance (xStocks)",
+      "jurisdiction": "Switzerland / Liechtenstein",
+      "structure": "Tracker certificate issued under a Liechtenstein base prospectus",
+      "regulator": "FMA Liechtenstein",
+      "disclosureUrl": "https://backed.fi/legal-documentation",
+      "attestationUrl": "https://backed.fi/transparency",
+      "attestation": "Daily"
+    },
+    {
+      "id": "ondo",
+      "name": "Ondo Finance",
+      "jurisdiction": "United States / British Virgin Islands",
+      "structure": "Tokenized note issued by a bankruptcy-remote SPV",
+      "regulator": "SEC-registered transfer agent in the structure",
+      "disclosureUrl": "https://ondo.finance/global-markets",
+      "attestationUrl": "https://ondo.finance/transparency",
+      "attestation": "Daily"
+    },
+    {
+      "id": "backpack",
+      "name": "Backpack Exchange",
+      "jurisdiction": "United Arab Emirates",
+      "structure": "Exchange-issued claim against exchange-held custody",
+      "regulator": "VARA Dubai",
+      "disclosureUrl": "https://backpack.exchange/legal",
+      "attestationUrl": null,
+      "attestation": "Monthly"
+    },
+    {
+      "id": "prestocks",
+      "name": "PreStocks",
+      "jurisdiction": "Undisclosed",
+      "structure": "Synthetic price tracker, no stated share custody",
+      "regulator": null,
+      "disclosureUrl": "https://prestocks.com",
+      "attestationUrl": null,
+      "attestation": "None"
+    }
+  ],
+  "tokens": [
+    {
+      "symbol": "AAPLx",
+      "underlying": "AAPL",
+      "name": "Apple Inc.",
+      "issuerId": "backed",
+      "mint": "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
+      "backing": "Redeemable",
+      "redemption": "VerifiedHolders",
+      "custodian": "InCore Bank AG",
+      "dividendTreatment": "Cash dividends accrue into the certificate's value rather than being paid out, so the token price steps up instead of you receiving cash.",
+      "corporateActionPolicy": "Splits and mergers are passed through by the issuer, who adjusts the certificate ratio.",
+      "issuerRisk": "You hold a certificate issued by Backed, not the share itself. If the issuer fails, you are a creditor against the collateral pool, not an Apple shareholder.",
+      "arclisSymbol": "AAPL"
+    },
+    {
+      "symbol": "NVDAx",
+      "underlying": "NVDA",
+      "name": "NVIDIA Corporation",
+      "issuerId": "backed",
+      "mint": "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg",
+      "backing": "Redeemable",
+      "redemption": "VerifiedHolders",
+      "custodian": "InCore Bank AG",
+      "dividendTreatment": "Accrues into the certificate value. NVIDIA's yield is negligible either way.",
+      "corporateActionPolicy": "Passed through. The 2024 10-for-1 split was handled by ratio adjustment.",
+      "issuerRisk": "Creditor claim against Backed's collateral pool if the issuer fails, not a direct NVIDIA holding.",
+      "arclisSymbol": "NVDA"
+    },
+    {
+      "symbol": "oUSTB-MSFT",
+      "underlying": "MSFT",
+      "name": "Microsoft Corporation",
+      "issuerId": "ondo",
+      "mint": "OndoMSFT111111111111111111111111111111111111",
+      "backing": "CustodyBacked",
+      "redemption": "AuthorizedParticipants",
+      "custodian": "Clear Street LLC",
+      "dividendTreatment": "Dividends are collected by the SPV and reflected in NAV. Holders do not receive cash directly.",
+      "corporateActionPolicy": "Handled at the SPV level; token supply is adjusted to match.",
+      "issuerRisk": "The SPV is bankruptcy-remote, which is stronger than an operating-company claim, but redemption runs through authorized participants. Retail exits by selling.",
+      "arclisSymbol": "MSFT"
+    },
+    {
+      "symbol": "SPCX-TSLA",
+      "underlying": "TSLA",
+      "name": "Tesla, Inc.",
+      "issuerId": "backpack",
+      "mint": "SPCXTSLA1111111111111111111111111111111111",
+      "backing": "CustodyBacked",
+      "redemption": "VerifiedHolders",
+      "custodian": "Backpack Exchange (self-custody)",
+      "dividendTreatment": "Tesla pays no dividend, so the question has not been tested for this token.",
+      "corporateActionPolicy": "Stated as handled by the exchange. No published mechanism for how a split is reflected on-chain.",
+      "issuerRisk": "The custodian and the issuer are the same company. That is one balance sheet standing behind both halves of the claim, which is materially weaker than a third-party custodian.",
+      "arclisSymbol": "TSLA"
+    },
+    {
+      "symbol": "preOPENAI",
+      "underlying": "OPENAI (private)",
+      "name": "OpenAI (pre-IPO exposure)",
+      "issuerId": "prestocks",
+      "mint": "PreOpenAI111111111111111111111111111111111",
+      "backing": "Synthetic",
+      "redemption": "None",
+      "custodian": null,
+      "dividendTreatment": "Not applicable. Nothing is held and nothing is paid.",
+      "corporateActionPolicy": "None. There is no share for an action to happen to.",
+      "issuerRisk": "This token holds nothing. Its price is whatever the pool says it is, and the reference is an estimated private valuation, not a traded price. If the issuer stops supporting it, the only floor is the pool.",
+      "arclisSymbol": null
+    },
+    {
+      "symbol": "GOOGLx",
+      "underlying": "GOOGL",
+      "name": "Alphabet Inc. Class A",
+      "issuerId": "backed",
+      "mint": "XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN",
+      "backing": "Redeemable",
+      "redemption": "VerifiedHolders",
+      "custodian": "InCore Bank AG",
+      "dividendTreatment": "Accrues into the certificate value.",
+      "corporateActionPolicy": "Passed through by ratio adjustment.",
+      "issuerRisk": "Creditor claim against the Backed collateral pool if the issuer fails.",
+      "arclisSymbol": "GOOGL"
+    }
+  ]
+}

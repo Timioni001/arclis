@@ -24,3 +24,10 @@ test-ledger/
 # Frontend build output
 app/dist/
 app/tsconfig.tsbuildinfo
+
+# A generated registry snapshot. Never committed: a snapshot built from one
+# person's RPC and router run would ship as "live" data that is actually a
+# recording, which is precisely what this registry exists to stop other people
+# doing. Generate it with `npm run registry:build`.
+app/public/registry.json
+pipeline/dist/
