@@ -53,6 +53,9 @@ pub enum ArclisError {
     #[msg("Split ratio must be non-zero, not 1:1, and within the permitted bounds")]
     InvalidSplitRatio,
 
+    #[msg("Dividend must be positive and no larger than the share price")]
+    InvalidDividend,
+
     #[msg("Position must be normalized for corporate actions before it can be used")]
     PositionNotNormalized,
 

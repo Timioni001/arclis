@@ -56,6 +56,10 @@ pub struct Market {
     /// Cumulative quote owed per base unit, at [`FUNDING_INDEX_SCALE`].
     /// Positive means longs have paid shorts on net since inception.
     pub cumulative_funding_index: i128,
+    /// Cumulative dividends per base unit, at [`FUNDING_INDEX_SCALE`].
+    /// Longs receive this, shorts pay it. Settled on the same lazy path as
+    /// funding, so a dividend needs no iteration over positions either.
+    pub cumulative_dividend_index: i128,
 
     // --- open interest, in base units at [`BASE_SCALE`] --------------------
     pub open_interest_long: u64,
@@ -318,6 +322,11 @@ impl Market {
             from_factor,
             to_factor,
         )?;
+        self.cumulative_dividend_index = corporate_actions::rescale_funding_index(
+            self.cumulative_dividend_index,
+            from_factor,
+            to_factor,
+        )?;
         // `long_entry_notional` and `short_entry_notional` are deliberately not
         // rescaled: they are sums of `size * price`, and a split multiplies size
         // by exactly the factor it divides price by. The product is invariant,
@@ -359,6 +368,19 @@ impl Market {
             }
             Ordering::Equal => Ok(0),
         }
+    }
+
+    /// Record a dividend against every open position at once.
+    ///
+    /// Moves the index rather than touching positions, so a payment on a market
+    /// with ten thousand open positions is a single account write.
+    pub fn apply_dividend(&mut self, per_share: u64) -> Result<i128> {
+        let delta = corporate_actions::dividend_index_delta(per_share)?;
+        self.cumulative_dividend_index = self
+            .cumulative_dividend_index
+            .checked_add(delta)
+            .ok_or(ArclisError::MathOverflow)?;
+        Ok(delta)
     }
 
     pub fn record_bad_debt(&mut self, amount: u64) -> Result<()> {

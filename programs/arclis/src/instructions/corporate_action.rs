@@ -19,9 +19,9 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::ArclisError;
-use crate::events::CorporateActionApplied;
+use crate::events::{CorporateActionApplied, DividendApplied};
 use crate::instructions::guards::require_oracle_authority;
-use crate::math::corporate_actions::SplitRatio;
+use crate::math::corporate_actions::{Dividend, SplitRatio};
 use crate::math::session::MarketSession;
 use crate::state::{Market, PriceOracle};
 
@@ -87,6 +87,96 @@ pub fn apply_split(
         price_before,
         price_after: ctx.accounts.oracle.price,
         sequence: ctx.accounts.oracle.corporate_action_seq,
+    });
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Cash dividends
+// ---------------------------------------------------------------------------
+
+/// A dividend needs the oracle only to prove authority and to price the
+/// sanity check, so unlike a split it never writes to it.
+#[derive(Accounts)]
+pub struct ApplyDividend<'info> {
+    pub authority: Signer<'info>,
+
+    #[account(
+        mut,
+        seeds = [PriceOracle::SEED, oracle.symbol.as_ref()],
+        bump = oracle.bump
+    )]
+    pub oracle: Account<'info, PriceOracle>,
+
+    #[account(
+        mut,
+        seeds = [Market::SEED, oracle.key().as_ref()],
+        bump = market.bump,
+    )]
+    pub market: Account<'info, Market>,
+}
+
+/// Record a cash dividend against every open position at once.
+///
+/// # Why a perp needs this at all
+///
+/// A perp on a stock that pays dividends has a hole in it that a perp on a
+/// token does not. On the ex-date the share price drops by roughly the
+/// dividend, mechanically, because the buyer no longer receives it. A holder
+/// of the actual share is made whole by the cash. A long on a naive perp is
+/// not: they take the price drop and get nothing back. Run that on a 3%
+/// yielder four times a year and being long costs 3% a year for no reason,
+/// while being short earns it - a standing arbitrage against every long in the
+/// market.
+///
+/// So the credit is not a nicety. It is what makes the contract track the
+/// thing it claims to track.
+///
+/// # Mechanics
+///
+/// The same cumulative-index trick as funding and splits: move one `i128` on
+/// the market and every open position settles its own share the next time it
+/// is touched. There is no iteration over positions, because on Solana there
+/// cannot be.
+///
+/// `per_share` is quote per base unit at `PRICE_SCALE`. It is always positive:
+/// the direction comes from the sign of each position's size, so a long is
+/// credited and a short pays.
+pub fn apply_dividend(ctx: Context<ApplyDividend>, per_share: u64) -> Result<()> {
+    require_oracle_authority(&ctx.accounts.oracle, &ctx.accounts.authority.key())?;
+
+    // Same reasoning as a split: the index and the ex-date price move in
+    // different transactions no matter what, so the credit is recorded while
+    // the venue is shut and the two land together at the open. Applying it
+    // mid-session would let a position open after the index moved and before
+    // the price dropped, collecting the credit without the drop.
+    require!(
+        ctx.accounts.oracle.session != MarketSession::Open,
+        ArclisError::SessionMustBeClosedForCorporateAction
+    );
+
+    // Bounds the blast radius of a compromised oracle authority. A dividend
+    // worth a large fraction of the share price is not a dividend, it is a
+    // transfer from every short in the market, and it should not be reachable
+    // in one transaction.
+    let price = ctx.accounts.oracle.price;
+    Dividend { per_share }.validate(price)?;
+
+    let index_before = ctx.accounts.market.cumulative_dividend_index;
+    ctx.accounts.market.apply_dividend(per_share)?;
+
+    let now = Clock::get()?.unix_timestamp;
+    let sequence = ctx.accounts.oracle.record_corporate_action(now)?;
+
+    emit!(DividendApplied {
+        oracle: ctx.accounts.oracle.key(),
+        market: ctx.accounts.market.key(),
+        authority: ctx.accounts.authority.key(),
+        per_share,
+        price_at_record: price,
+        dividend_index_before: index_before,
+        dividend_index_after: ctx.accounts.market.cumulative_dividend_index,
+        sequence,
     });
     Ok(())
 }

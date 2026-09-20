@@ -18,7 +18,7 @@ fail() { printf '  \033[31mFAIL\033[0m  %s\n' "$1"; FAIL=$((FAIL+1)); }
 skip() { printf '  \033[33mSKIP\033[0m  %s  (%s)\n' "$1" "$2"; SKIP=$((SKIP+1)); }
 section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
-section "The maths — does the money logic work?"
+section "The maths: does the money logic work?"
 if command -v cargo >/dev/null 2>&1; then
   OUT=$(cargo test --lib 2>&1)
   if echo "$OUT" | grep -q "test result: ok"; then
@@ -29,10 +29,10 @@ if command -v cargo >/dev/null 2>&1; then
     echo "$OUT" | grep -E "^(error|test result)" | head -5 | sed 's/^/        /'
   fi
 else
-  skip "Rust unit tests" "Rust not installed — run scripts/setup-ubuntu.sh"
+  skip "Rust unit tests" "Rust not installed : run scripts/setup-ubuntu.sh"
 fi
 
-section "The demo — can you show a judge why this is hard?"
+section "The demo: can you show a judge why this is hard?"
 if command -v cargo >/dev/null 2>&1; then
   if cargo run --quiet --example stock_hazards >/dev/null 2>&1; then
     pass "stock_hazards demo  (run it: cargo run --example stock_hazards)"
@@ -40,22 +40,22 @@ if command -v cargo >/dev/null 2>&1; then
     fail "stock_hazards demo"
   fi
 else
-  skip "stock_hazards demo" "Rust not installed — run scripts/setup-ubuntu.sh"
+  skip "stock_hazards demo" "Rust not installed : run scripts/setup-ubuntu.sh"
 fi
 
-section "The IDL — can a client talk to the program?"
+section "The IDL: can a client talk to the program?"
 if command -v cargo >/dev/null 2>&1; then
   if python3 scripts/build-idl.py >/tmp/arclis-idl.log 2>&1; then
     N=$(python3 -c "import json;print(len(json.load(open('target/idl/arclis.json'))['instructions']))" 2>/dev/null)
     pass "IDL generated ($N instructions)"
   else
-    fail "IDL generation  — full log: /tmp/arclis-idl.log"
+    fail "IDL generation  : full log: /tmp/arclis-idl.log"
   fi
 else
-  skip "IDL generation" "Rust not installed — run scripts/setup-ubuntu.sh"
+  skip "IDL generation" "Rust not installed : run scripts/setup-ubuntu.sh"
 fi
 
-section "The launch tooling — does the Meteora config build?"
+section "The launch tooling: does the Meteora config build?"
 if command -v node >/dev/null 2>&1; then
   if [ -d node_modules ]; then
     OUT=$(npm run --silent test:dbc 2>&1)
@@ -66,13 +66,13 @@ if command -v node >/dev/null 2>&1; then
       echo "$OUT" | tail -5 | sed 's/^/        /'
     fi
   else
-    skip "DBC tests" "dependencies not installed — run: npm install"
+    skip "DBC tests" "dependencies not installed : run: npm install"
   fi
 else
-  skip "DBC tests" "Node not installed — run scripts/setup-ubuntu.sh"
+  skip "DBC tests" "Node not installed : run scripts/setup-ubuntu.sh"
 fi
 
-section "The app — does the interface build and agree with the program?"
+section "The app: does the interface build and agree with the program?"
 if command -v node >/dev/null 2>&1 && [ -d app/node_modules ]; then
   OUT=$(npm --prefix app test 2>&1)
   if echo "$OUT" | grep -qE "Tests +[0-9]+ passed" && ! echo "$OUT" | grep -q "failed"; then
@@ -86,44 +86,44 @@ if command -v node >/dev/null 2>&1 && [ -d app/node_modules ]; then
   if npm --prefix app run build >/tmp/arclis-app.log 2>&1; then
     pass "app builds"
   else
-    fail "app build  — full log: /tmp/arclis-app.log"
+    fail "app build  : full log: /tmp/arclis-app.log"
   fi
 else
-  skip "app tests" "dependencies not installed — run: npm --prefix app install"
+  skip "app tests" "dependencies not installed : run: npm --prefix app install"
 fi
 
-section "The on-chain program — does it compile for Solana?"
+section "The on-chain program: does it compile for Solana?"
 if command -v anchor >/dev/null 2>&1; then
   echo "        (first build takes several minutes)"
   if anchor build >/tmp/arclis-build.log 2>&1; then
     pass "anchor build"
   else
-    fail "anchor build  — full log: /tmp/arclis-build.log"
+    fail "anchor build  : full log: /tmp/arclis-build.log"
     grep -E "^error" /tmp/arclis-build.log | head -5 | sed 's/^/        /'
   fi
 else
-  skip "anchor build" "Anchor not installed — run scripts/setup-ubuntu.sh"
+  skip "anchor build" "Anchor not installed : run scripts/setup-ubuntu.sh"
 fi
 
-section "End to end — does it work on a real (local) blockchain?"
+section "End to end: does it work on a real (local) blockchain?"
 if command -v anchor >/dev/null 2>&1 && [ -d node_modules ]; then
   echo "        (starts a local blockchain, takes a few minutes)"
   if anchor test >/tmp/arclis-test.log 2>&1; then
     pass "anchor test"
   else
-    fail "anchor test  — full log: /tmp/arclis-test.log"
+    fail "anchor test  : full log: /tmp/arclis-test.log"
     grep -E "Error|error|failing" /tmp/arclis-test.log | head -5 | sed 's/^/        /'
   fi
 else
   skip "anchor test" "needs Anchor and: npm install"
 fi
 
-printf '\n\033[1m—————\033[0m\n'
+printf '\n\033[1m-----\033[0m\n'
 printf '  %d passed, %d failed, %d skipped\n\n' "$PASS" "$FAIL" "$SKIP"
 
 if [ "$FAIL" -gt 0 ]; then
   cat <<'MSG'
-  Something failed. That is expected for the last two checks — the on-chain
+  Something failed. That is expected for the last two checks : the on-chain
   program has never been compiled or run before, so this is the first time
   anyone has seen those results.
 

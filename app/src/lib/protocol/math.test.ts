@@ -17,7 +17,7 @@ const P100 = 100n * m.PRICE_SCALE;
 const P110 = 110n * m.PRICE_SCALE;
 const P90 = 90n * m.PRICE_SCALE;
 
-describe("position valuation — matches math/pnl.rs", () => {
+describe("position valuation, matching math/pnl.rs", () => {
   it("notional ignores direction", () => {
     expect(m.notional(UNIT, P100)).toBe(100n * Q);
     expect(m.notional(-UNIT, P100)).toBe(100n * Q);
@@ -71,7 +71,7 @@ describe("liquidation price", () => {
     expect(liq!).toBeLessThan(P100);
 
     // At the returned price, margin must be at (or within rounding of) the
-    // maintenance threshold — that is what makes it the liquidation price.
+    // maintenance threshold, which is what makes it the liquidation price.
     const eq = m.equity(collateral, UNIT, P100, liq!, 0n, 0n);
     const ratio = m.marginRatioBps(eq, m.notional(UNIT, liq!))!;
     expect(Number(ratio)).toBeGreaterThanOrEqual(499);
@@ -90,12 +90,19 @@ describe("liquidation price", () => {
 
   it("moves closer once unsettled funding is owed", () => {
     const flat = m.liquidationPrice(20n * Q, UNIT, P100, 0n, 0n, 500)!;
-    const owing = m.liquidationPrice(20n * Q, UNIT, P100, 0n, 500_000_000n, 500)!;
+    const owing = m.liquidationPrice(
+      20n * Q,
+      UNIT,
+      P100,
+      0n,
+      500_000_000n,
+      500,
+    )!;
     expect(owing).toBeGreaterThan(flat);
   });
 });
 
-describe("funding — matches math/funding.rs", () => {
+describe("funding, matching math/funding.rs", () => {
   it("skew is bounded and signed by the heavier side", () => {
     expect(m.skewBps(1_000n, 1_000n)).toBe(0n);
     expect(m.skewBps(1_000n, 0n)).toBe(10_000n);
@@ -121,7 +128,7 @@ describe("funding — matches math/funding.rs", () => {
   });
 });
 
-describe("liquidity pool — matches math/liquidity.rs", () => {
+describe("liquidity pool, matching math/liquidity.rs", () => {
   const oi = 10n * UNIT;
   const entryNotional = 10n * UNIT * P100;
 
@@ -146,7 +153,9 @@ describe("liquidity pool — matches math/liquidity.rs", () => {
 
   it("later depositors buy in at NAV, not book", () => {
     // $10,000 held, $5,000 owed => NAV $5,000 across 10,000 shares.
-    expect(m.sharesForDeposit(1_000n * Q, 10_000n * Q, 5_000n * Q)).toBe(2_000n * Q);
+    expect(m.sharesForDeposit(1_000n * Q, 10_000n * Q, 5_000n * Q)).toBe(
+      2_000n * Q,
+    );
   });
 
   it("refuses to price shares in an underwater pool", () => {
@@ -169,20 +178,52 @@ describe("liquidity pool — matches math/liquidity.rs", () => {
   });
 });
 
-describe("treasury — matches math/treasury.rs", () => {
+describe("treasury, matching math/treasury.rs", () => {
   it("hedging holds NAV flat through a drawdown", () => {
     const stock = 10n * UNIT;
     const margin = 1_000n * Q;
     const P80 = 80n * m.PRICE_SCALE;
 
-    const unhedgedBefore = m.treasuryExposure(stock, 0n, 0n, 0n, 0n, 0n, P100).nav;
-    const unhedgedAfter = m.treasuryExposure(stock, 0n, 0n, 0n, 0n, 0n, P80).nav;
+    const unhedgedBefore = m.treasuryExposure(
+      stock,
+      0n,
+      0n,
+      0n,
+      0n,
+      0n,
+      P100,
+    ).nav;
+    const unhedgedAfter = m.treasuryExposure(
+      stock,
+      0n,
+      0n,
+      0n,
+      0n,
+      0n,
+      P80,
+    ).nav;
     expect(unhedgedBefore).toBe(1_000n * Q);
     expect(unhedgedAfter).toBe(800n * Q);
 
     const short = -10n * UNIT;
-    const hedgedBefore = m.treasuryExposure(stock, short, margin, P100, 0n, 0n, P100).nav;
-    const hedgedAfter = m.treasuryExposure(stock, short, margin, P100, 0n, 0n, P80).nav;
+    const hedgedBefore = m.treasuryExposure(
+      stock,
+      short,
+      margin,
+      P100,
+      0n,
+      0n,
+      P100,
+    ).nav;
+    const hedgedAfter = m.treasuryExposure(
+      stock,
+      short,
+      margin,
+      P100,
+      0n,
+      0n,
+      P80,
+    ).nav;
     expect(hedgedBefore).toBe(2_000n * Q);
     expect(hedgedAfter).toBe(2_000n * Q);
   });
@@ -199,14 +240,20 @@ describe("treasury — matches math/treasury.rs", () => {
   });
 });
 
-describe("corporate actions — matches math/corporate_actions.rs", () => {
+describe("corporate actions, matching math/corporate_actions.rs", () => {
   it("a 4-for-1 quadruples size and quarters entry, leaving PnL untouched", () => {
     const size = 10n * UNIT;
     const entry = 200n * m.PRICE_SCALE;
     const before = m.notional(size, entry);
 
     const to = 4n * m.SPLIT_FACTOR_SCALE;
-    const norm = m.normalizeForSplits(size, entry, 0n, m.SPLIT_FACTOR_SCALE, to);
+    const norm = m.normalizeForSplits(
+      size,
+      entry,
+      0n,
+      m.SPLIT_FACTOR_SCALE,
+      to,
+    );
 
     expect(norm.size).toBe(40n * UNIT);
     expect(norm.entryPrice).toBe(50n * m.PRICE_SCALE);
@@ -224,7 +271,7 @@ describe("corporate actions — matches math/corporate_actions.rs", () => {
   });
 });
 
-describe("session matrix — matches math/session.rs", () => {
+describe("session matrix, matching math/session.rs", () => {
   it("lets traders out but not in while the venue is closed", () => {
     expect(sessionAllows("Closed", "ReduceRisk").allowed).toBe(true);
     expect(sessionAllows("Closed", "IncreaseRisk").allowed).toBe(false);

@@ -5,7 +5,7 @@ use crate::constants::BAD_DEBT_LIQUIDATION_BOUNTY;
 use crate::errors::ArclisError;
 use crate::events::PositionLiquidated;
 use crate::events::{PoolSettled, SettlementReason};
-use crate::instructions::guards::{require_protocol_live, settle_with_pool, sync_position};
+use crate::instructions::guards::{require_protocol_live, settle_with_pool, sync_and_settle};
 use crate::math::session::PriceUse;
 use crate::math::{liquidation, liquidity};
 use crate::state::{GlobalConfig, LiquidityPool, Market, Position, PriceOracle};
@@ -89,10 +89,16 @@ pub fn handler(ctx: Context<Liquidate>) -> Result<()> {
 
     // Normalise and settle first: unpaid funding is part of why a position is
     // underwater, and the health test must see it.
-    sync_position(
+    let oracle_key = ctx.accounts.oracle.key();
+    sync_and_settle(
         &mut ctx.accounts.position,
         &ctx.accounts.oracle,
-        funding_index,
+        &mut ctx.accounts.market,
+        &ctx.accounts.vault,
+        &mut ctx.accounts.pool,
+        &ctx.accounts.pool_vault,
+        &ctx.accounts.token_program,
+        &oracle_key,
     )?;
 
     let equity = ctx.accounts.position.equity(mark_price, funding_index)?;

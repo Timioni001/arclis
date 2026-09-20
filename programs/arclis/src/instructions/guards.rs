@@ -45,13 +45,14 @@ pub fn require_oracle_authority(oracle: &PriceOracle, signer: &Pubkey) -> Result
 
 /// Bring a position fully up to date, in the one order that is correct.
 ///
-/// Corporate actions first, then funding. The order matters and is not
-/// interchangeable: funding settlement multiplies size by an index delta, and
-/// both of those are denominated in pre-split base units. Settling first and
-/// normalising second would charge funding computed against a size that no
-/// longer exists.
+/// Splits first, then dividends and funding. The order matters and is not
+/// interchangeable: both settlements multiply size by an index delta, and all
+/// three quantities are denominated in pre-split base units. Settling first and
+/// normalising second would charge against a size that no longer exists.
 ///
-/// Returns the funding settled, positive when the trader paid.
+/// Returns `(funding_settled, dividends_settled)`, signed from the trader's
+/// side: positive funding means they paid, positive dividends means they were
+/// paid.
 ///
 /// Every handler that reads or writes a position calls this before doing
 /// anything else. It exists because "did this instruction remember to
@@ -60,10 +61,82 @@ pub fn require_oracle_authority(oracle: &PriceOracle, signer: &Pubkey) -> Result
 pub fn sync_position(
     position: &mut Position,
     oracle: &PriceOracle,
-    market_funding_index: i128,
-) -> Result<i128> {
+    market: &Market,
+) -> Result<(i128, i128)> {
     position.normalize_for_splits(oracle.split_factor)?;
-    position.settle_funding(market_funding_index)
+    let dividends = position.settle_dividends(market.cumulative_dividend_index)?;
+    let funding = position.settle_funding(market.cumulative_funding_index)?;
+    Ok((funding, dividends))
+}
+
+/// What a [`sync_and_settle`] call actually did, all three numbers signed from
+/// the trader's side.
+///
+/// `funding` positive means the trader paid; `dividends` positive means the
+/// trader was paid; `settled` is the net amount that moved between the two
+/// vaults after clamping for bad debt, which is what the caller emits.
+pub struct PositionSync {
+    pub funding: i128,
+    pub dividends: i128,
+    pub settled: i128,
+}
+
+/// Sync a position **and** move the resulting money.
+///
+/// This is the function handlers should call. [`sync_position`] only rewrites
+/// the position; on its own it would credit a long its dividend and leave the
+/// market vault short by exactly that much, which is the liability-versus-
+/// tokens gap the pool exists to close. Funding has the same shape: it is only
+/// self-financing when long and short open interest are equal, and they never
+/// are.
+///
+/// The amount moved is read back from the position's collateral rather than
+/// taken from the owed figures, because both settlements saturate at zero when
+/// a position cannot cover the charge. Booking the owed amount instead of the
+/// applied amount would let `total_collateral` drift above the sum of live
+/// positions - the exact drift the market's bad-debt accounting exists to make
+/// visible.
+#[allow(clippy::too_many_arguments)]
+pub fn sync_and_settle<'info>(
+    position: &mut Position,
+    oracle: &PriceOracle,
+    market: &mut Account<'info, Market>,
+    market_vault: &Account<'info, TokenAccount>,
+    pool: &mut Account<'info, LiquidityPool>,
+    pool_vault: &Account<'info, TokenAccount>,
+    token_program: &Program<'info, Token>,
+    oracle_key: &Pubkey,
+) -> Result<PositionSync> {
+    let collateral_before = i128::from(position.collateral);
+    let (funding, dividends) = sync_position(position, oracle, market)?;
+    let applied = i128::from(position.collateral)
+        .checked_sub(collateral_before)
+        .ok_or(ArclisError::MathOverflow)?;
+
+    if applied == 0 {
+        return Ok(PositionSync {
+            funding,
+            dividends,
+            settled: 0,
+        });
+    }
+
+    let settled = market.settle_realized_pnl(applied)?;
+    settle_with_pool(
+        settled,
+        market,
+        market_vault,
+        pool,
+        pool_vault,
+        token_program,
+        oracle_key,
+    )?;
+
+    Ok(PositionSync {
+        funding,
+        dividends,
+        settled,
+    })
 }
 
 /// Move realised trader PnL between the market vault and the liquidity pool.

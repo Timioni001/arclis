@@ -20,7 +20,10 @@ export interface SessionVerdict {
   errorCode?: string;
 }
 
-export function sessionAllows(session: MarketSession, use: PriceUse): SessionVerdict {
+export function sessionAllows(
+  session: MarketSession,
+  use: PriceUse,
+): SessionVerdict {
   switch (session) {
     case "Open":
       return { allowed: true, reason: "" };
@@ -51,7 +54,7 @@ export function sessionAllows(session: MarketSession, use: PriceUse): SessionVer
         allowed: false,
         reason:
           "Trading is halted, so there is no price to mark against. Closing is unavailable " +
-          "too — settling against the pre-halt print would be guesswork.",
+          "too, because settling against the pre-halt print would be guesswork.",
         errorCode: "MarketHalted",
       };
   }

@@ -3,9 +3,9 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 
 use crate::errors::ArclisError;
 use crate::events::CollateralWithdrawn;
-use crate::instructions::guards::{require_tradable, sync_position};
+use crate::instructions::guards::{require_tradable, sync_and_settle};
 use crate::math::session::PriceUse;
-use crate::state::{GlobalConfig, Market, Position, PriceOracle};
+use crate::state::{GlobalConfig, LiquidityPool, Market, Position, PriceOracle};
 
 #[derive(Accounts)]
 pub struct WithdrawCollateral<'info> {
@@ -41,6 +41,20 @@ pub struct WithdrawCollateral<'info> {
     #[account(mut, address = market.vault @ ArclisError::VaultMismatch)]
     pub vault: Account<'info, TokenAccount>,
 
+    /// The counterparty. Withdrawing does not itself touch the pool, but the
+    /// sync that runs first settles accrued funding and dividends, and those
+    /// are the pool's to pay or collect.
+    #[account(
+        mut,
+        address = market.liquidity_pool @ ArclisError::PoolMismatch,
+        seeds = [LiquidityPool::SEED, market.key().as_ref()],
+        bump = pool.bump,
+    )]
+    pub pool: Account<'info, LiquidityPool>,
+
+    #[account(mut, address = pool.vault @ ArclisError::VaultMismatch)]
+    pub pool_vault: Account<'info, TokenAccount>,
+
     pub token_program: Program<'info, Token>,
 }
 
@@ -60,10 +74,16 @@ pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
     // Normalise and settle before valuing anything, so the margin check below
     // runs against the position's actual current state rather than a stale
     // snapshot.
-    sync_position(
+    let oracle_key = ctx.accounts.oracle.key();
+    sync_and_settle(
         &mut ctx.accounts.position,
         &ctx.accounts.oracle,
-        funding_index,
+        &mut ctx.accounts.market,
+        &ctx.accounts.vault,
+        &mut ctx.accounts.pool,
+        &ctx.accounts.pool_vault,
+        &ctx.accounts.token_program,
+        &oracle_key,
     )?;
     ctx.accounts.position.debit_collateral(amount)?;
 
@@ -92,7 +112,6 @@ pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
         .market
         .require_payable(ctx.accounts.vault.amount, amount)?;
 
-    let oracle_key = ctx.accounts.oracle.key();
     let bump = [ctx.accounts.market.bump];
     let seeds = Market::signer_seeds(&oracle_key, &bump);
 

@@ -23,7 +23,7 @@ use crate::errors::ArclisError;
 use crate::events::{PoolSettled, SettlementReason};
 use crate::events::{TreasuryHedgeRebalanced, TreasuryInitialized, TreasuryStockMoved};
 use crate::instructions::guards::{
-    require_protocol_live, require_tradable, settle_with_pool, sync_position,
+    require_protocol_live, require_tradable, settle_with_pool, sync_and_settle,
 };
 use crate::math::session::PriceUse;
 use crate::state::{AgentTreasury, GlobalConfig, LiquidityPool, Market, Position, PriceOracle};
@@ -354,10 +354,16 @@ pub fn rebalance_hedge(ctx: Context<RebalanceHedge>) -> Result<()> {
         .validated_price(now, PriceUse::IncreaseRisk)?;
     let funding_index = ctx.accounts.market.cumulative_funding_index;
 
-    sync_position(
+    let oracle_key = ctx.accounts.oracle.key();
+    sync_and_settle(
         &mut ctx.accounts.position,
         &ctx.accounts.oracle,
-        funding_index,
+        &mut ctx.accounts.market,
+        &ctx.accounts.market_vault,
+        &mut ctx.accounts.pool,
+        &ctx.accounts.pool_vault,
+        &ctx.accounts.token_program,
+        &oracle_key,
     )?;
 
     let exposure = {
@@ -417,7 +423,6 @@ pub fn rebalance_hedge(ctx: Context<RebalanceHedge>) -> Result<()> {
     position.last_update_ts = now;
 
     if settled != 0 {
-        let oracle_key = ctx.accounts.oracle.key();
         settle_with_pool(
             settled,
             &ctx.accounts.market,

@@ -113,6 +113,21 @@ impl PriceOracle {
         Ok(to)
     }
 
+    /// Stamp a corporate action that does not rescale the price, such as a
+    /// cash dividend, onto the same audit counter splits use.
+    ///
+    /// Returns the new sequence number so the caller can put it in the event.
+    /// One counter for every corporate action, rather than one per kind, means
+    /// an indexer replaying the feed can order them against each other.
+    pub fn record_corporate_action(&mut self, now: i64) -> Result<u32> {
+        self.corporate_action_seq = self
+            .corporate_action_seq
+            .checked_add(1)
+            .ok_or(ArclisError::MathOverflow)?;
+        self.last_update_ts = now;
+        Ok(self.corporate_action_seq)
+    }
+
     /// Reject an update that jumps further than [`MAX_ORACLE_DEVIATION_BPS`]
     /// from the current price.
     ///

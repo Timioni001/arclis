@@ -1,4 +1,4 @@
-# Arclis — frontend
+# Arclis, frontend
 
 *On-chain access to public markets.*
 
@@ -21,7 +21,7 @@ npm run build
 src/
   lib/
     protocol/
-      types.ts     the read model — mirrors the on-chain accounts
+      types.ts     the read model, mirrors the on-chain accounts
       math.ts      PnL, margin, liquidation price, pool NAV, utilisation…
       math.test.ts cross-checks every function against the Rust tests
       session.ts   the market-session rules
@@ -56,7 +56,7 @@ component knows which it is talking to.
 
 ## Going live
 
-1. `python3 ../scripts/build-idl.py` — regenerates `idl/arclis.json`.
+1. `python3 ../scripts/build-idl.py`: regenerates `idl/arclis.json`.
 2. Write `src/lib/protocol/rpc.ts` implementing `DataSource` against
    `@coral-xyz/anchor`, deriving PDAs with the seeds in `docs/ARCHITECTURE.md`.
 3. Change the one line in `main.tsx`.
@@ -67,20 +67,20 @@ by itself once the RPC source is wired.
 ## The visual language
 
 Near-white warm-grey page, pure white cards at a large radius with a soft wide
-shadow and barely any border — separation comes from elevation, not strokes.
+shadow and barely any border, separation comes from elevation, not strokes.
 One bright lime carries every active and primary state; everything else is
 neutral. Rows inside cards sit on their own faintly tinted surface rather than
 being divided by lines. Progress is **discrete segments**, not a continuous
 fill, because "seven of twelve" reads faster than a bar that is 58% full.
 
-The wordmark is the mark — no logo glyph.
+The wordmark is the mark, no logo glyph.
 
 ### Fonts
 
 Designed for **After** (display) and **Newblack** (text). Both are commercial
 and not redistributed here. `tokens.css` names them first in
 `--font-display` / `--font`, and falls back to Plus Jakarta Sans, which is close
-in construction — geometric, wide apertures, tall x-height.
+in construction, geometric, wide apertures, tall x-height.
 
 The fallback is **self-hosted**, not linked from a CDN, so the interface renders
 identically offline, in CI and behind a proxy with no third-party request on
@@ -107,13 +107,13 @@ The palette was run through a contrast and colour-vision validator. Two things
 came back:
 
 - **The lime cannot carry data.** At roughly 1.2:1 against white it is
-  invisible as a chart series, so it is a UI accent only — active states,
-  primary buttons, badges — and charts have their own categorical ramp
+  invisible as a chart series, so it is a UI accent only, active states,
+  primary buttons, badges, and charts have their own categorical ramp
   (`--chart-1..4`), re-stepped per mode rather than flipped. Both sets pass
   lightness-band, chroma, adjacent-pair CVD separation and contrast.
 
 - **Positive and negative are 5.1 ΔE apart under deuteranopia**, below the
-  readability floor — so red/green alone is unreadable for roughly 8% of men.
+  readability floor, so red/green alone is unreadable for roughly 8% of men.
   The convention is kept, but every signed value renders a ▲/▼ glyph and an
   explicit sign as well. `DESIGN.md` §35 asks for no colour-only state
   communication; this is where that bites hardest, because finance defaults to
@@ -127,3 +127,68 @@ There is no committed screenshot tooling. To capture screens locally:
 npm run build && npx vite preview --port 4173
 # then drive http://127.0.0.1:4173 with Playwright or a browser
 ```
+
+## The registry
+
+`src/lib/registry/` and `src/screens/Registry.tsx` are a public lookup for
+tokenized equities: claim strength, NAV deviation against the market calendar,
+exit liquidity by price impact, and mint authorities. It is the one surface that
+never asks for a wallet, and the code enforces that rather than promising it:
+nothing under `Registry.tsx` reads the session, and `App.tsx` does not pass it
+one. See [`../docs/REGISTRY.md`](../docs/REGISTRY.md).
+
+## Accounts
+
+Two routes, presented as equals in `src/components/auth/AuthSheet.tsx`:
+
+- **Wallet connect** over the Wallet Standard, in about thirty lines
+  (`src/lib/auth/wallet.ts`). No `@solana/wallet-adapter-react`: that package
+  exists to paper over an era when every wallet injected a bespoke object, and
+  the narrower surface here never asks for anything beyond connect and
+  `signMessage`.
+- **Passkey accounts** (`src/lib/auth/passkey.ts`). An Ed25519 key is generated
+  in WebCrypto, WebAuthn's PRF extension produces a secret only the
+  authenticator can reproduce, HKDF turns it into an AES-GCM key, and only the
+  ciphertext is stored. Unlocking repeats the ceremony. The user experiences
+  Face ID; what happens is a non-custodial key with no seed phrase that this
+  application cannot decrypt without them present. Where PRF is unavailable the
+  flow refuses rather than storing a bare key behind a prompt that protects
+  nothing.
+
+`Capability` (`src/lib/auth/session.ts`) is modelled rather than inferred from
+`address !== null`. Three states: `anonymous` (browse everything, the intended
+state for most visitors), `watching` (a stored account nobody has unlocked this
+session), and `trading`. Deriving access from a nullable address is how
+"connect your wallet to read this page" happens.
+
+## Glass
+
+`src/components/ui/Glass.tsx` wraps `@samasante/liquid-glass`, which runs an SVG
+displacement filter over the live DOM, so text under it stays selectable rather
+than being a frozen screenshot. Three rules govern it:
+
+1. **Never under a number.** Refraction bends glyph edges, which is a finish on
+   a label and a legibility bug on a price. Glass goes on chrome: the top bar,
+   the sign-in sheet, the filter rail. Values sit on flat surfaces, marked
+   `.crisp`.
+2. **It degrades to a flat panel, always.** `prefers-reduced-transparency` and
+   `prefers-reduced-motion` both turn it off, and the fallback renders the same
+   two boxes with the same classes, so layout is identical either way.
+3. **One optics vocabulary per theme.** Dark glass is not light glass with a
+   darker tint: the veil goes negative and the rim does the work, or the pane
+   reads as fog.
+
+One structural note worth keeping: `<Glass>` renders its own block wrapper and
+the filter's `<svg>` as siblings of the children, so layout belongs to the inner
+box (`innerClassName`), never to the glass shell. Putting `display: flex` on the
+shell silently stacks every child.
+
+## Checking the interface
+
+The layout audit that gates changes here is not a snapshot test. It drives the
+built app in Chromium across every screen at three widths in both themes and
+fails on four things: any box escaping the page, any text clipped by its own
+box, any interactive control under 32px tall, and any text below its WCAG
+contrast floor against the surface it actually composites onto. It is what
+caught the page being unscrollable below 760px, and a `--text-muted` sitting at
+2.27:1 on the page background.

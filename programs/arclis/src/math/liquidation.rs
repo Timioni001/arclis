@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn underwater_position_is_liquidatable() {
-        assert!(is_liquidatable(-1 * Q, 100 * Q, 500).unwrap());
+        assert!(is_liquidatable(-Q, 100 * Q, 500).unwrap());
     }
 
     #[test]

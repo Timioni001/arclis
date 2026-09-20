@@ -72,7 +72,8 @@ export function PriceChart({
     max += span * 0.06;
 
     const plotW = W - PAD.left - PAD.right;
-    const x = (i: number) => PAD.left + (i / Math.max(1, candles.length - 1)) * plotW;
+    const x = (i: number) =>
+      PAD.left + (i / Math.max(1, candles.length - 1)) * plotW;
     const y = (v: number) => PAD.top + (1 - (v - min) / (max - min)) * plotH;
     const maxVol = Math.max(...candles.map((c) => Number(c.v))) || 1;
     const vy = (v: number) => height - PAD.bottom - (v / maxVol) * VOL_H;
@@ -90,16 +91,24 @@ export function PriceChart({
   };
 
   const ticks = 4;
-  const gridValues = Array.from({ length: ticks + 1 }, (_, i) => min + ((max - min) * i) / ticks);
+  const gridValues = Array.from(
+    { length: ticks + 1 },
+    (_, i) => min + ((max - min) * i) / ticks,
+  );
 
   const areaPath =
     "M " +
-    candles.map((c, i) => `${x(i).toFixed(2)} ${y(Number(c.c)).toFixed(2)}`).join(" L ") +
+    candles
+      .map((c, i) => `${x(i).toFixed(2)} ${y(Number(c.c)).toFixed(2)}`)
+      .join(" L ") +
     ` L ${x(candles.length - 1).toFixed(2)} ${height - PAD.bottom - VOL_H} L ${PAD.left} ${
       height - PAD.bottom - VOL_H
     } Z`;
   const linePath =
-    "M " + candles.map((c, i) => `${x(i).toFixed(2)} ${y(Number(c.c)).toFixed(2)}`).join(" L ");
+    "M " +
+    candles
+      .map((c, i) => `${x(i).toFixed(2)} ${y(Number(c.c)).toFixed(2)}`)
+      .join(" L ");
 
   const active = hover !== null ? candles[hover] : null;
   const last = candles[candles.length - 1];
@@ -108,12 +117,18 @@ export function PriceChart({
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const rel = ((e.clientX - rect.left) / rect.width) * W;
-    const i = Math.round(((rel - PAD.left) / (W - PAD.left - PAD.right)) * (candles.length - 1));
+    const i = Math.round(
+      ((rel - PAD.left) / (W - PAD.left - PAD.right)) * (candles.length - 1),
+    );
     setHover(Math.max(0, Math.min(candles.length - 1, i)));
   }
 
   const markerColor = (tone: PriceMarker["tone"]) =>
-    tone === "entry" ? "var(--chart-1)" : tone === "liquidation" ? "var(--negative)" : "var(--chart-2)";
+    tone === "entry"
+      ? "var(--chart-1)"
+      : tone === "liquidation"
+        ? "var(--negative)"
+        : "var(--chart-2)";
 
   return (
     <div ref={wrap} style={{ position: "relative" }}>
@@ -129,8 +144,18 @@ export function PriceChart({
       >
         {gridValues.map((v, i) => (
           <g key={i}>
-            <line className="chart-grid-line" x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)} />
-            <text className="chart-axis-label" x={W - PAD.right + 6} y={y(v) + 3}>
+            <line
+              className="chart-grid-line"
+              x1={PAD.left}
+              x2={W - PAD.right}
+              y1={y(v)}
+              y2={y(v)}
+            />
+            <text
+              className="chart-axis-label"
+              x={W - PAD.right + 6}
+              y={y(v) + 3}
+            >
               {usd(BigInt(Math.round(v)), { compact: false, dp: 2 })}
             </text>
           </g>
@@ -140,12 +165,25 @@ export function PriceChart({
           <>
             <defs>
               <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="var(--chart-1)" stopOpacity="0.28" />
-                <stop offset="100%" stopColor="var(--chart-1)" stopOpacity="0" />
+                <stop
+                  offset="0%"
+                  stopColor="var(--chart-1)"
+                  stopOpacity="0.28"
+                />
+                <stop
+                  offset="100%"
+                  stopColor="var(--chart-1)"
+                  stopOpacity="0"
+                />
               </linearGradient>
             </defs>
             <path d={areaPath} fill="url(#areaFill)" />
-            <path d={linePath} fill="none" stroke="var(--chart-1)" strokeWidth={2} />
+            <path
+              d={linePath}
+              fill="none"
+              stroke="var(--chart-1)"
+              strokeWidth={2}
+            />
           </>
         ) : (
           candles.map((c, i) => {
@@ -156,8 +194,22 @@ export function PriceChart({
             const bodyH = Math.max(1, Math.abs(cy - oy));
             return (
               <g key={i}>
-                <line x1={x(i)} x2={x(i)} y1={y(Number(c.h))} y2={y(Number(c.l))} stroke={col} strokeWidth={1} />
-                <rect x={x(i) - bw / 2} y={top} width={bw} height={bodyH} fill={col} rx={1} />
+                <line
+                  x1={x(i)}
+                  x2={x(i)}
+                  y1={y(Number(c.h))}
+                  y2={y(Number(c.l))}
+                  stroke={col}
+                  strokeWidth={1}
+                />
+                <rect
+                  x={x(i) - bw / 2}
+                  y={top}
+                  width={bw}
+                  height={bodyH}
+                  fill={col}
+                  rx={1}
+                />
               </g>
             );
           })
@@ -203,7 +255,11 @@ export function PriceChart({
                 style={{ fontWeight: 600 }}
               >
                 {mk.label}
-                {at.off === "below" ? " ↓ off-scale" : at.off === "above" ? " ↑ off-scale" : ""}
+                {at.off === "below"
+                  ? " ↓ off-scale"
+                  : at.off === "above"
+                    ? " ↑ off-scale"
+                    : ""}
               </text>
             </g>
           );
@@ -224,7 +280,14 @@ export function PriceChart({
                 strokeWidth={1.5}
                 strokeDasharray="2 3"
               />
-              <circle cx={x(idx)} cy={PAD.top + 5} r={5} fill="var(--chart-4)" stroke="var(--surface)" strokeWidth={2} />
+              <circle
+                cx={x(idx)}
+                cy={PAD.top + 5}
+                r={5}
+                fill="var(--chart-4)"
+                stroke="var(--surface)"
+                strokeWidth={2}
+              />
               <text
                 className="chart-axis-label"
                 x={x(idx) + 9}
@@ -239,12 +302,32 @@ export function PriceChart({
         })}
 
         {/* Last price marker */}
-        <circle cx={x(candles.length - 1)} cy={y(Number(last.c))} r={4} fill="var(--chart-1)" stroke="var(--surface)" strokeWidth={2} />
+        <circle
+          cx={x(candles.length - 1)}
+          cy={y(Number(last.c))}
+          r={4}
+          fill="var(--chart-1)"
+          stroke="var(--surface)"
+          strokeWidth={2}
+        />
 
         {hover !== null && (
           <>
-            <line className="chart-crosshair" x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={height - PAD.bottom} />
-            <circle cx={x(hover)} cy={y(Number(candles[hover].c))} r={4.5} fill="var(--chart-1)" stroke="var(--surface)" strokeWidth={2} />
+            <line
+              className="chart-crosshair"
+              x1={x(hover)}
+              x2={x(hover)}
+              y1={PAD.top}
+              y2={height - PAD.bottom}
+            />
+            <circle
+              cx={x(hover)}
+              cy={y(Number(candles[hover].c))}
+              r={4.5}
+              fill="var(--chart-1)"
+              stroke="var(--surface)"
+              strokeWidth={2}
+            />
           </>
         )}
       </svg>
@@ -291,18 +374,34 @@ export function PriceChart({
 }
 
 /** A bare trend line for market cards. No axes, no interaction. */
-export function Sparkline({ candles, width = 108, height = 30 }: { candles: Candle[]; width?: number; height?: number }) {
+export function Sparkline({
+  candles,
+  width = 108,
+  height = 30,
+}: {
+  candles: Candle[];
+  width?: number;
+  height?: number;
+}) {
   if (candles.length < 2) return null;
   const vals = candles.map((c) => Number(c.c));
   const min = Math.min(...vals);
   const max = Math.max(...vals);
   const span = max - min || 1;
   const pts = vals
-    .map((v, i) => `${(i / (vals.length - 1)) * width},${height - ((v - min) / span) * height}`)
+    .map(
+      (v, i) =>
+        `${(i / (vals.length - 1)) * width},${height - ((v - min) / span) * height}`,
+    )
     .join(" ");
   const rising = vals[vals.length - 1] >= vals[0];
   return (
-    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden>
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      aria-hidden
+    >
       <polyline
         points={pts}
         fill="none"

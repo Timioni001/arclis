@@ -29,7 +29,11 @@ export function Card({
   onClick?: () => void;
 }) {
   return (
-    <section className={`card ${large ? "card-lg" : ""} ${className}`} style={style} onClick={onClick}>
+    <section
+      className={`card ${large ? "card-lg" : ""} ${className}`}
+      style={style}
+      onClick={onClick}
+    >
       {(title || action) && (
         <header className="card-head">
           <div>
@@ -44,7 +48,13 @@ export function Card({
   );
 }
 
-export function CardLink({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+export function CardLink({
+  children,
+  onClick,
+}: {
+  children: ReactNode;
+  onClick?: () => void;
+}) {
   return (
     <button className="card-link" onClick={onClick}>
       {children}
@@ -55,7 +65,7 @@ export function CardLink({ children, onClick }: { children: ReactNode; onClick?:
 /**
  * A rounded-square icon holder.
  *
- * `accent` turns it lime. Exactly one chip per group should be accented — it is
+ * `accent` turns it lime. Exactly one chip per group should be accented; it is
  * how the eye finds the primary thing, and it stops meaning anything if
  * everything glows.
  */
@@ -71,7 +81,12 @@ export function Chip({
   small?: boolean;
 }) {
   return (
-    <span className={`chip ${small ? "chip-sm" : ""}`} data-accent={accent} data-tone={tone} aria-hidden>
+    <span
+      className={`chip ${small ? "chip-sm" : ""}`}
+      data-accent={accent}
+      data-tone={tone}
+      aria-hidden
+    >
       {children}
     </span>
   );
@@ -125,9 +140,18 @@ export function ListRow({
   );
 }
 
-export type Tone = "open" | "closed" | "preopen" | "halted" | "info" | "neutral" | "lime";
+export type Tone =
+  "open" | "closed" | "preopen" | "halted" | "info" | "neutral" | "lime";
 
-export function StatusPill({ tone, children, dot = true }: { tone: Tone; children: ReactNode; dot?: boolean }) {
+export function StatusPill({
+  tone,
+  children,
+  dot = true,
+}: {
+  tone: Tone;
+  children: ReactNode;
+  dot?: boolean;
+}) {
   return (
     <span className="pill" data-tone={tone}>
       {dot && <span className="dot" aria-hidden />}
@@ -151,7 +175,8 @@ export function Metric({
   sub?: ReactNode;
   size?: "md" | "lg" | "xl";
 }) {
-  const cls = size === "xl" ? "metric-value-xl" : size === "lg" ? "metric-value-lg" : "";
+  const cls =
+    size === "xl" ? "metric-value-xl" : size === "lg" ? "metric-value-lg" : "";
   return (
     <div>
       {label && <div className="metric-label">{label}</div>}
@@ -161,7 +186,15 @@ export function Metric({
   );
 }
 
-export function StatTile({ label, value, sub }: { label: ReactNode; value: ReactNode; sub?: ReactNode }) {
+export function StatTile({
+  label,
+  value,
+  sub,
+}: {
+  label: ReactNode;
+  value: ReactNode;
+  sub?: ReactNode;
+}) {
   return (
     <div className="stat-tile">
       <div className="metric-label">{label}</div>
@@ -175,7 +208,7 @@ export function StatTile({ label, value, sub }: { label: ReactNode; value: React
  * A signed value.
  *
  * Always renders a direction glyph beside the colour. Positive and negative are
- * 5.1 ΔE apart under deuteranopia — below the readability floor — so colour
+ * 5.1 ΔE apart under deuteranopia, below the readability floor, so colour
  * alone is unreadable for roughly 8% of men. The glyph is the accessible
  * channel, not decoration.
  */
@@ -190,7 +223,7 @@ export function Delta({
 }) {
   const n = typeof value === "bigint" ? Number(value) : value;
   const dir = n > 0 ? "up" : n < 0 ? "down" : "flat";
-  const glyph = dir === "up" ? "▲" : dir === "down" ? "▼" : "—";
+  const glyph = dir === "up" ? "▲" : dir === "down" ? "▼" : "";
   return (
     <span className="num-delta num" data-dir={dir}>
       {showGlyph && (
@@ -199,7 +232,13 @@ export function Delta({
         </span>
       )}
       <span>{children}</span>
-      <span className="sr-only">{dir === "up" ? " increase" : dir === "down" ? " decrease" : " unchanged"}</span>
+      <span className="sr-only">
+        {dir === "up"
+          ? " increase"
+          : dir === "down"
+            ? " decrease"
+            : " unchanged"}
+      </span>
     </span>
   );
 }
@@ -223,7 +262,11 @@ export function Notice({
   children?: ReactNode;
 }) {
   return (
-    <div className="notice" data-tone={tone} role={tone === "danger" ? "alert" : undefined}>
+    <div
+      className="notice"
+      data-tone={tone}
+      role={tone === "danger" ? "alert" : undefined}
+    >
       <div>
         {title && <div className="notice-title">{title}</div>}
         {children && <div className="notice-body">{children}</div>}
@@ -359,7 +402,15 @@ export function SegBar({
   );
 }
 
-export function Empty({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
+export function Empty({
+  title,
+  children,
+  action,
+}: {
+  title: string;
+  children?: ReactNode;
+  action?: ReactNode;
+}) {
   return (
     <div className="empty">
       <div className="empty-title">{title}</div>
@@ -369,12 +420,20 @@ export function Empty({ title, children, action }: { title: string; children?: R
   );
 }
 
-export function Legend({ items }: { items: { label: string; color: string }[] }) {
+export function Legend({
+  items,
+}: {
+  items: { label: string; color: string }[];
+}) {
   return (
     <div className="legend">
       {items.map((i) => (
         <span className="legend-item" key={i.label}>
-          <span className="legend-swatch" style={{ background: i.color }} aria-hidden />
+          <span
+            className="legend-swatch"
+            style={{ background: i.color }}
+            aria-hidden
+          />
           {i.label}
         </span>
       ))}
@@ -401,19 +460,47 @@ export function Hero({
   return (
     <section className="hero">
       <div className="hero-blobs" aria-hidden>
-        <span className="hero-blob" style={{ width: 168, height: 168, right: "6%", top: "-28%" }} />
-        <span className="hero-blob" style={{ width: 96, height: 96, right: "23%", bottom: "-18%", opacity: 0.75 }} />
-        <span className="hero-blob" style={{ width: 54, height: 54, right: "38%", top: "22%", opacity: 0.6 }} />
+        <span
+          className="hero-blob"
+          style={{ width: 168, height: 168, right: "6%", top: "-28%" }}
+        />
+        <span
+          className="hero-blob"
+          style={{
+            width: 96,
+            height: 96,
+            right: "23%",
+            bottom: "-18%",
+            opacity: 0.75,
+          }}
+        />
+        <span
+          className="hero-blob"
+          style={{
+            width: 54,
+            height: 54,
+            right: "38%",
+            top: "22%",
+            opacity: 0.6,
+          }}
+        />
       </div>
       <div className="hero-body">
         {eyebrow && (
-          <div style={{ fontWeight: 700, fontSize: 12.5, opacity: 0.7, marginBottom: 10, letterSpacing: "0.04em" }}>
+          <div
+            style={{
+              fontWeight: 700,
+              fontSize: 12.5,
+              opacity: 0.7,
+              marginBottom: 10,
+              letterSpacing: "0.04em",
+            }}
+          >
             {eyebrow}
           </div>
         )}
         <h1>
-          {title}{" "}
-          {highlight && <span className="hero-mark">{highlight}</span>}
+          {title} {highlight && <span className="hero-mark">{highlight}</span>}
         </h1>
         {body && <p>{body}</p>}
         {cta && (

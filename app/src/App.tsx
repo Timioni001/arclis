@@ -1,31 +1,65 @@
 /**
- * App shell: navigation, wallet state, theme, and routing between screens.
+ * App shell: navigation, session, theme, and routing between screens.
  *
- * Routing is a `useState` rather than a router, deliberately — five screens, no
+ * Routing is a `useState` rather than a router, deliberately: six screens, no
  * deep-linking requirement yet, and one less dependency to explain. Swapping in
  * a real router later touches only this file.
+ *
+ * One structural rule, enforced here rather than remembered per screen: the
+ * session is passed *down*, and no screen fetches it for itself. The Registry
+ * does not receive it at all, which is what makes "this page never asks for a
+ * wallet" a property of the code rather than a promise in a comment.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { DataSource } from "./lib/protocol/mock";
+import { modelledRegistry } from "./lib/registry/data";
+import { restoreSession, type Session } from "./lib/auth/session";
+import { forgetAccount } from "./lib/auth/passkey";
 import { Markets } from "./screens/Markets";
+import { Registry } from "./screens/Registry";
 import { Trade } from "./screens/Trade";
 import { Liquidity } from "./screens/Liquidity";
 import { Treasury } from "./screens/Treasury";
 import { Portfolio } from "./screens/Portfolio";
+import { AuthSheet } from "./components/auth/AuthSheet";
 import { shortAddress } from "./lib/format";
 import { Icon } from "./components/ui";
+import { Footer } from "./components/ui/Footer";
+import { GlassPanel } from "./components/ui/Glass";
 
-const TABS = ["Overview", "Trade", "Portfolio", "Liquidity", "Treasuries"] as const;
+const TABS = [
+  "Overview",
+  "Registry",
+  "Trade",
+  "Portfolio",
+  "Liquidity",
+  "Treasuries",
+] as const;
 type Tab = (typeof TABS)[number];
+
+/** Screens that need a signature to be worth opening. Registry is not one. */
+const NEEDS_SESSION: Record<Tab, string | null> = {
+  Overview: null,
+  Registry: null,
+  Trade: null,
+  Portfolio: "Sign in to see the positions held by your account.",
+  Liquidity: null,
+  Treasuries: null,
+};
 
 export function App({ source }: { source: DataSource }) {
   const [tab, setTab] = useState<Tab>("Overview");
   const [symbol, setSymbol] = useState<string>("AAPL");
   const [theme, setTheme] = useState<"light" | "dark">(
     () =>
-      (localStorage.getItem("arclis-theme") as "light" | "dark" | null) ??
-      (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"),
+      (document.documentElement.getAttribute("data-theme") as
+        "light" | "dark") ?? "light",
   );
+  const [session, setSession] = useState<Session>(restoreSession);
+  const [authOpen, setAuthOpen] = useState(false);
+  const [authReason, setAuthReason] = useState<string | undefined>(undefined);
+  const [menuOpen, setMenuOpen] = useState(false);
+
   // A clock, so "12s ago" stays true without re-fetching anything.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
 
@@ -36,6 +70,10 @@ export function App({ source }: { source: DataSource }) {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
+    // Keeps form controls, scrollbars and the mobile browser chrome on the
+    // same side of the theme as the page. Without it a dark page renders a
+    // white select menu.
+    document.documentElement.style.colorScheme = theme;
     try {
       localStorage.setItem("arclis-theme", theme);
     } catch {
@@ -43,68 +81,148 @@ export function App({ source }: { source: DataSource }) {
     }
   }, [theme]);
 
+  const registry = useMemo(() => modelledRegistry(), []);
   const markets = useMemo(() => source.markets(), [source]);
   const view = source.market(symbol) ?? markets[0];
 
-  function openMarket(s: string) {
+  const openMarket = useCallback((s: string) => {
     setSymbol(s);
     setTab("Trade");
+    setMenuOpen(false);
+  }, []);
+
+  const requestSignIn = useCallback((reason?: string) => {
+    setAuthReason(reason);
+    setAuthOpen(true);
+  }, []);
+
+  function selectTab(next: Tab) {
+    setTab(next);
+    setMenuOpen(false);
+    const reason = NEEDS_SESSION[next];
+    if (reason && session.capability === "anonymous") requestSignIn(reason);
   }
 
-  const wallet = source.wallet();
+  function signOut() {
+    if (session.method === "passkey") {
+      const confirmed = window.confirm(
+        "Sign out and forget this account on this device?\n\n" +
+          "The encrypted key is stored here and nowhere else. Once removed, the passkey alone " +
+          "cannot recover it.",
+      );
+      if (!confirmed) return;
+      forgetAccount();
+    }
+    setSession(restoreSession());
+  }
 
   return (
     <div className="app">
-      <header className="topbar">
-        {/* The wordmark is the mark. No logo glyph — the name set in the
+      <GlassPanel
+        weight="chrome"
+        radius={0}
+        className="topbar-shell topbar-glass"
+        innerClassName="topbar"
+        as="header"
+      >
+        {/* The wordmark is the mark. No logo glyph: the name set in the
             display face at 800 carries it. */}
-        <div className="wordmark">arclis</div>
+        <div className="wordmark crisp">arclis</div>
 
-        <nav className="nav" aria-label="Primary">
+        <button
+          className="nav-toggle"
+          aria-expanded={menuOpen}
+          aria-controls="primary-nav"
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
+          <Icon name={menuOpen ? "plus" : "layers"} size={18} />
+          <span>Menu</span>
+        </button>
+
+        <nav
+          className="nav crisp"
+          id="primary-nav"
+          aria-label="Primary"
+          data-open={menuOpen ? "true" : "false"}
+        >
           {TABS.map((t) => (
             <button
               key={t}
               className="nav-item"
               aria-current={t === tab ? "page" : undefined}
-              onClick={() => setTab(t)}
+              onClick={() => selectTab(t)}
             >
               {t}
             </button>
           ))}
         </nav>
 
-        <div className="topbar-controls">
+        <div className="topbar-controls crisp">
           {source.kind === "mock" && (
-            <span className="pill demo-pill" data-tone="neutral" title="Reading from the in-memory source, not RPC">
+            <span
+              className="pill demo-pill"
+              data-tone="neutral"
+              title="Reading from the in-memory source, not RPC"
+            >
               <span className="dot" aria-hidden />
               DEMO DATA
             </span>
           )}
 
           <div className="icon-cluster">
-            <button className="icon-btn" aria-label="Search"><Icon name="search" /></button>
-            <button className="icon-btn" aria-label="Notifications"><Icon name="bell" /></button>
+            <button className="icon-btn" aria-label="Search">
+              <Icon name="search" />
+            </button>
+            <button className="icon-btn" aria-label="Notifications">
+              <Icon name="bell" />
+            </button>
             <button
               className="icon-btn"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
               aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
             >
-              {theme === "dark" ? "☀" : "☾"}
+              <Icon name={theme === "dark" ? "sun" : "moon"} />
             </button>
           </div>
 
-          {wallet ? (
-            <button className="avatar" title={`Connected ${shortAddress(wallet)}`} aria-label={`Wallet ${shortAddress(wallet)}`}>
-              <Icon name="wallet" size={18} />
+          {session.address ? (
+            <button
+              className="account-chip"
+              onClick={signOut}
+              title={`${session.label ?? "Account"} · ${session.address}`}
+            >
+              <Icon
+                name={session.method === "passkey" ? "shield" : "wallet"}
+                size={16}
+              />
+              <span className="num">{shortAddress(session.address)}</span>
+              {session.capability === "watching" && (
+                <span className="account-locked">locked</span>
+              )}
             </button>
           ) : (
-            <button className="btn btn-sm btn-primary">Connect wallet</button>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => requestSignIn()}
+            >
+              Sign in
+            </button>
           )}
         </div>
-      </header>
+      </GlassPanel>
 
       <main>
-        {tab === "Overview" && <Markets markets={markets} onOpen={openMarket} />}
+        {tab === "Overview" && (
+          <Markets
+            markets={markets}
+            onOpen={openMarket}
+            onExplore={() => setTab("Registry")}
+          />
+        )}
+
+        {tab === "Registry" && (
+          <Registry registry={registry} now={now} onOpenMarket={openMarket} />
+        )}
 
         {tab === "Trade" && view && (
           <Trade
@@ -127,7 +245,11 @@ export function App({ source }: { source: DataSource }) {
         )}
 
         {tab === "Liquidity" && (
-          <Liquidity markets={markets} lpPositions={(p) => source.lpPosition(p)} now={now} />
+          <Liquidity
+            markets={markets}
+            lpPositions={(p) => source.lpPosition(p)}
+            now={now}
+          />
         )}
 
         {tab === "Treasuries" && (
@@ -139,6 +261,15 @@ export function App({ source }: { source: DataSource }) {
           />
         )}
       </main>
+
+      <Footer onNavigate={(t) => selectTab(t as Tab)} />
+
+      <AuthSheet
+        open={authOpen}
+        reason={authReason}
+        onClose={() => setAuthOpen(false)}
+        onSession={setSession}
+      />
     </div>
   );
 }

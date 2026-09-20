@@ -2,19 +2,75 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Arclis — On-chain access to public markets</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>Arclis · On-chain access to public markets</title>
     <meta
       name="description"
-      content="Arclis: on-chain access to public markets. Oracle-priced perpetuals on tokenized equities, with a market calendar, corporate actions and a funded counterparty."
+      content="Arclis: look up any tokenized stock on Solana and see its real backing, custody and redemption rights, then trade it on a perpetual that respects market hours, halts, splits and dividends."
+    />
+    <!-- Theme colour follows the resolved theme, so the mobile browser chrome
+         matches the page instead of framing a dark app in a light bar. -->
+    <meta
+      name="theme-color"
+      content="#eef0ed"
+      media="(prefers-color-scheme: light)"
+    />
+    <meta
+      name="theme-color"
+      content="#0b0d0a"
+      media="(prefers-color-scheme: dark)"
     />
     <!-- Fonts are self-hosted from /fonts (scripts/fetch-fonts.py). No
          third-party request on first paint, and the interface renders the same
          offline, in CI and behind a proxy. -->
-    <link rel="preload" href="/fonts/pjs-latin-700.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="preload" href="/fonts/pjs-latin-800.woff2" as="font" type="font/woff2" crossorigin />
+    <link
+      rel="preload"
+      href="/fonts/pjs-latin-700.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/pjs-latin-800.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <script>
+      /*
+       * Resolve the theme before first paint.
+       *
+       * This used to be a hardcoded `background` on <body>, which is why dark
+       * mode stayed light: an inline style beats every stylesheet, so the dark
+       * `--bg` never reached the page. Setting the attribute here instead means
+       * the tokens decide the colour, and there is no flash of the wrong theme
+       * on reload either.
+       *
+       * Storage can throw in private browsing, so a failure falls through to
+       * the system preference rather than taking the page down with it.
+       */
+      (function () {
+        var theme = null;
+        try {
+          theme = localStorage.getItem("arclis-theme");
+        } catch (e) {
+          /* private browsing: fall through to the system preference */
+        }
+        if (theme !== "light" && theme !== "dark") {
+          theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light";
+        }
+        document.documentElement.setAttribute("data-theme", theme);
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
   </head>
-  <body style="background:#eef0ed">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

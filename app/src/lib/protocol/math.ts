@@ -36,7 +36,7 @@ export function abs(v: bigint): bigint {
 }
 
 // ---------------------------------------------------------------------------
-// Position valuation — math/pnl.rs
+// Position valuation: math/pnl.rs
 // ---------------------------------------------------------------------------
 
 /** Quote value of a position: `|size| * price / PRICE_SCALE`. Never negative. */
@@ -48,7 +48,11 @@ export function notional(size: bigint, price: bigint): bigint {
  * Unrealised PnL in quote units. The sign of `size` handles both directions:
  * a short profits when the mark falls because both factors are negative.
  */
-export function unrealizedPnl(size: bigint, entryPrice: bigint, markPrice: bigint): bigint {
+export function unrealizedPnl(
+  size: bigint,
+  entryPrice: bigint,
+  markPrice: bigint,
+): bigint {
   return divTrunc(size * (markPrice - entryPrice), PRICE_SCALE);
 }
 
@@ -61,7 +65,10 @@ export function fundingOwed(
   entryFundingIndex: bigint,
   marketFundingIndex: bigint,
 ): bigint {
-  return divFloor(size * (marketFundingIndex - entryFundingIndex), FUNDING_INDEX_SCALE);
+  return divFloor(
+    size * (marketFundingIndex - entryFundingIndex),
+    FUNDING_INDEX_SCALE,
+  );
 }
 
 /**
@@ -86,7 +93,10 @@ export function equity(
 }
 
 /** Margin ratio in bps. A flat position has infinite margin, not an error. */
-export function marginRatioBps(equityValue: bigint, notionalValue: bigint): bigint | null {
+export function marginRatioBps(
+  equityValue: bigint,
+  notionalValue: bigint,
+): bigint | null {
   if (notionalValue === 0n) return null;
   return divTrunc(equityValue * BPS_SCALE, notionalValue);
 }
@@ -124,7 +134,9 @@ export function liquidationPrice(
   const funding = fundingOwed(size, entryFundingIndex, marketFundingIndex);
 
   // Work in bps-scaled numerators to keep everything integral.
-  const numerator = (funding - collateral) * BPS_SCALE + size * entryPrice * BPS_SCALE / PRICE_SCALE;
+  const numerator =
+    (funding - collateral) * BPS_SCALE +
+    (size * entryPrice * BPS_SCALE) / PRICE_SCALE;
   const denominator = (size * BPS_SCALE - mm * abs(size)) / PRICE_SCALE;
   if (denominator === 0n) return null;
 
@@ -133,7 +145,7 @@ export function liquidationPrice(
 }
 
 // ---------------------------------------------------------------------------
-// Funding — math/funding.rs
+// Funding: math/funding.rs
 // ---------------------------------------------------------------------------
 
 /** Open-interest skew in bps, positive when longs dominate. Bounded to ±10000. */
@@ -170,7 +182,7 @@ export function fundingRateBps(
 }
 
 // ---------------------------------------------------------------------------
-// Liquidity pool — math/liquidity.rs
+// Liquidity pool: math/liquidity.rs
 // ---------------------------------------------------------------------------
 
 /**
@@ -213,15 +225,25 @@ export function utilizationBps(exposure: bigint, nav: bigint): bigint | null {
   return divTrunc(e * BPS_SCALE, nav);
 }
 
-export function sharesForDeposit(amount: bigint, totalShares: bigint, nav: bigint): bigint {
+export function sharesForDeposit(
+  amount: bigint,
+  totalShares: bigint,
+  nav: bigint,
+): bigint {
   if (totalShares === 0n) return amount;
-  if (nav <= 0n) throw new Error("pool NAV is not positive; shares cannot be priced");
+  if (nav <= 0n)
+    throw new Error("pool NAV is not positive; shares cannot be priced");
   return divTrunc(amount * totalShares, nav);
 }
 
-export function amountForShares(shares: bigint, totalShares: bigint, nav: bigint): bigint {
+export function amountForShares(
+  shares: bigint,
+  totalShares: bigint,
+  nav: bigint,
+): bigint {
   if (totalShares === 0n || shares === 0n) return 0n;
-  if (nav <= 0n) throw new Error("pool NAV is not positive; shares cannot be priced");
+  if (nav <= 0n)
+    throw new Error("pool NAV is not positive; shares cannot be priced");
   return divTrunc(nav * shares, totalShares);
 }
 
@@ -247,7 +269,7 @@ export function maxWithdrawable(
 }
 
 // ---------------------------------------------------------------------------
-// Treasury — math/treasury.rs
+// Treasury: math/treasury.rs
 // ---------------------------------------------------------------------------
 
 export interface TreasuryExposure {
@@ -293,7 +315,7 @@ export function navPerToken(nav: bigint, tokensOutstanding: bigint): bigint {
 }
 
 // ---------------------------------------------------------------------------
-// Corporate actions — math/corporate_actions.rs
+// Corporate actions: math/corporate_actions.rs
 // ---------------------------------------------------------------------------
 
 /**

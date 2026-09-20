@@ -67,9 +67,10 @@ pub fn handler(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
             position.entry_price = 0;
             position.collateral = 0;
             position.entry_funding_index = ctx.accounts.market.cumulative_funding_index;
+            position.entry_dividend_index = ctx.accounts.market.cumulative_dividend_index;
             position.entry_split_factor = ctx.accounts.oracle.split_factor;
             position.bump = ctx.bumps.position;
-            position._reserved = [0u8; 24];
+            position._reserved = [0u8; 8];
         } else {
             // Re-using an existing account: it must be this owner's, in this
             // market. The PDA seeds already guarantee it, but an explicit check

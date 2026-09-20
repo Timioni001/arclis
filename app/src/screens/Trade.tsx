@@ -3,14 +3,24 @@
  *
  * Chart-first, with the order panel beside it. The part that matters most is
  * not the layout: it is that every restriction is explained *before* the user
- * reaches a disabled button, and that every number in the panel — collateral,
- * liquidation, fee — is computed by the same maths the program runs.
+ * reaches a disabled button, and that every number in the panel (collateral,
+ * liquidation, fee) is computed by the same maths the program runs.
  */
 import { useMemo, useState } from "react";
 import type { MarketView, Position } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
 import { sessionAllows } from "../lib/protocol/session";
-import { Button, Card, Delta, Metric, Notice, NumberField, Row, Segmented, StatTile } from "../components/ui";
+import {
+  Button,
+  Card,
+  Delta,
+  Metric,
+  Notice,
+  NumberField,
+  Row,
+  Segmented,
+  StatTile,
+} from "../components/ui";
 import {
   CorporateActionCard,
   MarginHealth,
@@ -18,14 +28,32 @@ import {
   SessionBadge,
   SessionNotice,
 } from "../components/protocol";
-import { PriceChart, type EventMarker, type PriceMarker } from "../components/charts/PriceChart";
-import { bpsToPct, leverage, pct, shares as fmtShares, usd, usdSigned } from "../lib/format";
+import {
+  PriceChart,
+  type EventMarker,
+  type PriceMarker,
+} from "../components/charts/PriceChart";
+import {
+  bpsToPct,
+  leverage,
+  pct,
+  shares as fmtShares,
+  usd,
+  usdSigned,
+} from "../lib/format";
 import type { CorporateAction } from "../lib/protocol/types";
 
 const TIMEFRAMES = ["1H", "4H", "1D", "1W", "1M", "ALL"] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
 
-const TF_BARS: Record<Timeframe, number> = { "1H": 12, "4H": 24, "1D": 36, "1W": 56, "1M": 78, ALL: 90 };
+const TF_BARS: Record<Timeframe, number> = {
+  "1H": 12,
+  "4H": 24,
+  "1D": 36,
+  "1W": 56,
+  "1M": 78,
+  ALL: 90,
+};
 
 export function Trade({
   view,
@@ -68,7 +96,11 @@ export function Trade({
     if (!pos || pos.size === 0n) return null;
     const notional = m.notional(pos.size, oracle.price);
     const pnl = m.unrealizedPnl(pos.size, pos.entryPrice, oracle.price);
-    const funding = m.fundingOwed(pos.size, pos.entryFundingIndex, market.cumulativeFundingIndex);
+    const funding = m.fundingOwed(
+      pos.size,
+      pos.entryFundingIndex,
+      market.cumulativeFundingIndex,
+    );
     const eq = m.equity(
       pos.collateral,
       pos.size,
@@ -97,13 +129,29 @@ export function Trade({
   // Order preview, computed the same way the program will.
   const preview = useMemo(() => {
     const qty = Number(sizeInput) || 0;
-    const size = BigInt(Math.round(qty * Number(m.BASE_SCALE))) * (side === "short" ? -1n : 1n);
+    const size =
+      BigInt(Math.round(qty * Number(m.BASE_SCALE))) *
+      (side === "short" ? -1n : 1n);
     const notional = m.notional(size, oracle.price);
     const collateral = lev > 0 ? notional / BigInt(lev) : 0n;
     const fee = m.feeOnNotional(notional, market.takerFeeBps);
-    const liq = m.liquidationPrice(collateral, size, oracle.price, 0n, 0n, market.maintenanceMarginBps);
+    const liq = m.liquidationPrice(
+      collateral,
+      size,
+      oracle.price,
+      0n,
+      0n,
+      market.maintenanceMarginBps,
+    );
     return { size, notional, collateral, fee, liq, qty };
-  }, [sizeInput, side, lev, oracle.price, market.takerFeeBps, market.maintenanceMarginBps]);
+  }, [
+    sizeInput,
+    side,
+    lev,
+    oracle.price,
+    market.takerFeeBps,
+    market.maintenanceMarginBps,
+  ]);
 
   const poolNav = m.poolNav(
     pool.vaultBalance,
@@ -116,7 +164,11 @@ export function Trade({
     ),
   );
   const util = m.utilizationBps(
-    m.netExposureNotional(market.openInterestLong, market.openInterestShort, oracle.price),
+    m.netExposureNotional(
+      market.openInterestLong,
+      market.openInterestShort,
+      oracle.price,
+    ),
     poolNav,
   );
   const fundingRate = m.fundingRateBps(
@@ -128,7 +180,12 @@ export function Trade({
   const markers: PriceMarker[] = [];
   if (pos && pos.size !== 0n) {
     markers.push({ price: pos.entryPrice, label: "Entry", tone: "entry" });
-    if (derived?.liq) markers.push({ price: derived.liq, label: "Liquidation", tone: "liquidation" });
+    if (derived?.liq)
+      markers.push({
+        price: derived.liq,
+        label: "Liquidation",
+        tone: "liquidation",
+      });
   }
   const events: EventMarker[] = corporateActions.map((c) => ({
     t: c.ts,
@@ -141,22 +198,47 @@ export function Trade({
 
   return (
     <div className="page">
-      <button className="btn btn-sm" style={{ alignSelf: "flex-start" }} onClick={onBack}>
+      <button
+        className="btn btn-sm"
+        style={{ alignSelf: "flex-start" }}
+        onClick={onBack}
+      >
         ← Overview
       </button>
 
       {/* --- market header --- */}
       <Card large>
-        <div className="card-head market-head" style={{ alignItems: "flex-start" }}>
+        <div
+          className="card-head market-head"
+          style={{ alignItems: "flex-start" }}
+        >
           <div>
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "var(--space-3)",
+                flexWrap: "wrap",
+              }}
+            >
               <h1 className="page-title">{oracle.symbol}</h1>
               <SessionBadge session={oracle.session} />
             </div>
             <div className="page-sub">{oracle.name}</div>
-            <div style={{ marginTop: "var(--space-3)", display: "flex", alignItems: "baseline", gap: "var(--space-4)" }}>
-              <span className="metric-value num metric-value-xl">{usd(oracle.price, { compact: false })}</span>
-              <Delta value={view.changePct24h}>{pct(view.changePct24h)} today</Delta>
+            <div
+              style={{
+                marginTop: "var(--space-3)",
+                display: "flex",
+                alignItems: "baseline",
+                gap: "var(--space-4)",
+              }}
+            >
+              <span className="metric-value num metric-value-xl">
+                {usd(oracle.price, { compact: false })}
+              </span>
+              <Delta value={view.changePct24h}>
+                {pct(view.changePct24h)} today
+              </Delta>
             </div>
           </div>
           <div className="market-head-oracle">
@@ -165,17 +247,33 @@ export function Trade({
         </div>
 
         <div className="stat-tiles" style={{ marginTop: "var(--space-4)" }}>
-          <StatTile label="Open interest" value={usd(m.notional(market.openInterestLong + market.openInterestShort, oracle.price))} />
+          <StatTile
+            label="Open interest"
+            value={usd(
+              m.notional(
+                market.openInterestLong + market.openInterestShort,
+                oracle.price,
+              ),
+            )}
+          />
           <StatTile
             label="Funding / 1h"
             value={bpsToPct(fundingRate, 3)}
-            sub={fundingRate > 0n ? "longs pay shorts" : fundingRate < 0n ? "shorts pay longs" : "balanced"}
+            sub={
+              fundingRate > 0n
+                ? "longs pay shorts"
+                : fundingRate < 0n
+                  ? "shorts pay longs"
+                  : "balanced"
+            }
           />
           <StatTile label="24h volume" value={usd(view.volume24h)} />
           <StatTile label="Max leverage" value={leverage(market.maxLeverage)} />
           <StatTile
             label="Pool utilisation"
-            value={util === null ? "—" : `${(Number(util) / 100).toFixed(1)}%`}
+            value={
+              util === null ? "n/a" : `${(Number(util) / 100).toFixed(1)}%`
+            }
             sub={`cap ${(market.maxUtilizationBps / 100).toFixed(0)}%`}
           />
         </div>
@@ -198,18 +296,28 @@ export function Trade({
         <Card
           title="Price"
           action={
-            <div style={{ display: "flex", gap: "var(--space-2)" }}>
+            <div className="chart-controls">
               <Segmented
                 options={["candles", "area"] as const}
                 value={chartMode}
                 onChange={setChartMode}
                 label="Chart type"
               />
-              <Segmented options={TIMEFRAMES} value={tf} onChange={setTf} label="Timeframe" />
+              <Segmented
+                options={TIMEFRAMES}
+                value={tf}
+                onChange={setTf}
+                label="Timeframe"
+              />
             </div>
           }
         >
-          <PriceChart candles={candles} markers={markers} events={events} mode={chartMode} />
+          <PriceChart
+            candles={candles}
+            markers={markers}
+            events={events}
+            mode={chartMode}
+          />
         </Card>
 
         <Card className="order-panel" title="Trade">
@@ -232,7 +340,13 @@ export function Trade({
             </button>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "var(--space-3)",
+            }}
+          >
             <NumberField
               label="Size"
               value={sizeInput}
@@ -256,14 +370,23 @@ export function Trade({
           </div>
 
           <dl style={{ margin: "var(--space-4) 0 0" }}>
-            <Row label="Collateral required" value={usd(preview.collateral, { compact: false })} />
+            <Row
+              label="Collateral required"
+              value={usd(preview.collateral, { compact: false })}
+            />
             <Row label="Notional" value={usd(preview.notional)} />
-            <Row label="Entry price" value={usd(oracle.price, { compact: false })} />
+            <Row
+              label="Entry price"
+              value={usd(oracle.price, { compact: false })}
+            />
             <Row
               label="Liquidation"
-              value={preview.liq ? usd(preview.liq, { compact: false }) : "—"}
+              value={preview.liq ? usd(preview.liq, { compact: false }) : "n/a"}
             />
-            <Row label="Estimated fee" value={usd(preview.fee, { compact: false })} />
+            <Row
+              label="Estimated fee"
+              value={usd(preview.fee, { compact: false })}
+            />
             <Row label="Funding / 1h" value={bpsToPct(fundingRate, 3)} />
           </dl>
 
@@ -271,9 +394,14 @@ export function Trade({
             {blockedReason ? (
               <>
                 <Button block disabled title={blockedReason}>
-                  {oracle.session === "Closed" ? "Market closed" : `Market ${oracle.session.toLowerCase()}`}
+                  {oracle.session === "Closed"
+                    ? "Market closed"
+                    : `Market ${oracle.session.toLowerCase()}`}
                 </Button>
-                <div className="metric-sub" style={{ marginTop: "var(--space-2)" }}>
+                <div
+                  className="metric-sub"
+                  style={{ marginTop: "var(--space-2)" }}
+                >
                   {blockedReason}
                 </div>
               </>
@@ -318,17 +446,33 @@ export function Trade({
                 </Button>
               </div>
 
-              <div className="grid grid-3" style={{ marginBottom: "var(--space-4)" }}>
-                <Metric label="Entry" value={usd(pos.entryPrice, { compact: false })} />
-                <Metric label="Mark" value={usd(oracle.price, { compact: false })} />
+              <div
+                className="grid grid-3"
+                style={{ marginBottom: "var(--space-4)" }}
+              >
+                <Metric
+                  label="Entry"
+                  value={usd(pos.entryPrice, { compact: false })}
+                />
+                <Metric
+                  label="Mark"
+                  value={usd(oracle.price, { compact: false })}
+                />
                 <Metric
                   label="Unrealised P&L"
-                  value={<Delta value={derived.pnl}>{usdSigned(derived.pnl, { compact: false })}</Delta>}
+                  value={
+                    <Delta value={derived.pnl}>
+                      {usdSigned(derived.pnl, { compact: false })}
+                    </Delta>
+                  }
                 />
               </div>
 
               <dl style={{ margin: 0 }}>
-                <Row label="Notional" value={usd(derived.notional, { compact: false })} />
+                <Row
+                  label="Notional"
+                  value={usd(derived.notional, { compact: false })}
+                />
                 <Row
                   label="Unsettled funding"
                   value={
@@ -337,7 +481,10 @@ export function Trade({
                     </Delta>
                   }
                 />
-                <Row label="Equity (after funding)" value={usd(derived.equity, { compact: false })} />
+                <Row
+                  label="Equity (after funding)"
+                  value={usd(derived.equity, { compact: false })}
+                />
               </dl>
 
               {!canReduce.allowed && (
@@ -360,8 +507,8 @@ export function Trade({
             />
           ) : (
             <div className="metric-sub">
-              Open a position to see margin health, the maintenance threshold and your liquidation
-              price.
+              Open a position to see margin health, the maintenance threshold
+              and your liquidation price.
             </div>
           )}
         </Card>

@@ -264,6 +264,44 @@ export type Arclis = {
       ]
     },
     {
+      "name": "apply_dividend",
+      "docs": [
+        "Record a cash dividend against every open position at once, so longs",
+        "are credited the ex-date price drop instead of eating it. See",
+        "`instructions::corporate_action::apply_dividend`."
+      ],
+      "discriminator": [
+        59,
+        193,
+        216,
+        34,
+        53,
+        226,
+        185,
+        143
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "oracle",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "per_share",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "deposit_collateral",
       "discriminator": [
         156,
@@ -362,6 +400,19 @@ export type Arclis = {
           "writable": true
         },
         {
+          "name": "pool",
+          "docs": [
+            "The counterparty. Withdrawing does not itself touch the pool, but the",
+            "sync that runs first settles accrued funding and dividends, and those",
+            "are the pool's to pay or collect."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
           "name": "token_program"
         }
       ],
@@ -406,13 +457,23 @@ export type Arclis = {
         {
           "name": "pool",
           "docs": [
-            "The counterparty. Read-only here - opening a position does not move the",
-            "pool's money, it commits the pool's *capacity*, which is what the",
-            "utilisation cap below checks."
-          ]
+            "The counterparty. Opening commits the pool's *capacity*, which is what",
+            "the utilisation cap below checks - but it is `mut` because the sync that",
+            "runs first settles any funding and dividends accrued since this position",
+            "was last touched, and those do move money between the two vaults."
+          ],
+          "writable": true
         },
         {
-          "name": "pool_vault"
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "market_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
         }
       ],
       "args": [
@@ -575,6 +636,54 @@ export type Arclis = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "deposit_insurance",
+      "docs": [
+        "Seed or top up a market's insurance fund. Permissionless in, no way",
+        "out; pays down socialised bad debt first."
+      ],
+      "discriminator": [
+        34,
+        221,
+        238,
+        103,
+        190,
+        136,
+        23,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "depositor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "depositor_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "initialize_liquidity_pool",
@@ -1318,6 +1427,19 @@ export type Arclis = {
     },
     {
       "discriminator": [
+        45,
+        167,
+        210,
+        246,
+        119,
+        234,
+        138,
+        76
+      ],
+      "name": "DividendApplied"
+    },
+    {
+      "discriminator": [
         245,
         38,
         158,
@@ -1328,6 +1450,19 @@ export type Arclis = {
         235
       ],
       "name": "FundingAccrued"
+    },
+    {
+      "discriminator": [
+        37,
+        242,
+        151,
+        250,
+        84,
+        199,
+        5,
+        77
+      ],
+      "name": "InsuranceDeposited"
     },
     {
       "discriminator": [
@@ -1593,211 +1728,216 @@ export type Arclis = {
     },
     {
       "code": 6013,
+      "name": "InvalidDividend",
+      "msg": "Dividend must be positive and no larger than the share price"
+    },
+    {
+      "code": 6014,
       "name": "PositionNotNormalized",
       "msg": "Position must be normalized for corporate actions before it can be used"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "SessionMustBeClosedForCorporateAction",
       "msg": "Corporate actions may only be applied while the venue is not open"
     },
     {
-      "code": 6015,
+      "code": 6016,
       "name": "ZeroSize",
       "msg": "Position size cannot be zero"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "DirectionFlip",
       "msg": "Cannot flip direction in one instruction: close the position first"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "ExceedsMaxLeverage",
       "msg": "Requested leverage exceeds the market's max leverage"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "BelowInitialMargin",
       "msg": "Resulting position would be below the initial margin requirement"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "InsufficientCollateral",
       "msg": "Not enough collateral for this action"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "WithdrawalBreaksMargin",
       "msg": "Withdrawal would push the position below the minimum margin ratio"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "InsufficientPositionSize",
       "msg": "Position does not have enough size to close this amount"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "PositionTooSmall",
       "msg": "Resulting position notional is below the protocol minimum"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "PositionHealthy",
       "msg": "Position is still above the maintenance margin ratio, cannot be liquidated"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "PositionNotFlat",
       "msg": "Position must be flat before its account can be closed"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "OpenInterestCapExceeded",
       "msg": "Trade would exceed the market's open interest cap"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "SkewCapExceeded",
       "msg": "Trade would push open interest imbalance beyond the market's skew cap"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "VaultMismatch",
       "msg": "Provided vault account does not match the market's configured vault"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "VaultInsolvent",
       "msg": "Vault does not hold enough to cover this payout"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "InvalidLeverageParam",
       "msg": "Max leverage must be between 1x and 20x"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "InvalidMarginParam",
       "msg": "Min margin ratio must be between 1% and 50%"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "InvalidFundingInterval",
       "msg": "Funding interval is outside the permitted range"
     },
     {
-      "code": 6032,
+      "code": 6033,
       "name": "InvalidFundingSensitivity",
       "msg": "Funding sensitivity is outside the permitted range"
     },
     {
-      "code": 6033,
+      "code": 6034,
       "name": "InvalidFeeParam",
       "msg": "Fee exceeds the protocol maximum"
     },
     {
-      "code": 6034,
+      "code": 6035,
       "name": "InvalidPenaltyParam",
       "msg": "Liquidation penalty exceeds the protocol maximum"
     },
     {
-      "code": 6035,
+      "code": 6036,
       "name": "FundingNotDue",
       "msg": "Funding interval has not elapsed yet"
     },
     {
-      "code": 6036,
+      "code": 6037,
       "name": "PoolNavNonPositive",
       "msg": "Pool NAV is zero or negative; shares cannot be priced"
     },
     {
-      "code": 6037,
+      "code": 6038,
       "name": "UtilizationCapExceeded",
       "msg": "Trade would push pool utilization past the market's cap"
     },
     {
-      "code": 6038,
+      "code": 6039,
       "name": "ExceedsWithdrawableLiquidity",
       "msg": "Withdrawal exceeds what the open book leaves free"
     },
     {
-      "code": 6039,
+      "code": 6040,
       "name": "CooldownNotElapsed",
       "msg": "Withdrawal cooldown has not elapsed yet"
     },
     {
-      "code": 6040,
+      "code": 6041,
       "name": "NoPendingWithdrawal",
       "msg": "No withdrawal request is pending"
     },
     {
-      "code": 6041,
+      "code": 6042,
       "name": "WithdrawalAlreadyPending",
       "msg": "A withdrawal request is already pending; cancel it first"
     },
     {
-      "code": 6042,
+      "code": 6043,
       "name": "InsufficientShares",
       "msg": "Not enough shares for this action"
     },
     {
-      "code": 6043,
+      "code": 6044,
       "name": "PoolMismatch",
       "msg": "Provided liquidity pool does not match the market's configured pool"
     },
     {
-      "code": 6044,
+      "code": 6045,
       "name": "InvalidUtilizationCap",
       "msg": "Utilization cap is outside the permitted range"
     },
     {
-      "code": 6045,
+      "code": 6046,
       "name": "InvalidCooldown",
       "msg": "Withdrawal cooldown is outside the permitted range"
     },
     {
-      "code": 6046,
+      "code": 6047,
       "name": "InvalidHedgeRatio",
       "msg": "Hedge ratio must be between 0 and 100%"
     },
     {
-      "code": 6047,
+      "code": 6048,
       "name": "InvalidRebalanceTolerance",
       "msg": "Rebalance tolerance exceeds the protocol maximum"
     },
     {
-      "code": 6048,
+      "code": 6049,
       "name": "HedgingDisabled",
       "msg": "Hedging is disabled for this treasury"
     },
     {
-      "code": 6049,
+      "code": 6050,
       "name": "RebalanceNotNeeded",
       "msg": "Treasury is already within its rebalance tolerance band"
     },
     {
-      "code": 6050,
+      "code": 6051,
       "name": "TreasuryAssetMismatch",
       "msg": "Treasury stock mint does not match the market's underlying"
     },
     {
-      "code": 6051,
+      "code": 6052,
       "name": "WithdrawalBreaksHedge",
       "msg": "Withdrawal would leave the treasury unable to maintain its hedge"
     },
     {
-      "code": 6052,
+      "code": 6053,
       "name": "MathOverflow",
       "msg": "Arithmetic overflow or underflow"
     },
     {
-      "code": 6053,
+      "code": 6054,
       "name": "DivideByZero",
       "msg": "Division by zero"
     },
     {
-      "code": 6054,
+      "code": 6055,
       "name": "NegativeAmount",
       "msg": "Expected a non-negative amount"
     }
@@ -2041,6 +2181,53 @@ export type Arclis = {
       }
     },
     {
+      "docs": [
+        "A cash dividend recorded against every open position in one write.",
+        "",
+        "`per_share` is quote per base unit at `PRICE_SCALE`, always positive.",
+        "Longs are credited it and shorts pay it, lazily, the next time each",
+        "position is touched."
+      ],
+      "name": "DividendApplied",
+      "type": {
+        "fields": [
+          {
+            "name": "oracle",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "per_share",
+            "type": "u64"
+          },
+          {
+            "name": "price_at_record",
+            "type": "u64"
+          },
+          {
+            "name": "dividend_index_before",
+            "type": "i128"
+          },
+          {
+            "name": "dividend_index_after",
+            "type": "i128"
+          },
+          {
+            "name": "sequence",
+            "type": "u32"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
       "name": "FundingAccrued",
       "type": {
         "fields": [
@@ -2143,6 +2330,37 @@ export type Arclis = {
             }
           }
         ]
+      }
+    },
+    {
+      "docs": [
+        "Insurance capitalised from outside the fee stream."
+      ],
+      "name": "InsuranceDeposited",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "insurance_balance_after",
+            "type": "u64"
+          },
+          {
+            "name": "bad_debt_after",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
       }
     },
     {
@@ -2571,6 +2789,15 @@ export type Arclis = {
             "type": "i128"
           },
           {
+            "name": "cumulative_dividend_index",
+            "docs": [
+              "Cumulative dividends per base unit, at [`FUNDING_INDEX_SCALE`].",
+              "Longs receive this, shorts pay it. Settled on the same lazy path as",
+              "funding, so a dividend needs no iteration over positions either."
+            ],
+            "type": "i128"
+          },
+          {
             "name": "open_interest_long",
             "type": "u64"
           },
@@ -2907,6 +3134,13 @@ export type Arclis = {
             "type": "u64"
           },
           {
+            "name": "entry_dividend_index",
+            "docs": [
+              "The market's cumulative dividend index at the last settlement."
+            ],
+            "type": "i128"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -2915,7 +3149,7 @@ export type Arclis = {
             "type": {
               "array": [
                 "u8",
-                24
+                8
               ]
             }
           }
@@ -2956,6 +3190,14 @@ export type Arclis = {
           },
           {
             "name": "funding_settled",
+            "type": "i128"
+          },
+          {
+            "docs": [
+              "Dividends settled on entry to this instruction, positive = the trader",
+              "was credited (a long) and negative = they paid (a short)."
+            ],
+            "name": "dividends_settled",
             "type": "i128"
           }
         ],
@@ -3056,6 +3298,14 @@ export type Arclis = {
           },
           {
             "name": "funding_settled",
+            "type": "i128"
+          },
+          {
+            "docs": [
+              "Dividends settled on entry to this instruction, positive = the trader",
+              "was credited (a long) and negative = they paid (a short)."
+            ],
+            "name": "dividends_settled",
             "type": "i128"
           }
         ],
@@ -3634,6 +3884,44 @@ export const IDL: Arclis = {
       ]
     },
     {
+      "name": "apply_dividend",
+      "docs": [
+        "Record a cash dividend against every open position at once, so longs",
+        "are credited the ex-date price drop instead of eating it. See",
+        "`instructions::corporate_action::apply_dividend`."
+      ],
+      "discriminator": [
+        59,
+        193,
+        216,
+        34,
+        53,
+        226,
+        185,
+        143
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "oracle",
+          "writable": true
+        },
+        {
+          "name": "market",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "per_share",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "deposit_collateral",
       "discriminator": [
         156,
@@ -3732,6 +4020,19 @@ export const IDL: Arclis = {
           "writable": true
         },
         {
+          "name": "pool",
+          "docs": [
+            "The counterparty. Withdrawing does not itself touch the pool, but the",
+            "sync that runs first settles accrued funding and dividends, and those",
+            "are the pool's to pay or collect."
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
           "name": "token_program"
         }
       ],
@@ -3776,13 +4077,23 @@ export const IDL: Arclis = {
         {
           "name": "pool",
           "docs": [
-            "The counterparty. Read-only here - opening a position does not move the",
-            "pool's money, it commits the pool's *capacity*, which is what the",
-            "utilisation cap below checks."
-          ]
+            "The counterparty. Opening commits the pool's *capacity*, which is what",
+            "the utilisation cap below checks - but it is `mut` because the sync that",
+            "runs first settles any funding and dividends accrued since this position",
+            "was last touched, and those do move money between the two vaults."
+          ],
+          "writable": true
         },
         {
-          "name": "pool_vault"
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "market_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
         }
       ],
       "args": [
@@ -3945,6 +4256,54 @@ export const IDL: Arclis = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "deposit_insurance",
+      "docs": [
+        "Seed or top up a market's insurance fund. Permissionless in, no way",
+        "out; pays down socialised bad debt first."
+      ],
+      "discriminator": [
+        34,
+        221,
+        238,
+        103,
+        190,
+        136,
+        23,
+        194
+      ],
+      "accounts": [
+        {
+          "name": "depositor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "depositor_token_account",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "initialize_liquidity_pool",
@@ -4688,6 +5047,19 @@ export const IDL: Arclis = {
     },
     {
       "discriminator": [
+        45,
+        167,
+        210,
+        246,
+        119,
+        234,
+        138,
+        76
+      ],
+      "name": "DividendApplied"
+    },
+    {
+      "discriminator": [
         245,
         38,
         158,
@@ -4698,6 +5070,19 @@ export const IDL: Arclis = {
         235
       ],
       "name": "FundingAccrued"
+    },
+    {
+      "discriminator": [
+        37,
+        242,
+        151,
+        250,
+        84,
+        199,
+        5,
+        77
+      ],
+      "name": "InsuranceDeposited"
     },
     {
       "discriminator": [
@@ -4963,211 +5348,216 @@ export const IDL: Arclis = {
     },
     {
       "code": 6013,
+      "name": "InvalidDividend",
+      "msg": "Dividend must be positive and no larger than the share price"
+    },
+    {
+      "code": 6014,
       "name": "PositionNotNormalized",
       "msg": "Position must be normalized for corporate actions before it can be used"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "SessionMustBeClosedForCorporateAction",
       "msg": "Corporate actions may only be applied while the venue is not open"
     },
     {
-      "code": 6015,
+      "code": 6016,
       "name": "ZeroSize",
       "msg": "Position size cannot be zero"
     },
     {
-      "code": 6016,
+      "code": 6017,
       "name": "DirectionFlip",
       "msg": "Cannot flip direction in one instruction: close the position first"
     },
     {
-      "code": 6017,
+      "code": 6018,
       "name": "ExceedsMaxLeverage",
       "msg": "Requested leverage exceeds the market's max leverage"
     },
     {
-      "code": 6018,
+      "code": 6019,
       "name": "BelowInitialMargin",
       "msg": "Resulting position would be below the initial margin requirement"
     },
     {
-      "code": 6019,
+      "code": 6020,
       "name": "InsufficientCollateral",
       "msg": "Not enough collateral for this action"
     },
     {
-      "code": 6020,
+      "code": 6021,
       "name": "WithdrawalBreaksMargin",
       "msg": "Withdrawal would push the position below the minimum margin ratio"
     },
     {
-      "code": 6021,
+      "code": 6022,
       "name": "InsufficientPositionSize",
       "msg": "Position does not have enough size to close this amount"
     },
     {
-      "code": 6022,
+      "code": 6023,
       "name": "PositionTooSmall",
       "msg": "Resulting position notional is below the protocol minimum"
     },
     {
-      "code": 6023,
+      "code": 6024,
       "name": "PositionHealthy",
       "msg": "Position is still above the maintenance margin ratio, cannot be liquidated"
     },
     {
-      "code": 6024,
+      "code": 6025,
       "name": "PositionNotFlat",
       "msg": "Position must be flat before its account can be closed"
     },
     {
-      "code": 6025,
+      "code": 6026,
       "name": "OpenInterestCapExceeded",
       "msg": "Trade would exceed the market's open interest cap"
     },
     {
-      "code": 6026,
+      "code": 6027,
       "name": "SkewCapExceeded",
       "msg": "Trade would push open interest imbalance beyond the market's skew cap"
     },
     {
-      "code": 6027,
+      "code": 6028,
       "name": "VaultMismatch",
       "msg": "Provided vault account does not match the market's configured vault"
     },
     {
-      "code": 6028,
+      "code": 6029,
       "name": "VaultInsolvent",
       "msg": "Vault does not hold enough to cover this payout"
     },
     {
-      "code": 6029,
+      "code": 6030,
       "name": "InvalidLeverageParam",
       "msg": "Max leverage must be between 1x and 20x"
     },
     {
-      "code": 6030,
+      "code": 6031,
       "name": "InvalidMarginParam",
       "msg": "Min margin ratio must be between 1% and 50%"
     },
     {
-      "code": 6031,
+      "code": 6032,
       "name": "InvalidFundingInterval",
       "msg": "Funding interval is outside the permitted range"
     },
     {
-      "code": 6032,
+      "code": 6033,
       "name": "InvalidFundingSensitivity",
       "msg": "Funding sensitivity is outside the permitted range"
     },
     {
-      "code": 6033,
+      "code": 6034,
       "name": "InvalidFeeParam",
       "msg": "Fee exceeds the protocol maximum"
     },
     {
-      "code": 6034,
+      "code": 6035,
       "name": "InvalidPenaltyParam",
       "msg": "Liquidation penalty exceeds the protocol maximum"
     },
     {
-      "code": 6035,
+      "code": 6036,
       "name": "FundingNotDue",
       "msg": "Funding interval has not elapsed yet"
     },
     {
-      "code": 6036,
+      "code": 6037,
       "name": "PoolNavNonPositive",
       "msg": "Pool NAV is zero or negative; shares cannot be priced"
     },
     {
-      "code": 6037,
+      "code": 6038,
       "name": "UtilizationCapExceeded",
       "msg": "Trade would push pool utilization past the market's cap"
     },
     {
-      "code": 6038,
+      "code": 6039,
       "name": "ExceedsWithdrawableLiquidity",
       "msg": "Withdrawal exceeds what the open book leaves free"
     },
     {
-      "code": 6039,
+      "code": 6040,
       "name": "CooldownNotElapsed",
       "msg": "Withdrawal cooldown has not elapsed yet"
     },
     {
-      "code": 6040,
+      "code": 6041,
       "name": "NoPendingWithdrawal",
       "msg": "No withdrawal request is pending"
     },
     {
-      "code": 6041,
+      "code": 6042,
       "name": "WithdrawalAlreadyPending",
       "msg": "A withdrawal request is already pending; cancel it first"
     },
     {
-      "code": 6042,
+      "code": 6043,
       "name": "InsufficientShares",
       "msg": "Not enough shares for this action"
     },
     {
-      "code": 6043,
+      "code": 6044,
       "name": "PoolMismatch",
       "msg": "Provided liquidity pool does not match the market's configured pool"
     },
     {
-      "code": 6044,
+      "code": 6045,
       "name": "InvalidUtilizationCap",
       "msg": "Utilization cap is outside the permitted range"
     },
     {
-      "code": 6045,
+      "code": 6046,
       "name": "InvalidCooldown",
       "msg": "Withdrawal cooldown is outside the permitted range"
     },
     {
-      "code": 6046,
+      "code": 6047,
       "name": "InvalidHedgeRatio",
       "msg": "Hedge ratio must be between 0 and 100%"
     },
     {
-      "code": 6047,
+      "code": 6048,
       "name": "InvalidRebalanceTolerance",
       "msg": "Rebalance tolerance exceeds the protocol maximum"
     },
     {
-      "code": 6048,
+      "code": 6049,
       "name": "HedgingDisabled",
       "msg": "Hedging is disabled for this treasury"
     },
     {
-      "code": 6049,
+      "code": 6050,
       "name": "RebalanceNotNeeded",
       "msg": "Treasury is already within its rebalance tolerance band"
     },
     {
-      "code": 6050,
+      "code": 6051,
       "name": "TreasuryAssetMismatch",
       "msg": "Treasury stock mint does not match the market's underlying"
     },
     {
-      "code": 6051,
+      "code": 6052,
       "name": "WithdrawalBreaksHedge",
       "msg": "Withdrawal would leave the treasury unable to maintain its hedge"
     },
     {
-      "code": 6052,
+      "code": 6053,
       "name": "MathOverflow",
       "msg": "Arithmetic overflow or underflow"
     },
     {
-      "code": 6053,
+      "code": 6054,
       "name": "DivideByZero",
       "msg": "Division by zero"
     },
     {
-      "code": 6054,
+      "code": 6055,
       "name": "NegativeAmount",
       "msg": "Expected a non-negative amount"
     }
@@ -5411,6 +5801,53 @@ export const IDL: Arclis = {
       }
     },
     {
+      "docs": [
+        "A cash dividend recorded against every open position in one write.",
+        "",
+        "`per_share` is quote per base unit at `PRICE_SCALE`, always positive.",
+        "Longs are credited it and shorts pay it, lazily, the next time each",
+        "position is touched."
+      ],
+      "name": "DividendApplied",
+      "type": {
+        "fields": [
+          {
+            "name": "oracle",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "per_share",
+            "type": "u64"
+          },
+          {
+            "name": "price_at_record",
+            "type": "u64"
+          },
+          {
+            "name": "dividend_index_before",
+            "type": "i128"
+          },
+          {
+            "name": "dividend_index_after",
+            "type": "i128"
+          },
+          {
+            "name": "sequence",
+            "type": "u32"
+          }
+        ],
+        "kind": "struct"
+      }
+    },
+    {
       "name": "FundingAccrued",
       "type": {
         "fields": [
@@ -5513,6 +5950,37 @@ export const IDL: Arclis = {
             }
           }
         ]
+      }
+    },
+    {
+      "docs": [
+        "Insurance capitalised from outside the fee stream."
+      ],
+      "name": "InsuranceDeposited",
+      "type": {
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "depositor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "insurance_balance_after",
+            "type": "u64"
+          },
+          {
+            "name": "bad_debt_after",
+            "type": "u64"
+          }
+        ],
+        "kind": "struct"
       }
     },
     {
@@ -5941,6 +6409,15 @@ export const IDL: Arclis = {
             "type": "i128"
           },
           {
+            "name": "cumulative_dividend_index",
+            "docs": [
+              "Cumulative dividends per base unit, at [`FUNDING_INDEX_SCALE`].",
+              "Longs receive this, shorts pay it. Settled on the same lazy path as",
+              "funding, so a dividend needs no iteration over positions either."
+            ],
+            "type": "i128"
+          },
+          {
             "name": "open_interest_long",
             "type": "u64"
           },
@@ -6277,6 +6754,13 @@ export const IDL: Arclis = {
             "type": "u64"
           },
           {
+            "name": "entry_dividend_index",
+            "docs": [
+              "The market's cumulative dividend index at the last settlement."
+            ],
+            "type": "i128"
+          },
+          {
             "name": "bump",
             "type": "u8"
           },
@@ -6285,7 +6769,7 @@ export const IDL: Arclis = {
             "type": {
               "array": [
                 "u8",
-                24
+                8
               ]
             }
           }
@@ -6326,6 +6810,14 @@ export const IDL: Arclis = {
           },
           {
             "name": "funding_settled",
+            "type": "i128"
+          },
+          {
+            "docs": [
+              "Dividends settled on entry to this instruction, positive = the trader",
+              "was credited (a long) and negative = they paid (a short)."
+            ],
+            "name": "dividends_settled",
             "type": "i128"
           }
         ],
@@ -6426,6 +6918,14 @@ export const IDL: Arclis = {
           },
           {
             "name": "funding_settled",
+            "type": "i128"
+          },
+          {
+            "docs": [
+              "Dividends settled on entry to this instruction, positive = the trader",
+              "was credited (a long) and negative = they paid (a short)."
+            ],
+            "name": "dividends_settled",
             "type": "i128"
           }
         ],

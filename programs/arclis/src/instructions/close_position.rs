@@ -5,7 +5,7 @@ use crate::constants::MIN_POSITION_NOTIONAL;
 use crate::errors::ArclisError;
 use crate::events::PositionClosed;
 use crate::events::{PoolSettled, SettlementReason};
-use crate::instructions::guards::{require_tradable, settle_with_pool, sync_position};
+use crate::instructions::guards::{require_tradable, settle_with_pool, sync_and_settle};
 use crate::math::session::PriceUse;
 use crate::math::{fixed, pnl};
 use crate::state::{GlobalConfig, LiquidityPool, Market, Position, PriceOracle};
@@ -70,17 +70,24 @@ pub fn handler(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
         .accounts
         .oracle
         .validated_price(now, PriceUse::ReduceRisk)?;
-    let funding_index = ctx.accounts.market.cumulative_funding_index;
     let taker_fee_bps = ctx.accounts.market.taker_fee_bps;
 
     // Normalise for corporate actions and settle funding *before* reading size.
     // `reduce_size` is quoted in post-split base units, so checking it against
     // an un-normalised size would reject a valid full close after a 4-for-1.
-    let funding_settled = sync_position(
+    let oracle_key = ctx.accounts.oracle.key();
+    let sync = sync_and_settle(
         &mut ctx.accounts.position,
         &ctx.accounts.oracle,
-        funding_index,
+        &mut ctx.accounts.market,
+        &ctx.accounts.market_vault,
+        &mut ctx.accounts.pool,
+        &ctx.accounts.pool_vault,
+        &ctx.accounts.token_program,
+        &oracle_key,
     )?;
+    let funding_settled = sync.funding;
+    let dividends_settled = sync.dividends;
 
     require!(
         !ctx.accounts.position.is_flat(),
@@ -135,7 +142,6 @@ pub fn handler(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
     // realised amount after clamping for bad debt, so the transfer below can
     // never try to move value the market vault does not have.
     let settled = ctx.accounts.market.settle_realized_pnl(realized_pnl)?;
-    let oracle_key = ctx.accounts.oracle.key();
     settle_with_pool(
         settled,
         &ctx.accounts.market,
@@ -173,6 +179,7 @@ pub fn handler(ctx: Context<ClosePosition>, reduce_size: u64) -> Result<()> {
         realized_pnl,
         fee: fee_charged,
         funding_settled,
+        dividends_settled,
     });
     Ok(())
 }

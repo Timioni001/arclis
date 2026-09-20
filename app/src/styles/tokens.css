@@ -31,9 +31,13 @@
   --border-soft: #f0f2ef;
 
   /* --- ink --- */
+  /* Every ink below clears 4.5:1 against all three light surfaces (#ffffff
+     card, #f6f8f5 sunken row, #eef0ed page), measured, not eyeballed. The
+     previous --text-muted was 2.27:1 on the page background, which is why
+     secondary labels and the footer legal line were effectively invisible. */
   --text-primary: #10150e;
-  --text-secondary: #6b746a;
-  --text-muted: #9aa397;
+  --text-secondary: #5f685e;
+  --text-muted: #6a7368;
 
   /* --- the accent --- */
   --lime: #c6f03f;
@@ -41,15 +45,18 @@
   --lime-deep: #aadd1f;
   --lime-wash: #eefbc9;
   --on-lime: #16210c;
+  /* The lime is a fill, never an ink: #aadd1f is 1.6:1 on white and cannot
+     carry a word. Text that wants to read as the accent uses this instead. */
+  --lime-ink: #46650a;
 
   /* --- semantic --- */
-  --positive: #16a34a;
+  --positive: #15803d;
   --positive-wash: #e8f7ec;
-  --negative: #dc2626;
+  --negative: #c81e1e;
   --negative-wash: #fdeaea;
-  --warning: #b45309;
+  --warning: #9a4a08;
   --warning-wash: #fdf2e3;
-  --info: #0e7490;
+  --info: #0b6480;
   --info-wash: #e6f4f8;
 
   /* --- chart ramp: validated against the light surface --- */
@@ -82,9 +89,12 @@
   --radius-pill: 999px;
 
   /* --- elevation: wide and soft; cards are lifted, not outlined --- */
-  --shadow-sm: 0 1px 2px rgba(16, 21, 14, 0.03), 0 4px 12px rgba(16, 21, 14, 0.03);
-  --shadow-card: 0 1px 2px rgba(16, 21, 14, 0.03), 0 10px 30px rgba(16, 21, 14, 0.05);
-  --shadow-lift: 0 2px 4px rgba(16, 21, 14, 0.04), 0 18px 44px rgba(16, 21, 14, 0.08);
+  --shadow-sm:
+    0 1px 2px rgba(16, 21, 14, 0.03), 0 4px 12px rgba(16, 21, 14, 0.03);
+  --shadow-card:
+    0 1px 2px rgba(16, 21, 14, 0.03), 0 10px 30px rgba(16, 21, 14, 0.05);
+  --shadow-lift:
+    0 2px 4px rgba(16, 21, 14, 0.04), 0 18px 44px rgba(16, 21, 14, 0.08);
   --shadow-lime: 0 6px 18px rgba(170, 221, 31, 0.32);
 
   /* --- motion --- */
@@ -94,7 +104,29 @@
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 
-  --font-display: "After", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+  /* --- hero: its own ink, because the banner is the one surface whose
+         background does not follow --surface. Hardcoding --on-lime here was
+         the dark-mode bug: near-black text on a near-black gradient. --- */
+  --hero-ink: #16210c;
+  --hero-ink-soft: rgba(22, 33, 12, 0.78);
+  --hero-mark-bg: #ffffff;
+  --hero-mark-ink: #10150e;
+  --hero-cta-bg: #ffffff;
+  --hero-cta-ink: #10150e;
+
+  /* --- glass: the flat fallback, and the tints the lens sits in front of.
+         Both themes define every one of these, so a glass surface is never
+         reading a token that only exists in light mode. --- */
+  --glass-tint: rgba(255, 255, 255, 0.62);
+  --glass-tint-strong: rgba(255, 255, 255, 0.78);
+  --glass-edge: rgba(255, 255, 255, 0.9);
+  --glass-hairline: rgba(16, 21, 14, 0.07);
+  --glass-fallback: rgba(255, 255, 255, 0.92);
+  --glass-shadow:
+    0 1px 2px rgba(16, 21, 14, 0.04), 0 16px 40px rgba(16, 21, 14, 0.08);
+
+  --font-display:
+    "After", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
   --font: "Newblack", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
 }
 
@@ -114,10 +146,15 @@
 
   --text-primary: #f3f6ef;
   --text-secondary: #a8b0a2;
-  --text-muted: #737c6e;
+  /* 4.17:1 on the dark surface was under the floor for the same labels that
+     failed in light mode. */
+  --text-muted: #909a89;
 
   --lime-wash: #2a3a12;
   --on-lime: #101806;
+  /* On near-black the accent reads as itself at 13.8:1, so the ink is the
+     lime rather than a darkened stand-in. */
+  --lime-ink: var(--lime);
 
   --positive: #4ade80;
   --positive-wash: #16281c;
@@ -134,6 +171,24 @@
   --chart-4: #ce4e98;
   --chart-grid: #232819;
   --chart-axis: #737c6e;
+
+  /* The gradient runs dark on the left, where the copy sits, so the hero ink
+     is light here and the accent moves onto the mark and the button. */
+  --hero-ink: #f3f6ef;
+  --hero-ink-soft: rgba(243, 246, 239, 0.76);
+  --hero-mark-bg: var(--lime);
+  --hero-mark-ink: #101806;
+  --hero-cta-bg: var(--lime);
+  --hero-cta-ink: #101806;
+
+  /* Dark glass is not light glass with a darker tint: the veil goes negative
+     and the rim does the work, or the pane reads as fog. */
+  --glass-tint: rgba(28, 33, 22, 0.58);
+  --glass-tint-strong: rgba(28, 33, 22, 0.76);
+  --glass-edge: rgba(226, 240, 200, 0.16);
+  --glass-hairline: rgba(226, 240, 200, 0.1);
+  --glass-fallback: rgba(20, 23, 15, 0.94);
+  --glass-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 18px 44px rgba(0, 0, 0, 0.45);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.3);

@@ -156,6 +156,7 @@ pub fn handler(ctx: Context<CreateMarket>, params: MarketParams) -> Result<()> {
     market.funding_interval_secs = params.funding_interval_secs;
     market.last_funding_ts = now;
     market.cumulative_funding_index = 0;
+    market.cumulative_dividend_index = 0;
 
     market.open_interest_long = 0;
     market.open_interest_short = 0;

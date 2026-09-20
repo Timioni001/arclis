@@ -2,14 +2,15 @@
 
 **On-chain access to public markets.**
 
-> **Tokenized stocks already trade on Solana. They just don't *behave* like
-> stocks once they get there.** Arclis is the layer that makes them behave.
+> **Two hundred thousand people on Solana hold tokenized equities. Most of
+> them cannot tell you what they actually own, and the ones who can still
+> cannot trade it like a stock.** Arclis fixes both halves.
 
 Every DeFi primitive on Solana assumes four things: the asset trades
 continuously, its price always exists, its supply is never restated, and someone
-is on the other side. A stock violates all four — it trades 19% of the week,
-halts on news, splits four-for-one overnight, and has no counterparty unless one
-is funded.
+is on the other side. A stock violates all four: it trades 19% of the week,
+halts on news, splits four-for-one overnight, pays a dividend that drops its own
+price on the ex-date, and has no counterparty unless one is funded.
 
 None of those failures show up in a demo. They show up at 4pm on a Friday, on an
 ex-date, or the first time a market goes one-way.
@@ -22,32 +23,44 @@ cargo run --example stock_hazards
 
 The full argument is in **[`docs/PITCH.md`](docs/PITCH.md)**.
 
-Arclis is that layer. The first thing built on it is an agent treasury: an AI
+Arclis is that layer, and a registry that tells you what you are holding before
+you act on it. The first thing built on top is an agent treasury: an AI
 agent launches its token on a Meteora Dynamic Bonding Curve quoted in a
 tokenized stock, contributors pay in AAPLx rather than SOL, and the treasury
-that results — 100% long one company's earnings, which nobody chose — is hedged
+that results (100% long one company's earnings, which nobody chose) is hedged
 back into a stable operating budget that earns funding instead of paying it.
 
-Four pieces:
+Six pieces:
 
-- **`programs/arclis/`** — an oracle-priced perpetual futures engine.
+- **`programs/arclis/`**: an oracle-priced perpetual futures engine.
   Cash-settled, permissionless to list and to liquidate, with no admin path to
-  user funds. Equity-aware: market sessions, halts, and corporate actions.
-- **Liquidity pool** — the counterparty. LPs take the other side of net open
+  user funds. Equity-aware: market sessions, halts, splits and cash dividends.
+- **Liquidity pool**: the counterparty. LPs take the other side of net open
   interest and are paid in fees, funding and trader losses for it. This is what
   makes a winning trade payable from something other than another trader's
   deposit.
-- **Agent treasuries** — hold tokenized stock, maintain a delta hedge against
+- **Agent treasuries**: hold tokenized stock, maintain a delta hedge against
   it, publish an honest NAV per agent token. Rebalancing is permissionless, so
   the hedge survives the agent's own keeper going down.
-- **`src/dbc/`** — launch and monitoring tooling for Meteora DBC pools whose
+- **`src/dbc/`**: launch and monitoring tooling for Meteora DBC pools whose
   quote token is a tokenized stock.
-- **`app/`** — the interface. React + TypeScript, built to
+- **Accounts**: connect any Wallet Standard wallet, or create a passkey
+  account: an Ed25519 key generated in the browser and encrypted with a secret
+  only your Face ID, Touch ID or device PIN can reproduce. No seed phrase, no
+  password, and nothing custodial. See `app/src/lib/auth/passkey.ts`.
+- **Registry**: a public lookup for tokenized equities. Four issuers are
+  shipping products on Solana that render as an identical price chart and are
+  not the same instrument: a redeemable claim on a share, a note against
+  custody you cannot reach, a tracker holding nothing. The registry puts the
+  legal structure, custody, redemption rights, mint authorities, live NAV
+  deviation and real exit depth for each one on a single page. No wallet, no
+  sign-in, no execution, and nothing it reports is for sale.
+- **`app/`**: the interface. React + TypeScript, built to
   [`DESIGN.md`](DESIGN.md), with the read-model maths ported from Rust and
   cross-checked against it.
 
 Start with **[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)** if you are
-building against this — every account, instruction and PDA seed, plus the read
+building against this, every account, instruction and PDA seed, plus the read
 model a frontend needs. **[`docs/HACKATHON.md`](docs/HACKATHON.md)** maps the
 work to each bounty and says what still needs a mainnet transaction.
 
@@ -59,28 +72,29 @@ account, not a ticker.
 | | |
 |---|---|
 | Compiles (`cargo check`) | **yes**, clean |
-| Rust unit tests (`cargo test --lib`) | **114 passing** — PnL, funding, margin, liquidation, sessions, splits, treasury hedging, pool NAV and the loss waterfall |
-| DBC tests (`npm run test:dbc`) | **37 passing** — against the real Meteora SDK, no network |
-| App tests (`npm run app:test`) | **34 passing** — TypeScript read model vs the Rust |
-| IDL (`npm run idl`) | **generated** — 24 instructions, committed under `idl/` |
+| Rust unit tests (`cargo test --lib`) | **127 passing**: PnL, funding, margin, liquidation, sessions, splits, dividends, treasury hedging, pool NAV and the loss waterfall |
+| DBC tests (`npm run test:dbc`) | **37 passing**, against the real Meteora SDK, no network |
+| App tests (`npm run app:test`) | **66 passing**: the TypeScript read model against the Rust, plus the registry's scoring |
+| Interface audit | **clean** across 6 screens x 3 widths x 2 themes: no overflow, clipping, contrast failure or undersized touch target |
+| IDL (`npm run idl`) | **generated**: 26 instructions, committed under `idl/` |
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
-| `anchor build` | **not run here** — no Solana toolchain in the authoring environment |
-| `anchor test` | **not run here** — the suite in `tests/` is written but unverified |
-| Mainnet deployment | **not done** — needs a funded wallet |
+| `anchor build` | **not run here**: no Solana toolchain in the authoring environment |
+| `anchor test` | **not run here**: the suite in `tests/` is written but unverified |
+| Mainnet deployment | **not done**: needs a funded wallet |
 
 The lockfile has been resolved and audited against the exact rustc that
 `anchor build` uses, so the dependency wall that was blocking the build is
 fixed. But the SBF build itself and the TypeScript suite have not been executed;
 expect the integration tests to need small corrections on first run.
 
-**Read [`BUILD.md`](BUILD.md) first** if `anchor build` is failing — including
+**Read [`BUILD.md`](BUILD.md) first** if `anchor build` is failing, including
 the note about rotating the program keypair, whose secret key is in this
 repository's git history.
 
 ## Quick start
 
 **New here, or not a developer?** Read
-**[`QUICKSTART.md`](QUICKSTART.md)** — it installs the toolchain with one
+**[`QUICKSTART.md`](QUICKSTART.md)**. It installs the toolchain with one
 script and checks everything with one more.
 
 For everyone else:
@@ -116,7 +130,7 @@ programs/arclis/src/
   constants.rs        fixed-point scales and every protocol bound
   errors.rs           error surface
   events.rs           emitted logs
-  math/               pure arithmetic — no accounts, no Clock, no CPI
+  math/               pure arithmetic: no accounts, no Clock, no CPI
     fixed.rs            checked mul_div, floor division, narrowing casts
     pnl.rs              notional, PnL, funding owed, equity, margin, fees
     funding.rs          skew, funding rate, index delta
@@ -159,8 +173,8 @@ tested in under a second with plain `cargo test`.
 ## Design choices, and what they cost
 
 **Cash-settled against an oracle. No AMM, no order book.** Mark price *is* the
-oracle price. This removes an enormous amount of scope — no slippage curve, no
-liquidity depth, no matching — at two real costs. There is no independent mark
+oracle price. This removes an enormous amount of scope, no slippage curve, no
+liquidity depth, no matching, at two real costs. There is no independent mark
 price, so funding cannot come from a mark-vs-index premium; it comes from
 open-interest skew instead (see `math/funding.rs`). And there is no
 counterparty, which is the structural problem described in
@@ -178,7 +192,7 @@ short enough to verify by reading.
 over an existing oracle, crank funding once an interval elapses, or liquidate an
 undercollateralised position for a penalty share. No part of the protocol
 depends on one keeper staying online. Because listing is permissionless,
-`MarketParams::validate` is strict — those bounds are the only thing between a
+`MarketParams::validate` is strict, those bounds are the only thing between a
 trader and a market configured to be unsurvivable.
 
 **Isolated margin.** Position PDAs are seeded by market, so a blow-up in one
@@ -200,7 +214,7 @@ compiled". It did not compile, and several things were wrong beyond that.
   needs `Error` rather than `PerpError`.
 - `declare_id!` held Anchor's default placeholder and disagreed with
   `Anchor.toml`. Reconciled.
-- `target/` was committed, including `arclis-keypair.json` — the **secret
+- `target/` was committed, including `arclis-keypair.json`: the **secret
   key** for the declared program ID. Removed and gitignored; rotation
   instructions in `BUILD.md`.
 
@@ -213,13 +227,13 @@ compiled". It did not compile, and several things were wrong beyond that.
   nothing and paid out of other traders' deposits with no balance check.
   `Market` now tracks `total_collateral`, `insurance_balance`, and `bad_debt`,
   and payouts are checked against the vault's real balance. This makes
-  insolvency visible and bounded — it does not make the design solvent, which
+  insolvency visible and bounded, it does not make the design solvent, which
   needs an LP counterparty.
 - **Liquidation floored negative equity at zero**, silently handing the
   shortfall to other traders. Replaced with an explicit waterfall
   (`math/liquidation.rs`) that partitions every unit into trader / liquidator /
   insurance / recorded bad debt, with the partition asserted in tests.
-- **Nobody would liquidate an underwater position** — the reward was a share of
+- **Nobody would liquidate an underwater position**: the reward was a share of
   equity that no longer existed. A small insurance-funded bounty now covers
   exactly that case.
 - **`GlobalConfig.paused` was never checked anywhere.** Now enforced through
@@ -228,7 +242,7 @@ compiled". It did not compile, and several things were wrong beyond that.
 - **`fee_bps` was stored but never charged**, so the insurance fund had no
   funding source at all. Now charged on open and close, into insurance.
 - **The leverage check used raw collateral**, ignoring unrealised PnL and
-  unsettled funding — a position deep in the red could add to itself and land
+  unsettled funding, a position deep in the red could add to itself and land
   below maintenance margin in the same instruction. Now an equity-based initial
   margin check, run on final state.
 - Oracle `confidence` was stored and ignored; added a confidence bound and a
@@ -244,7 +258,7 @@ compiled". It did not compile, and several things were wrong beyond that.
 - `create_market` took three loose arguments and now configures nine risk knobs
   through a named `MarketParams` struct.
 - Added `tests/`, `package.json`, `tsconfig.json`, `.gitignore`, CI, and
-  `scripts/audit_msrv.py` — `Anchor.toml`'s test script previously pointed at
+  `scripts/audit_msrv.py`: `Anchor.toml`'s test script previously pointed at
   files that did not exist.
 
 ## Known gaps
@@ -252,7 +266,7 @@ compiled". It did not compile, and several things were wrong beyond that.
 Listed plainly, because a judge will find them anyway:
 
 - **The pool can still be outrun.** The counterparty pool now exists, and
-  `max_utilization_bps` bounds how much exposure it can be made to carry — but
+  `max_utilization_bps` bounds how much exposure it can be made to carry, but
   a large enough adverse move still exhausts insurance, then LP capital, then
   socialises the rest onto `market.bad_debt`. The waterfall makes that visible
   and ordered; it does not make it impossible.
@@ -261,7 +275,7 @@ Listed plainly, because a judge will find them anyway:
   underwater before any liquidator can act. Fees now capitalise insurance;
   there is still no instruction to pay into it directly.
 - **The oracle is one trusted key.** Bounded by staleness, confidence, a
-  per-update deviation cap, and now a session state — but not removed. Swap in
+  per-update deviation cap, and now a session state, but not removed. Swap in
   Pyth before anything holds value.
 - **Dividends, mergers and delistings are unhandled.** Only splits are.
 - **DBC migration cannot be oracle-gated.** Graduation is permissionless with no
@@ -273,9 +287,9 @@ Listed plainly, because a judge will find them anyway:
 ## Next steps
 
 1. `anchor build`, then `anchor test`; fix what the integration suite surfaces.
-   **Do this before building more** — the program has never been compiled for
+   **Do this before building more**: the program has never been compiled for
    SBF, and stacking a frontend on top of that means debugging two unknowns.
-2. Rotate the program keypair (`BUILD.md`) — its secret key is in git history.
+2. Rotate the program keypair (`BUILD.md`), its secret key is in git history.
 3. Add an instruction to capitalise the insurance fund directly.
 4. Swap the keeper oracle for Pyth.
 5. Handle dividends alongside splits.

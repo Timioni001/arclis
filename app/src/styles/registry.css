@@ -1,0 +1,575 @@
+/*
+ * The registry screen.
+ *
+ * Its own stylesheet because it is the one surface that is not a trading
+ * interface: denser, more editorial, and built to be read by someone who has
+ * never seen a perp. The shared primitives (card, pill, segbar) carry over so
+ * it still looks like one product.
+ *
+ * Every rule here has a minimum touch target of 44px and a stated line-height,
+ * because the clarity brief on this page is not decorative: a person is trying
+ * to find out whether their money is backed by anything.
+ */
+
+/* --------------------------------------------------------------------------
+   Header
+   -------------------------------------------------------------------------- */
+
+.registry-hero {
+  position: relative;
+  border-radius: var(--radius-2xl);
+  padding: var(--space-8) var(--space-9);
+  background:
+    radial-gradient(120% 160% at 92% 8%, var(--lime-wash) 0%, transparent 56%),
+    var(--surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.registry-hero-body {
+  position: relative;
+  max-width: 66ch;
+}
+
+.registry-eyebrow {
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-3);
+}
+.registry-title {
+  font-family: var(--font-display);
+  font-size: clamp(26px, 3vw, 40px);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+.registry-title-mark {
+  color: var(--lime-ink);
+}
+
+.registry-lede {
+  margin: var(--space-4) 0 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+.registry-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.registry-hero-meta strong {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --------------------------------------------------------------------------
+   Filter rail
+   -------------------------------------------------------------------------- */
+
+.registry-filters-shell {
+  border-radius: var(--radius-xl);
+}
+.registry-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3);
+}
+
+.registry-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 260px;
+  min-width: 0;
+  padding: 0 var(--space-3);
+  height: 44px;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-secondary);
+  box-shadow: var(--shadow-sm);
+}
+.registry-search input {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: inherit;
+  color: var(--text-primary);
+  /* Safari draws its own clear button over the text on a `search` input. */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.registry-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.registry-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.registry-filter {
+  border: 0;
+  cursor: pointer;
+  height: 36px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  transition:
+    background var(--fast) var(--ease-out),
+    color var(--fast) var(--ease-out);
+}
+.registry-filter:hover {
+  color: var(--text-primary);
+}
+.registry-filter[aria-pressed="true"] {
+  background: var(--lime);
+  color: var(--on-lime);
+  box-shadow: var(--shadow-lime);
+}
+
+.registry-sort select {
+  height: 36px;
+  padding: 0 var(--space-4);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Result cards
+   -------------------------------------------------------------------------- */
+
+.registry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: var(--space-4);
+}
+
+.registry-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+.registry-card.is-open {
+  box-shadow: var(--shadow-lift);
+}
+
+.registry-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.registry-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+/* `min-width: 0` on both the flex row and this child: without it a long company
+   name refuses to ellipsize and pushes the status pill off the card. */
+.registry-ident-text {
+  min-width: 0;
+}
+.registry-symbol {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.registry-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.registry-issuer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.registry-issuer a {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  color: var(--text-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.registry-issuer a:hover {
+  text-decoration: underline;
+}
+
+.registry-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.registry-metric {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.registry-metric-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  /* Three columns of labels of different lengths: clamp rather than wrap, or
+     the value rows stop aligning across the card. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.registry-metric-value {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 19px;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.registry-metric-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.registry-metric-value[data-verdict="premium"] {
+  color: var(--warning);
+}
+.registry-metric-value[data-verdict="discount"] {
+  color: var(--info);
+}
+.registry-metric-value[data-verdict="dislocated"] {
+  color: var(--negative);
+}
+.registry-metric-value[data-verdict="stale"] {
+  color: var(--text-muted);
+}
+.registry-metric-value[data-verdict="fair"] {
+  color: var(--positive);
+}
+
+.registry-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.registry-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-soft);
+}
+.registry-supply {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+.registry-coverage {
+  color: var(--text-muted);
+}
+.registry-card-actions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* --------------------------------------------------------------------------
+   Detail sheet
+   -------------------------------------------------------------------------- */
+
+.registry-detail-shell {
+  border-radius: var(--radius-xl);
+}
+.registry-detail {
+  padding: var(--space-6);
+  display: grid;
+  gap: var(--space-5);
+}
+
+.registry-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+.registry-detail-eyebrow {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.registry-detail-head h2 {
+  font-size: clamp(20px, 2.4vw, 26px);
+}
+.registry-detail-underlying {
+  font-family: var(--font);
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-secondary);
+  letter-spacing: 0;
+}
+/* The close control reuses the plus glyph rotated, so the icon set does not
+   need a near-duplicate path. */
+.registry-detail-head .icon-btn {
+  transform: rotate(45deg);
+}
+
+.registry-detail-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-6);
+  align-items: start;
+}
+.registry-detail-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.registry-detail-h {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  margin-top: var(--space-3);
+}
+.registry-detail-col > .registry-detail-h:first-child {
+  margin-top: 0;
+}
+
+.registry-facts {
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.registry-facts > div {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.registry-facts dt {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+.registry-facts dd {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+.registry-facts a {
+  text-decoration: underline;
+  color: var(--text-secondary);
+}
+
+.registry-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+.registry-breakdown-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.registry-breakdown p {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.registry-control {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.registry-control li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+}
+/* The icon is the only thing in the 20px column and is vertically centred on
+   the first line of the label, not on the block. */
+.registry-control li svg {
+  margin-top: 2px;
+}
+.registry-control li[data-tone="watch"] {
+  color: var(--warning);
+}
+.registry-control li[data-tone="neutral"] {
+  color: var(--positive);
+}
+.registry-control li strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13.5px;
+}
+.registry-control li p {
+  margin: 4px 0 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.registry-detail-note {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.registry-pools {
+  width: 100%;
+}
+.registry-pools th[scope="row"] {
+  font-weight: 600;
+}
+
+.registry-detail-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  flex-wrap: wrap;
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-soft);
+}
+.registry-detail-price {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.registry-detail-price .num {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: -0.02em;
+}
+.registry-detail-foot .btn {
+  margin-left: auto;
+}
+
+/* --------------------------------------------------------------------------
+   Narrow widths
+   -------------------------------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .registry-detail-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 760px) {
+  .registry-hero {
+    padding: var(--space-6);
+    border-radius: var(--radius-xl);
+  }
+  .registry-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .registry-detail {
+    padding: var(--space-4);
+  }
+  .registry-detail-shell,
+  .registry-filters-shell {
+    border-radius: var(--radius-lg);
+  }
+
+  .registry-search {
+    flex: 1 1 100%;
+  }
+  .registry-filter-group {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    padding-bottom: 2px;
+  }
+  .registry-sort,
+  .registry-sort select {
+    width: 100%;
+  }
+  .registry-facts > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .registry-detail-foot .btn {
+    margin-left: 0;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  /* Three metrics in a row stop being readable below roughly 110px each; two
+     up and one under keeps every label on one line. */
+  .registry-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .registry-metrics > .registry-metric:last-child {
+    grid-column: 1 / -1;
+  }
+  .registry-card-foot {
+    align-items: stretch;
+  }
+  .registry-card-actions {
+    width: 100%;
+  }
+  .registry-card-actions .btn {
+    flex: 1;
+  }
+}

@@ -1,0 +1,97 @@
+/*
+ * Glass surfaces.
+ *
+ * Two branches that have to land in the same place: the real lens rendered by
+ * `<Glass>`, and the flat fallback for anyone on reduced transparency. Both
+ * carry the same padding, radius and hairline, so turning glass off changes the
+ * finish and nothing about the layout.
+ *
+ * The tint lives here rather than in the lens optics on purpose. `<Glass>`
+ * bends and lights what is behind it; the *colour* of the pane is CSS, which
+ * means it follows the theme tokens automatically and does not need the optics
+ * table to know anything about palettes.
+ */
+
+.glass {
+  position: relative;
+  background: var(--glass-tint);
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px 0 var(--glass-edge);
+  border: 1px solid var(--glass-hairline);
+}
+
+/*
+ * The crisp layer, and the box the layout belongs to.
+ *
+ * `<Glass>` refracts everything behind this node and renders it on top
+ * untouched, which is the only reason text inside a glass panel stays
+ * readable. It is also a real box rather than `display: contents`: the library
+ * puts its own wrapper and the filter `<svg>` beside the children, so anything
+ * hoisted out of here lands in a block container and stacks.
+ */
+.glass-inner {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-width: 0;
+}
+
+/*
+ * The fallback is not a downgrade path, it is the other supported finish.
+ * An opaque panel with the same geometry: no refraction, no blur to fight,
+ * and a real border where the rim light used to be.
+ */
+.glass-flat {
+  background: var(--glass-fallback);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--border);
+}
+
+.glass-chrome {
+  border-radius: var(--radius-pill);
+}
+.glass-panel {
+  border-radius: var(--radius-lg);
+}
+.glass-lens {
+  border-radius: var(--radius-xl);
+}
+
+/*
+ * A frosted app bar that still reads as one bar.
+ *
+ * `backdrop-filter` on the sticky header is kept even where the lens runs,
+ * because the lens refracts what is *behind the element*, and a sticky header
+ * needs the page scrolling under it to soften as well.
+ */
+.topbar-glass {
+  background: color-mix(in srgb, var(--bg) 72%, transparent);
+  backdrop-filter: blur(18px) saturate(1.25);
+  -webkit-backdrop-filter: blur(18px) saturate(1.25);
+  border-bottom: 1px solid var(--glass-hairline);
+}
+
+/*
+ * Where glass is forbidden.
+ *
+ * Refraction bends glyph edges, which is a finish on a label and a legibility
+ * bug on a price. Anything tagged `.crisp` opts out of every inherited filter
+ * and sits on a solid surface, and every number in the interface is inside one.
+ */
+.crisp {
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass,
+  .topbar-glass {
+    background: var(--glass-fallback);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: var(--shadow-card);
+    border-color: var(--border);
+  }
+}

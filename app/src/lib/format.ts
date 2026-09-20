@@ -9,7 +9,12 @@
  * user-facing representation.
  */
 
-import { BASE_SCALE, PRICE_SCALE, QUOTE_SCALE, BPS_SCALE } from "./protocol/math";
+import {
+  BASE_SCALE,
+  PRICE_SCALE,
+  QUOTE_SCALE,
+  BPS_SCALE,
+} from "./protocol/math";
 
 function toNumber(value: bigint, scale: bigint): number {
   // Split before converting so large values keep their precision: the integer
@@ -25,13 +30,17 @@ export const toPrice = (v: bigint) => toNumber(v, PRICE_SCALE);
 export const toBps = (v: bigint) => Number(v) / Number(BPS_SCALE);
 
 /** `$168.16`. Compacts to `$2.4M` past a million unless `compact` is false. */
-export function usd(value: bigint | number, opts: { compact?: boolean; dp?: number } = {}): string {
+export function usd(
+  value: bigint | number,
+  opts: { compact?: boolean; dp?: number } = {},
+): string {
   const n = typeof value === "bigint" ? toQuote(value) : value;
   const { compact = true, dp } = opts;
   const abs = Math.abs(n);
   const sign = n < 0 ? "-" : "";
 
-  if (compact && abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
+  if (compact && abs >= 1_000_000)
+    return `${sign}$${(abs / 1_000_000).toFixed(2)}M`;
   if (compact && abs >= 10_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
 
   const decimals = dp ?? (abs < 1 ? 4 : 2);
@@ -42,14 +51,20 @@ export function usd(value: bigint | number, opts: { compact?: boolean; dp?: numb
 }
 
 /** Signed dollars, always with an explicit `+` or `-`. */
-export function usdSigned(value: bigint | number, opts?: { compact?: boolean }): string {
+export function usdSigned(
+  value: bigint | number,
+  opts?: { compact?: boolean },
+): string {
   const n = typeof value === "bigint" ? toQuote(value) : value;
   const body = usd(Math.abs(n), opts);
   return n < 0 ? `-${body}` : `+${body}`;
 }
 
 /** `2.50 shares`, or `2.50` when the unit is shown elsewhere. */
-export function shares(value: bigint, opts: { unit?: boolean; dp?: number } = {}): string {
+export function shares(
+  value: bigint,
+  opts: { unit?: boolean; dp?: number } = {},
+): string {
   const n = toShares(value);
   const { unit = false, dp = 2 } = opts;
   const body = Math.abs(n).toLocaleString("en-US", {
@@ -94,7 +109,7 @@ export function ago(ts: number, now = Date.now() / 1000): string {
   return `${Math.floor(s / 86_400)}d ago`;
 }
 
-/** `18h 24m` — for cooldowns counting down. */
+/** `18h 24m`, for cooldowns counting down. */
 export function duration(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
   if (s === 0) return "ready";
@@ -106,10 +121,13 @@ export function duration(seconds: number): string {
   return `${m}m`;
 }
 
-/** `Monday · 09:30 ET` — when the venue next opens. */
+/** `Monday · 09:30 ET`, when the venue next opens. */
 export function sessionOpensAt(ts: number): string {
   const d = new Date(ts * 1000);
-  const day = d.toLocaleDateString("en-US", { weekday: "long", timeZone: "America/New_York" });
+  const day = d.toLocaleDateString("en-US", {
+    weekday: "long",
+    timeZone: "America/New_York",
+  });
   const time = d.toLocaleTimeString("en-US", {
     hour: "2-digit",
     minute: "2-digit",

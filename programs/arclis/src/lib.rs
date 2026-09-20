@@ -129,6 +129,13 @@ pub mod arclis {
         instructions::corporate_action::apply_split(ctx, numerator, denominator)
     }
 
+    /// Record a cash dividend against every open position at once, so longs
+    /// are credited the ex-date price drop instead of eating it. See
+    /// `instructions::corporate_action::apply_dividend`.
+    pub fn apply_dividend(ctx: Context<ApplyDividend>, per_share: u64) -> Result<()> {
+        instructions::corporate_action::apply_dividend(ctx, per_share)
+    }
+
     // --- collateral ---------------------------------------------------------
 
     pub fn deposit_collateral(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
@@ -157,6 +164,14 @@ pub mod arclis {
 
     pub fn liquidate(ctx: Context<Liquidate>) -> Result<()> {
         instructions::liquidate::handler(ctx)
+    }
+
+    // --- insurance ----------------------------------------------------------
+
+    /// Seed or top up a market's insurance fund. Permissionless in, no way
+    /// out; pays down socialised bad debt first.
+    pub fn deposit_insurance(ctx: Context<DepositInsurance>, amount: u64) -> Result<()> {
+        instructions::insurance::handler(ctx, amount)
     }
 
     // --- liquidity ----------------------------------------------------------

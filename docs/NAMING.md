@@ -1,6 +1,6 @@
 # Name
 
-**Arclis** — *On-chain access to public markets.*
+**Arclis**: *On-chain access to public markets.*
 
 Decided. This document records what was chosen and why, so the reasoning does
 not have to be reconstructed later.
@@ -21,8 +21,8 @@ does not box the product into equities if indices, ETFs or commodities follow.
 
 **Primary: "On-chain access to public markets."**
 
-*Access* is the honest verb. Arclis is the access layer — the oracle, the
-sessions, the corporate actions, the hedging and the launch tooling — not the
+*Access* is the honest verb. Arclis is the access layer, the oracle, the
+sessions, the corporate actions, the hedging and the launch tooling, not the
 venue where price is discovered. "The on-chain market for stocks" claims to *be*
 the market, which would be an overclaim while price comes from an external
 oracle. "Public markets" also survives the product extending past single
@@ -30,7 +30,7 @@ equities, where "stocks" would not.
 
 **Variant: "Public markets, built on Solana."**
 
-For Solana-ecosystem contexts — the hackathon submission, ecosystem directories,
+For Solana-ecosystem contexts, the hackathon submission, ecosystem directories,
 anywhere naming the chain is the point rather than a constraint.
 
 Rejected: *"Stocks, reimagined on-chain"* ("reimagined" says nothing),
@@ -42,8 +42,8 @@ stocks"* (overclaims, see above).
 The on-chain program crate is now `arclis`, not `perp_engine`. That was a
 judgement call: the earlier advice in this file was to keep the crate
 brand-neutral so a rename stayed cheap, and while the program was only a perp
-engine that was right. It is no longer only a perp engine — it carries the
-equity calendar, agent treasuries and the liquidity pool — so `perp_engine`
+engine that was right. It is no longer only a perp engine, it carries the
+equity calendar, agent treasuries and the liquidity pool, so `perp_engine`
 described a subset and `arclis` describes the program.
 
 Unchanged: the program ID, and every PDA seed (`config`, `oracle`, `market`,

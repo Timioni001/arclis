@@ -1,9 +1,10 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token::{Token, TokenAccount};
 
 use crate::constants::MIN_POSITION_NOTIONAL;
 use crate::errors::ArclisError;
 use crate::events::PositionOpened;
-use crate::instructions::guards::{require_tradable, sync_position};
+use crate::instructions::guards::{require_tradable, sync_and_settle};
 use crate::math::liquidity;
 use crate::math::session::PriceUse;
 use crate::math::{fixed, pnl};
@@ -34,18 +35,25 @@ pub struct OpenPosition<'info> {
     )]
     pub position: Account<'info, Position>,
 
-    /// The counterparty. Read-only here - opening a position does not move the
-    /// pool's money, it commits the pool's *capacity*, which is what the
-    /// utilisation cap below checks.
+    /// The counterparty. Opening commits the pool's *capacity*, which is what
+    /// the utilisation cap below checks - but it is `mut` because the sync that
+    /// runs first settles any funding and dividends accrued since this position
+    /// was last touched, and those do move money between the two vaults.
     #[account(
+        mut,
         address = market.liquidity_pool @ ArclisError::PoolMismatch,
         seeds = [LiquidityPool::SEED, market.key().as_ref()],
         bump = pool.bump,
     )]
     pub pool: Account<'info, LiquidityPool>,
 
-    #[account(address = pool.vault @ ArclisError::VaultMismatch)]
-    pub pool_vault: Account<'info, anchor_spl::token::TokenAccount>,
+    #[account(mut, address = pool.vault @ ArclisError::VaultMismatch)]
+    pub pool_vault: Account<'info, TokenAccount>,
+
+    #[account(mut, address = market.vault @ ArclisError::VaultMismatch)]
+    pub market_vault: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
 }
 
 /// Increase a position. `size_delta` is signed base size at `BASE_SCALE`:
@@ -65,16 +73,26 @@ pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
         .accounts
         .oracle
         .validated_price(now, PriceUse::IncreaseRisk)?;
-    let funding_index = ctx.accounts.market.cumulative_funding_index;
     let taker_fee_bps = ctx.accounts.market.taker_fee_bps;
 
-    // 1. Normalise for any corporate action, then settle funding against the
-    //    *old* size, before it changes. Order matters - see `sync_position`.
-    let funding_settled = sync_position(
+    // 1. Normalise for any corporate action, then settle dividends and funding
+    //    against the *old* size, before it changes. Order matters - see
+    //    `sync_position`. `sync_and_settle` also moves whatever that settlement
+    //    owes between the market vault and the pool, so the position's new
+    //    collateral is backed by tokens that are actually there.
+    let oracle_key = ctx.accounts.oracle.key();
+    let sync = sync_and_settle(
         &mut ctx.accounts.position,
         &ctx.accounts.oracle,
-        funding_index,
+        &mut ctx.accounts.market,
+        &ctx.accounts.market_vault,
+        &mut ctx.accounts.pool,
+        &ctx.accounts.pool_vault,
+        &ctx.accounts.token_program,
+        &oracle_key,
     )?;
+    let funding_settled = sync.funding;
+    let dividends_settled = sync.dividends;
 
     // 2. Charge the taker fee on the notional being added, and route it to the
     //    market's insurance balance. The original engine stored `fee_bps` and
@@ -150,6 +168,7 @@ pub fn handler(ctx: Context<OpenPosition>, size_delta: i64) -> Result<()> {
         entry_price_after,
         fee,
         funding_settled,
+        dividends_settled,
     });
     Ok(())
 }

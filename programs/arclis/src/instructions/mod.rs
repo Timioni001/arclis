@@ -20,6 +20,7 @@ pub mod create_market;
 pub mod deposit_collateral;
 pub mod guards;
 pub mod initialize_global_config;
+pub mod insurance;
 pub mod liquidate;
 pub mod liquidity;
 pub mod open_position;
@@ -47,6 +48,7 @@ mod reexports {
     pub use super::create_market::*;
     pub use super::deposit_collateral::*;
     pub use super::initialize_global_config::*;
+    pub use super::insurance::*;
     pub use super::liquidate::*;
     pub use super::liquidity::*;
     pub use super::open_position::*;

@@ -50,6 +50,9 @@ pub struct PositionOpened {
     pub entry_price_after: u64,
     pub fee: u64,
     pub funding_settled: i128,
+    /// Dividends settled on entry to this instruction, positive = the trader
+    /// was credited (a long) and negative = they paid (a short).
+    pub dividends_settled: i128,
 }
 
 #[event]
@@ -62,6 +65,9 @@ pub struct PositionClosed {
     pub realized_pnl: i128,
     pub fee: u64,
     pub funding_settled: i128,
+    /// Dividends settled on entry to this instruction, positive = the trader
+    /// was credited (a long) and negative = they paid (a short).
+    pub dividends_settled: i128,
 }
 
 #[event]
@@ -135,6 +141,33 @@ pub struct CorporateActionApplied {
     pub price_before: u64,
     pub price_after: u64,
     pub sequence: u32,
+}
+
+/// A cash dividend recorded against every open position in one write.
+///
+/// `per_share` is quote per base unit at `PRICE_SCALE`, always positive.
+/// Longs are credited it and shorts pay it, lazily, the next time each
+/// position is touched.
+#[event]
+pub struct DividendApplied {
+    pub oracle: Pubkey,
+    pub market: Pubkey,
+    pub authority: Pubkey,
+    pub per_share: u64,
+    pub price_at_record: u64,
+    pub dividend_index_before: i128,
+    pub dividend_index_after: i128,
+    pub sequence: u32,
+}
+
+/// Insurance capitalised from outside the fee stream.
+#[event]
+pub struct InsuranceDeposited {
+    pub market: Pubkey,
+    pub depositor: Pubkey,
+    pub amount: u64,
+    pub insurance_balance_after: u64,
+    pub bad_debt_after: u64,
 }
 
 // ---------------------------------------------------------------------------

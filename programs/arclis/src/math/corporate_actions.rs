@@ -414,3 +414,167 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Cash dividends
+// ---------------------------------------------------------------------------
+
+/// A cash dividend, in quote per share at [`PRICE_SCALE`].
+///
+/// # Why this is not just a price drop
+///
+/// On the ex-dividend date the quoted price falls by roughly the dividend. A
+/// holder of the actual stock is made whole by the cash; a perp trader is not,
+/// because there is no cash leg. So an engine that only watches the oracle
+/// hands every long a loss and every short a windfall for a payment they never
+/// received.
+///
+/// Splits are handled by rescaling, because a split changes the unit. A
+/// dividend does not change the unit, it transfers value out of the company, so
+/// the fix is a transfer rather than a rescale: longs are credited the dividend
+/// per share they hold and shorts are debited it, exactly offsetting the price
+/// move.
+///
+/// This uses the same cumulative-index trick as funding: the market carries a
+/// running total of dividends per share, positions snapshot it, and the
+/// difference is settled the next time a position is touched. No iteration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Dividend {
+    /// Quote per share, at [`PRICE_SCALE`]. Always positive.
+    pub per_share: u64,
+}
+
+impl Dividend {
+    pub fn validate(&self, price: u64) -> Result<(), ArclisError> {
+        if self.per_share == 0 {
+            return Err(ArclisError::InvalidDividend);
+        }
+        // A dividend larger than the share price is not a dividend, it is a
+        // typo or a liquidation, and either way it must not be applied blind.
+        if u128::from(self.per_share) > u128::from(price) {
+            return Err(ArclisError::InvalidDividend);
+        }
+        Ok(())
+    }
+}
+
+/// The increment to add to the market's cumulative dividend index.
+///
+/// Denominated in quote per base unit at [`FUNDING_INDEX_SCALE`], matching the
+/// funding index, so the same settlement path can be reused.
+pub fn dividend_index_delta(per_share: u64) -> Result<i128, ArclisError> {
+    mul_div(i128::from(per_share), FUNDING_INDEX_SCALE, PRICE_SCALE)
+}
+
+/// What a position is owed (positive) or owes (negative) for dividends since it
+/// last settled.
+///
+/// A long receives, a short pays. The sign of `size` handles both.
+pub fn dividend_owed(
+    size: i64,
+    entry_dividend_index: i128,
+    market_dividend_index: i128,
+) -> Result<i128, ArclisError> {
+    let delta = market_dividend_index
+        .checked_sub(entry_dividend_index)
+        .ok_or(ArclisError::MathOverflow)?;
+    mul_div(i128::from(size), delta, FUNDING_INDEX_SCALE)
+}
+
+#[cfg(test)]
+mod dividend_tests {
+    use super::*;
+    use crate::math::pnl;
+
+    const ONE: i64 = BASE_SCALE as i64;
+    const P100: u64 = 100 * PRICE_SCALE as u64;
+
+    #[test]
+    fn a_dividend_must_be_positive_and_smaller_than_the_price() {
+        assert_eq!(
+            Dividend { per_share: 0 }.validate(P100),
+            Err(ArclisError::InvalidDividend)
+        );
+        assert_eq!(
+            Dividend {
+                per_share: P100 + 1
+            }
+            .validate(P100),
+            Err(ArclisError::InvalidDividend)
+        );
+        assert!(Dividend {
+            per_share: PRICE_SCALE as u64
+        }
+        .validate(P100)
+        .is_ok());
+    }
+
+    #[test]
+    fn a_long_receives_and_a_short_pays() {
+        // $1.00 per share.
+        let delta = dividend_index_delta(PRICE_SCALE as u64).unwrap();
+        assert_eq!(dividend_owed(ONE, 0, delta).unwrap(), QUOTE_SCALE);
+        assert_eq!(dividend_owed(-ONE, 0, delta).unwrap(), -QUOTE_SCALE);
+    }
+
+    #[test]
+    fn a_flat_position_is_owed_nothing() {
+        let delta = dividend_index_delta(PRICE_SCALE as u64).unwrap();
+        assert_eq!(dividend_owed(0, 0, delta).unwrap(), 0);
+    }
+
+    #[test]
+    fn nothing_accrues_when_the_index_has_not_moved() {
+        assert_eq!(dividend_owed(ONE, 5_000, 5_000).unwrap(), 0);
+    }
+
+    /// The property the whole mechanism exists for: on the ex-date the price
+    /// drops by the dividend, and the credit exactly offsets the mark-to-market
+    /// loss. A long should end the day flat, not down.
+    #[test]
+    fn the_credit_exactly_offsets_the_ex_date_price_drop() {
+        let per_share = 2 * PRICE_SCALE as u64; // $2.00
+        let size = 5 * ONE;
+        let entry = P100;
+
+        // Before the ex-date, flat.
+        assert_eq!(pnl::unrealized_pnl(size, entry, P100).unwrap(), 0);
+
+        // The price drops by the dividend.
+        let after_price = P100 - per_share;
+        let mark_loss = pnl::unrealized_pnl(size, entry, after_price).unwrap();
+        assert_eq!(mark_loss, -10 * QUOTE_SCALE); // 5 shares x $2
+
+        // The dividend credit makes it whole.
+        let delta = dividend_index_delta(per_share).unwrap();
+        let credit = dividend_owed(size, 0, delta).unwrap();
+        assert_eq!(credit, 10 * QUOTE_SCALE);
+        assert_eq!(mark_loss + credit, 0);
+    }
+
+    #[test]
+    fn a_short_is_symmetrically_unaffected() {
+        let per_share = 2 * PRICE_SCALE as u64;
+        let size = -5 * ONE;
+        let after_price = P100 - per_share;
+
+        let mark_gain = pnl::unrealized_pnl(size, P100, after_price).unwrap();
+        let delta = dividend_index_delta(per_share).unwrap();
+        let debit = dividend_owed(size, 0, delta).unwrap();
+
+        assert_eq!(mark_gain, 10 * QUOTE_SCALE);
+        assert_eq!(debit, -10 * QUOTE_SCALE);
+        assert_eq!(mark_gain + debit, 0);
+    }
+
+    #[test]
+    fn dividends_accumulate_across_payments() {
+        let d1 = dividend_index_delta(PRICE_SCALE as u64).unwrap();
+        let d2 = dividend_index_delta(PRICE_SCALE as u64 / 2).unwrap();
+        // A position present for both is owed the sum.
+        assert_eq!(
+            dividend_owed(ONE, 0, d1 + d2).unwrap(),
+            QUOTE_SCALE + QUOTE_SCALE / 2
+        );
+    }
+}

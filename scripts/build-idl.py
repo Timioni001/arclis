@@ -20,12 +20,16 @@ works whether or not `anchor build`'s own IDL step does.
 
     python3 scripts/build-idl.py
 
-Writes target/idl/arclis.json and target/types/arclis.ts.
+Writes target/idl/arclis.json and target/types/arclis.ts, then copies both into
+idl/ so the committed client artifacts cannot drift from the program. They did
+drift once: the committed IDL sat at 24 instructions while the program had 26,
+and a client would only have discovered that at call time.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
 import re
 import subprocess
 import sys
@@ -177,8 +181,18 @@ def main() -> None:
     idl_path.write_text(json.dumps(idl, indent=2) + "\n")
     types_path.write_text(to_typescript(idl))
 
+    # Copy into the committed location. Generating into target/ alone leaves
+    # idl/ to be updated by hand, which is a step that gets forgotten exactly
+    # when the instruction surface changes, which is exactly when it matters.
+    committed = ROOT / "idl"
+    committed.mkdir(exist_ok=True)
+    shutil.copyfile(idl_path, committed / "arclis.json")
+    shutil.copyfile(types_path, committed / "arclis.ts")
+
     print(f"\n  {idl_path.relative_to(ROOT)}")
-    print(f"  {types_path.relative_to(ROOT)}\n")
+    print(f"  {types_path.relative_to(ROOT)}")
+    print("  idl/arclis.json")
+    print("  idl/arclis.ts\n")
     print(f"  {len(idl['instructions']):>3} instructions")
     print(f"  {len(idl['accounts']):>3} accounts")
     print(f"  {len(idl['events']):>3} events")

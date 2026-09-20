@@ -2,7 +2,7 @@
  * Inline SVG icons.
  *
  * Unicode glyphs (⌕ ◔ ⇄) were the first attempt and they render inconsistently
- * across platforms — different sizes, different baselines, some fall back to a
+ * across platforms: different sizes, different baselines, some fall back to a
  * system font entirely. A small hand-built set is a few hundred bytes and looks
  * the same everywhere.
  *
@@ -63,14 +63,18 @@ const PATHS: Record<IconName, JSX.Element> = {
       <path d="M4 8h13l-3-3M20 16H7l3 3" />
     </>
   ),
-  layers: <path d="M12 3.5 3.5 8 12 12.5 20.5 8 12 3.5ZM3.5 13 12 17.5 20.5 13" />,
+  layers: (
+    <path d="M12 3.5 3.5 8 12 12.5 20.5 8 12 3.5ZM3.5 13 12 17.5 20.5 13" />
+  ),
   target: (
     <>
       <circle cx="12" cy="12" r="8.5" />
       <circle cx="12" cy="12" r="3.5" />
     </>
   ),
-  send: <path d="M20.5 3.5 3.5 10.5l7 2.5 2.5 7 7.5-16.5ZM10.5 13.5 20.5 3.5" />,
+  send: (
+    <path d="M20.5 3.5 3.5 10.5l7 2.5 2.5 7 7.5-16.5ZM10.5 13.5 20.5 3.5" />
+  ),
   card: (
     <>
       <rect x="3" y="6" width="18" height="12" rx="3" />

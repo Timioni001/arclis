@@ -8,8 +8,24 @@
 import type { ReactNode } from "react";
 import type { MarketSession, Oracle } from "../../lib/protocol/types";
 import { SESSION_LABEL } from "../../lib/protocol/session";
-import { StatusPill, Notice, SegBar, Legend, Chip, Icon, ListRow, type Tone } from "../ui";
-import { ago, confidencePct, pctPlain, sessionOpensAt, usd, shares } from "../../lib/format";
+import {
+  StatusPill,
+  Notice,
+  SegBar,
+  Legend,
+  Chip,
+  Icon,
+  ListRow,
+  type Tone,
+} from "../ui";
+import {
+  ago,
+  confidencePct,
+  pctPlain,
+  sessionOpensAt,
+  usd,
+  shares,
+} from "../../lib/format";
 
 const SESSION_TONE: Record<MarketSession, Tone> = {
   Open: "open",
@@ -19,7 +35,11 @@ const SESSION_TONE: Record<MarketSession, Tone> = {
 };
 
 export function SessionBadge({ session }: { session: MarketSession }) {
-  return <StatusPill tone={SESSION_TONE[session]}>{SESSION_LABEL[session]}</StatusPill>;
+  return (
+    <StatusPill tone={SESSION_TONE[session]}>
+      {SESSION_LABEL[session]}
+    </StatusPill>
+  );
 }
 
 /**
@@ -35,8 +55,9 @@ export function SessionNotice({ oracle }: { oracle: Oracle }) {
   if (oracle.session === "Closed") {
     return (
       <Notice tone="info" title={`${oracle.symbol} is closed`}>
-        Opens {sessionOpensAt(oracle.nextOpenTs)}. The price has not moved since the last session,
-        so new positions are unavailable — they would be a free bet on the next open.{" "}
+        Opens {sessionOpensAt(oracle.nextOpenTs)}. The price has not moved since
+        the last session, so new positions are unavailable. They would be a free
+        bet on the next open.{" "}
         <strong>You can still reduce or close what you hold.</strong>
       </Notice>
     );
@@ -44,7 +65,10 @@ export function SessionNotice({ oracle }: { oracle: Oracle }) {
 
   if (oracle.session === "PreOpen") {
     return (
-      <Notice tone="warning" title={`${oracle.symbol} is in the opening auction`}>
+      <Notice
+        tone="warning"
+        title={`${oracle.symbol} is in the opening auction`}
+      >
         Indications are moving and are not firm prices. Trading resumes at{" "}
         {sessionOpensAt(oracle.nextOpenTs)}.
       </Notice>
@@ -53,8 +77,9 @@ export function SessionNotice({ oracle }: { oracle: Oracle }) {
 
   return (
     <Notice tone="danger" title={`${oracle.symbol} is halted`}>
-      There is no price to mark against, so opening and closing are both unavailable. Settling
-      against the pre-halt print would be guesswork. Positions are held until the halt lifts.
+      There is no price to mark against, so opening and closing are both
+      unavailable. Settling against the pre-halt print would be guesswork.
+      Positions are held until the halt lifts.
     </Notice>
   );
 }
@@ -67,19 +92,24 @@ export function OracleStatus({ oracle, now }: { oracle: Oracle; now: number }) {
   return (
     <div>
       <div className="row-item" style={{ background: "var(--surface-sunken)" }}>
-        <Chip small><Icon name="target" size={15} /></Chip>
+        <Chip small>
+          <Icon name="target" size={15} />
+        </Chip>
         <div className="row-main">
-          <div className="row-title num">{usd(oracle.price, { compact: false })}</div>
+          <div className="row-title num">
+            {usd(oracle.price, { compact: false })}
+          </div>
           <div className="row-sub">
-            Oracle · {conf.toFixed(1)}% confidence · {ago(oracle.lastUpdateTs, now)}
+            Oracle · {conf.toFixed(1)}% confidence ·{" "}
+            {ago(oracle.lastUpdateTs, now)}
           </div>
         </div>
       </div>
       {stale && (
         <div style={{ marginTop: "var(--space-2)" }}>
           <Notice tone="warning" title="Oracle update delayed">
-            Last update {ago(oracle.lastUpdateTs, now)}. Trading is restricted until a fresh price
-            lands.
+            Last update {ago(oracle.lastUpdateTs, now)}. Trading is restricted
+            until a fresh price lands.
           </Notice>
         </div>
       )}
@@ -92,7 +122,7 @@ export function OracleStatus({ oracle, now }: { oracle: Oracle; now: number }) {
  *
  * The bar carries the maintenance threshold as a tick, so "how close am I" is
  * spatial rather than a number the user has to compare in their head. Risk gets
- * clearer, not louder — DESIGN.md §28.
+ * clearer, not louder. DESIGN.md §28.
  */
 export function MarginHealth({
   marginBps,
@@ -109,8 +139,10 @@ export function MarginHealth({
   const margin = Number(marginBps) / 100;
   const maintenance = maintenanceBps / 100;
   const ratio = margin / maintenance;
-  const tone = ratio >= 2.5 ? "positive" : ratio >= 1.4 ? "warning" : "negative";
-  const label = ratio >= 2.5 ? "Healthy" : ratio >= 1.4 ? "Thin" : "Near liquidation";
+  const tone =
+    ratio >= 2.5 ? "positive" : ratio >= 1.4 ? "warning" : "negative";
+  const label =
+    ratio >= 2.5 ? "Healthy" : ratio >= 1.4 ? "Thin" : "Near liquidation";
 
   return (
     <div>
@@ -135,7 +167,13 @@ export function MarginHealth({
         value={margin}
         max={Math.max(margin * 1.2, maintenance * 4)}
         segments={14}
-        tone={tone === "positive" ? "positive" : tone === "warning" ? "warning" : "negative"}
+        tone={
+          tone === "positive"
+            ? "positive"
+            : tone === "warning"
+              ? "warning"
+              : "negative"
+        }
         ariaLabel={`Margin ratio ${margin.toFixed(1)} percent, maintenance ${maintenance.toFixed(1)} percent`}
       />
       <dl style={{ margin: "var(--space-3) 0 0" }}>
@@ -149,7 +187,11 @@ export function MarginHealth({
         </div>
         <div className="metric-row">
           <dt>Liquidation price</dt>
-          <dd className="num">{liquidationPrice ? usd(liquidationPrice, { compact: false }) : "—"}</dd>
+          <dd className="num">
+            {liquidationPrice
+              ? usd(liquidationPrice, { compact: false })
+              : "n/a"}
+          </dd>
         </div>
       </dl>
     </div>
@@ -182,7 +224,13 @@ export function CorporateActionCard({
   return (
     <section className="card" style={{ borderLeft: "4px solid var(--lime)" }}>
       <div className="card-head">
-        <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)" }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "var(--space-3)",
+          }}
+        >
           <Chip accent>
             <Icon name="swap" />
           </Chip>
@@ -190,7 +238,9 @@ export function CorporateActionCard({
             <h3 className="card-title">
               {symbol} · {numerator}:{denominator} stock split
             </h3>
-            <div className="card-note">Applied on-chain — positions rescaled automatically</div>
+            <div className="card-note">
+              Applied on-chain, positions rescaled automatically
+            </div>
           </div>
         </div>
         <StatusPill tone="lime" dot={false}>
@@ -204,7 +254,8 @@ export function CorporateActionCard({
           sub="Historical prices on the chart are adjusted"
           value={
             <span>
-              {usd(priceBefore, { compact: false })} → {usd(priceAfter, { compact: false })}
+              {usd(priceBefore, { compact: false })} →{" "}
+              {usd(priceAfter, { compact: false })}
             </span>
           }
         />
@@ -251,12 +302,17 @@ export function ExposureBreakdown({
   total: bigint;
 }) {
   const parts = [
-    { label: "Synthetic long equity", value: syntheticEquity, color: "var(--chart-1)" },
+    {
+      label: "Synthetic long equity",
+      value: syntheticEquity,
+      color: "var(--chart-1)",
+    },
     { label: "Fees earned", value: fees, color: "var(--chart-2)" },
     { label: "Funding received", value: funding, color: "var(--chart-3)" },
     { label: "Trader P&L", value: traderPnl, color: "var(--chart-4)" },
   ];
-  const magnitude = parts.reduce((a, p) => a + Math.abs(Number(p.value)), 0) || 1;
+  const magnitude =
+    parts.reduce((a, p) => a + Math.abs(Number(p.value)), 0) || 1;
 
   return (
     <div>
@@ -264,12 +320,17 @@ export function ExposureBreakdown({
         {parts.map((p) => (
           <span
             key={p.label}
-            style={{ width: `${(Math.abs(Number(p.value)) / magnitude) * 100}%`, background: p.color }}
+            style={{
+              width: `${(Math.abs(Number(p.value)) / magnitude) * 100}%`,
+              background: p.color,
+            }}
           />
         ))}
       </div>
       <div style={{ marginTop: "var(--space-3)" }}>
-        <Legend items={parts.map((p) => ({ label: p.label, color: p.color }))} />
+        <Legend
+          items={parts.map((p) => ({ label: p.label, color: p.color }))}
+        />
       </div>
       <dl style={{ margin: "var(--space-3) 0 0" }}>
         {parts.map((p) => (
@@ -334,7 +395,17 @@ export function HedgeHealth({
             borderRadius: "var(--radius-pill)",
           }}
         />
-        <div aria-hidden style={{ position: "absolute", left: "50%", top: 4, bottom: 4, width: 2, background: "var(--text-muted)" }} />
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: "50%",
+            top: 4,
+            bottom: 4,
+            width: 2,
+            background: "var(--text-muted)",
+          }}
+        />
         <div
           role="meter"
           aria-valuenow={Number(netDelta)}
@@ -352,7 +423,10 @@ export function HedgeHealth({
           }}
         />
       </div>
-      <div className="legend" style={{ marginTop: "var(--space-2)", justifyContent: "space-between" }}>
+      <div
+        className="legend"
+        style={{ marginTop: "var(--space-2)", justifyContent: "space-between" }}
+      >
         <span>Short perp</span>
         <span className="metric-label">TARGET</span>
         <span>Long stock</span>
@@ -361,7 +435,13 @@ export function HedgeHealth({
   );
 }
 
-export function Field({ label, children }: { label: ReactNode; children: ReactNode }) {
+export function Field({
+  label,
+  children,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <div>
       <div className="metric-label">{label}</div>

@@ -13,23 +13,23 @@
 
 ## The thesis
 
-Stocklana is about stocks powered by Solana. The interesting word is **stocks** —
+Stocklana is about stocks powered by Solana. The interesting word is **stocks** -
 because a stock is not a token, and everything on Solana is built for tokens.
 
 Four assumptions are baked into every Solana primitive ever written:
 
 | Every DeFi primitive assumes… | A stock actually… |
 |---|---|
-| the asset trades continuously | trades **19% of the week** — 32.5 hours out of 168 |
+| the asset trades continuously | trades **19% of the week**: 32.5 hours out of 168 |
 | a price always exists | **halts** on news, with no mark at all |
 | supply and price are never restated | **splits 4-for-1** overnight; goes ex-dividend |
 | someone is always on the other side | has no counterparty unless one is funded |
 
 Drop a tokenized AAPL into an AMM, a lending market or a perp engine built for
-tokens and it works — right up until 4pm on a Friday, or an ex-date, or the
+tokens and it works, right up until 4pm on a Friday, or an ex-date, or the
 first time the book goes one-way.
 
-**That is the gap.** Not "can you swap a tokenized stock" — you can, today, in a
+**That is the gap.** Not "can you swap a tokenized stock", you can, today, in a
 weekend. It's whether the thing you built survives contact with how securities
 actually behave.
 
@@ -45,7 +45,7 @@ designed for tokens.
 cargo run --example stock_hazards
 ```
 
-Thirty seconds, no wallet, no validator, no network — just Rust. Every number is
+Thirty seconds, no wallet, no validator, no network, just Rust. Every number is
 produced by the same functions that run on-chain. Abridged:
 
 ### 1. The weekend free option
@@ -84,13 +84,13 @@ sees a 75% crash and liquidates the entire long side of the book.
 
 Solana cannot iterate accounts, so there is no way to walk every position and
 rewrite it. Arclis stores a **cumulative split factor** and each position
-rescales itself the next time it is touched — provably identical to rewriting
+rescales itself the next time it is touched, provably identical to rewriting
 them all, and it rounds once instead of once per split.
 
 ### 3. The counterparty nobody funds
 
 100 shares long from $250, no shorts. The stock rises to $275. Traders are up
-$2,500. A cash-settled venue with no counterparty pays that out of the vault —
+$2,500. A cash-settled venue with no counterparty pays that out of the vault -
 which holds other traders' deposits. **That is not a profit, it's someone else's
 collateral.**
 
@@ -117,14 +117,14 @@ charging for an imbalance nobody can trade out of is a penalty with no lever.
 
 **2. Corporate actions without account iteration.**
 Cumulative split factor on the oracle, lazy per-position normalisation. Notional,
-PnL and unsettled funding are all provably invariant across a split — and lazy
+PnL and unsettled funding are all provably invariant across a split, and lazy
 normalisation is *more* precise than eager, because it rounds once rather than
 once per split.
 → `math/corporate_actions.rs`, 14 tests
 
 **3. A DBC launch where the quote token is a share.**
 Meteora stores thresholds in quote tokens. When the quote token is a share, a
-"$50,000 graduation target" is really 200 AAPL — so the dollar goal floats with
+"$50,000 graduation target" is really 200 AAPL, so the dollar goal floats with
 the stock. Arclis converts at the oracle, reports the lognormal drift band, and
 pins the fee ramp to the **opening bell**: a pool activating while the venue is
 shut starts at 4× base and decays to the floor exactly as the market reopens,
@@ -145,7 +145,7 @@ own keeper going down.
 
 ## Why Solana specifically
 
-Not decoration — the design needs it:
+Not decoration, the design needs it:
 
 - **Hedge rebalancing is continuous and small.** A treasury drifts every time
   the stock moves. On a chain with meaningful fees, the rebalance costs more
@@ -164,7 +164,7 @@ Not decoration — the design needs it:
 | Rust unit tests | **114 passing** |
 | DBC tests, against Meteora's real SDK | **37 passing** |
 | `clippy -D warnings`, `fmt`, `tsc`, prettier | clean |
-| `anchor build` / `anchor test` | **not run** — no Solana toolchain in the authoring environment |
+| `anchor build` / `anchor test` | **not run**: no Solana toolchain in the authoring environment |
 | Deployed to mainnet | **no** |
 
 "Working code on mainnet beats slides" is the right bar, and this has not
@@ -172,7 +172,7 @@ cleared it. What it has: a program that compiles, 151 tests covering every piece
 of arithmetic that decides who gets paid, and tooling whose output has been run
 end to end.
 
-Known gaps are listed plainly in [`FEASIBILITY.md`](FEASIBILITY.md) — the
+Known gaps are listed plainly in [`FEASIBILITY.md`](FEASIBILITY.md), the
 biggest is that a weekend gap will outrun the insurance fund, and the pool can
 still be exhausted by a large enough adverse move. The waterfall makes that
 visible and ordered; it does not make it impossible.
@@ -182,7 +182,7 @@ visible and ordered; it does not make it impossible.
 ## The thirty-second version
 
 Anyone can ship a tokenized-stock swap this weekend. The hard part isn't the
-swap — it's that the underlying closes at 4pm, halts on news, splits four-for-one
+swap, it's that the underlying closes at 4pm, halts on news, splits four-for-one
 overnight, and has nobody on the other side.
 
 Arclis handles all four, and you can watch it do so in one command.

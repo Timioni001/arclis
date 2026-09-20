@@ -53,12 +53,60 @@ interface Seed {
 }
 
 const SEEDS: Seed[] = [
-  { symbol: "AAPL", name: "Apple Inc.", px: 168.16, vol: 0.28, session: "Open", oiLong: 48_000, oiShort: 31_000 },
-  { symbol: "NVDA", name: "NVIDIA Corp.", px: 121.4, vol: 0.52, session: "Open", oiLong: 92_000, oiShort: 40_000 },
-  { symbol: "TSLA", name: "Tesla, Inc.", px: 244.8, vol: 0.61, session: "Open", oiLong: 26_000, oiShort: 38_000 },
-  { symbol: "MSFT", name: "Microsoft Corp.", px: 412.2, vol: 0.24, session: "Closed", oiLong: 18_000, oiShort: 17_400 },
-  { symbol: "AMZN", name: "Amazon.com, Inc.", px: 186.9, vol: 0.33, session: "PreOpen", oiLong: 9_800, oiShort: 11_200 },
-  { symbol: "GME", name: "GameStop Corp.", px: 23.45, vol: 1.1, session: "Halted", oiLong: 14_000, oiShort: 21_500 },
+  {
+    symbol: "AAPL",
+    name: "Apple Inc.",
+    px: 168.16,
+    vol: 0.28,
+    session: "Open",
+    oiLong: 48_000,
+    oiShort: 31_000,
+  },
+  {
+    symbol: "NVDA",
+    name: "NVIDIA Corp.",
+    px: 121.4,
+    vol: 0.52,
+    session: "Open",
+    oiLong: 92_000,
+    oiShort: 40_000,
+  },
+  {
+    symbol: "TSLA",
+    name: "Tesla, Inc.",
+    px: 244.8,
+    vol: 0.61,
+    session: "Open",
+    oiLong: 26_000,
+    oiShort: 38_000,
+  },
+  {
+    symbol: "MSFT",
+    name: "Microsoft Corp.",
+    px: 412.2,
+    vol: 0.24,
+    session: "Closed",
+    oiLong: 18_000,
+    oiShort: 17_400,
+  },
+  {
+    symbol: "AMZN",
+    name: "Amazon.com, Inc.",
+    px: 186.9,
+    vol: 0.33,
+    session: "PreOpen",
+    oiLong: 9_800,
+    oiShort: 11_200,
+  },
+  {
+    symbol: "GME",
+    name: "GameStop Corp.",
+    px: 23.45,
+    vol: 1.1,
+    session: "Halted",
+    oiLong: 14_000,
+    oiShort: 21_500,
+  },
 ];
 
 function buildCandles(px: number, vol: number, seed: number): Candle[] {
@@ -150,13 +198,14 @@ function buildMarket(seed: Seed, index: number): MarketView {
     markPrice,
   );
   // Size the vault so utilisation lands in a believable band rather than an
-  // arbitrary one — this is what the Liquidity screen is really showing.
+  // arbitrary one. This is what the Liquidity screen is really showing.
   const exposure = m.netExposureNotional(oiLong, oiShort, markPrice);
   const targetUtil = 0.35 + rand() * 0.4;
   const vaultBalance =
     m.abs(exposure) === 0n
       ? quote(500_000)
-      : BigInt(Math.round(Number(m.abs(exposure)) / targetUtil)) + (traderPnl > 0n ? traderPnl : 0n);
+      : BigInt(Math.round(Number(m.abs(exposure)) / targetUtil)) +
+        (traderPnl > 0n ? traderPnl : 0n);
 
   const pool: LiquidityPool = {
     address: market.liquidityPool,
@@ -308,13 +357,69 @@ const CORPORATE_ACTIONS: CorporateAction[] = [
 ];
 
 const ACTIVITY: ActivityEvent[] = [
-  { id: "a1", kind: "PositionOpened", ts: NOW - 12, symbol: "AAPL", summary: "Opened AAPL position", detail: "2.50 shares long", signature: "5f2a...9c1" },
-  { id: "a2", kind: "FundingAccrued", ts: NOW - 140, symbol: "AAPL", summary: "Funding settled", detail: "+0.014% · utilisation 58%", signature: "9ab3...2d7" },
-  { id: "a3", kind: "PositionClosed", ts: NOW - 420, symbol: "TSLA", summary: "Reduced TSLA position", detail: "4.00 shares · realised -$18.40", signature: "c17e...4f0" },
-  { id: "a4", kind: "LiquidityDeposited", ts: NOW - 720, symbol: "AAPL", summary: "Provided liquidity", detail: "$5,000 · 4,612.3 shares", signature: "2e88...b35" },
-  { id: "a5", kind: "CorporateActionApplied", ts: NOW - 40 * 3600, symbol: "AAPL", summary: "4:1 stock split applied", detail: "Positions rescaled · no P&L impact", signature: "7d41...aa9" },
-  { id: "a6", kind: "SessionChanged", ts: NOW - 42 * 3600, symbol: "MSFT", summary: "Market closed", detail: "Reduce-only until the next session", signature: "1c09...e62" },
-  { id: "a7", kind: "TreasuryHedgeRebalanced", ts: NOW - 900, symbol: "AAPL", summary: "Treasury hedge rebalanced", detail: "Quant Agent · delta +400 shares", signature: "8b72...31d" },
+  {
+    id: "a1",
+    kind: "PositionOpened",
+    ts: NOW - 12,
+    symbol: "AAPL",
+    summary: "Opened AAPL position",
+    detail: "2.50 shares long",
+    signature: "5f2a...9c1",
+  },
+  {
+    id: "a2",
+    kind: "FundingAccrued",
+    ts: NOW - 140,
+    symbol: "AAPL",
+    summary: "Funding settled",
+    detail: "+0.014% · utilisation 58%",
+    signature: "9ab3...2d7",
+  },
+  {
+    id: "a3",
+    kind: "PositionClosed",
+    ts: NOW - 420,
+    symbol: "TSLA",
+    summary: "Reduced TSLA position",
+    detail: "4.00 shares · realised -$18.40",
+    signature: "c17e...4f0",
+  },
+  {
+    id: "a4",
+    kind: "LiquidityDeposited",
+    ts: NOW - 720,
+    symbol: "AAPL",
+    summary: "Provided liquidity",
+    detail: "$5,000 · 4,612.3 shares",
+    signature: "2e88...b35",
+  },
+  {
+    id: "a5",
+    kind: "CorporateActionApplied",
+    ts: NOW - 40 * 3600,
+    symbol: "AAPL",
+    summary: "4:1 stock split applied",
+    detail: "Positions rescaled · no P&L impact",
+    signature: "7d41...aa9",
+  },
+  {
+    id: "a6",
+    kind: "SessionChanged",
+    ts: NOW - 42 * 3600,
+    symbol: "MSFT",
+    summary: "Market closed",
+    detail: "Reduce-only until the next session",
+    signature: "1c09...e62",
+  },
+  {
+    id: "a7",
+    kind: "TreasuryHedgeRebalanced",
+    ts: NOW - 900,
+    symbol: "AAPL",
+    summary: "Treasury hedge rebalanced",
+    detail: "Quant Agent · delta +400 shares",
+    signature: "8b72...31d",
+  },
 ];
 
 /**
@@ -343,11 +448,15 @@ export const mockSource: DataSource = {
   markets: () => MARKETS,
   market: (symbol) => MARKETS.find((mv) => mv.oracle.symbol === symbol),
   positions: () => POSITIONS,
-  positionFor: (marketAddress) => POSITIONS.find((p) => p.market === marketAddress),
-  lpPosition: (poolAddress) => (poolAddress === LP_POSITION.pool ? LP_POSITION : undefined),
+  positionFor: (marketAddress) =>
+    POSITIONS.find((p) => p.market === marketAddress),
+  lpPosition: (poolAddress) =>
+    poolAddress === LP_POSITION.pool ? LP_POSITION : undefined,
   treasuries: () => TREASURIES,
   treasuryPosition: (treasuryAddress) => TREASURY_POSITIONS[treasuryAddress],
   corporateActions: (symbol) =>
-    symbol ? CORPORATE_ACTIONS.filter((c) => c.symbol === symbol) : CORPORATE_ACTIONS,
+    symbol
+      ? CORPORATE_ACTIONS.filter((c) => c.symbol === symbol)
+      : CORPORATE_ACTIONS,
   activity: (limit = 20) => ACTIVITY.slice(0, limit),
 };

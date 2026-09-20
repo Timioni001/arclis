@@ -15,7 +15,7 @@ cd stocklana-perp-engine
 git checkout claude/quirky-faraday-tls27g
 ```
 
-That last line matters — the work lives on that branch, not on `main`.
+That last line matters, the work lives on that branch, not on `main`.
 
 ---
 
@@ -27,7 +27,7 @@ bash scripts/setup-ubuntu.sh
 
 It installs four things: Rust and Node (programming languages), the Solana
 command-line tool, and Anchor (the framework this is built with). It will ask
-for your password once — that is Ubuntu's installer, not Arclis.
+for your password once, that is Ubuntu's installer, not Arclis.
 
 Most of the time is Anchor compiling itself. It is normal for it to sit quiet
 for ten minutes. Safe to re-run if it stops partway; it skips whatever is
@@ -57,24 +57,24 @@ This runs all four levels of checking and prints a summary:
 
 ### What each line means
 
-**Rust unit tests** — the money logic. Profit and loss, funding, margin,
+**Rust unit tests**: the money logic. Profit and loss, funding, margin,
 liquidation, stock splits, the liquidity pool. 114 separate checks that the
 arithmetic is right. Runs in about a second and needs nothing but Rust.
 
-**DBC tests** — the Meteora launch tooling, checked against Meteora's real
+**DBC tests**: the Meteora launch tooling, checked against Meteora's real
 software. Confirms the pool configuration Arclis generates is one Meteora will
 actually accept.
 
-**anchor build** — compiles the program into something Solana can run.
+**anchor build**: compiles the program into something Solana can run.
 
-**anchor test** — starts a private blockchain on your machine and runs the
+**anchor test**: starts a private blockchain on your machine and runs the
 whole thing end to end: create a market, deposit, open a position, move the
 price, close, liquidate.
 
 ### If the last two fail
 
 **That is expected, and it is not a setback.** The program has never been
-compiled or run before — this is genuinely the first time anyone will see those
+compiled or run before, this is genuinely the first time anyone will see those
 results. The first run of new code almost always surfaces a few small,
 mechanical problems.
 
@@ -88,7 +88,7 @@ that decides who gets paid is correct.
 
 ## See it actually do something
 
-The most interesting thing you can run without a wallet — planning a real token
+The most interesting thing you can run without a wallet, planning a real token
 launch quoted in a tokenized stock:
 
 ```bash
@@ -117,7 +117,7 @@ rationale          AAPL is closed; its quote price is frozen for 18.0h. Anyone
 built and validated against the SDK's own validateConfigParameters.
 ```
 
-**Why this matters.** You asked for $50,000. Meteora does not store "$50,000" —
+**Why this matters.** You asked for $50,000. Meteora does not store "$50,000" -
 it stores "200 AAPL shares". If Apple drops 10%, your $50,000 target quietly
 becomes $45,000. That band is the drift, and no launchpad shows it, because for
 a normal USDC-quoted launch there is nothing to show.
@@ -132,7 +132,7 @@ npm run dbc:plan -- --symbol AAPL --price 250 --vol 0.28 \
   --initial-fdv 5000 --migration-fdv 50000 --session open
 ```
 
-The gap premium disappears — because when the market is open there is no frozen
+The gap premium disappears, because when the market is open there is no frozen
 price to protect against.
 
 ---
@@ -167,7 +167,7 @@ Compiling uses a lot of disk. `cargo clean` frees several gigabytes; the next
 build is slower but works.
 
 **`anchor build` complains about `edition2024`**
-This should not happen — it is the exact problem that was fixed — but if it
+This should not happen, it is the exact problem that was fixed, but if it
 does, someone has run `cargo update`. `BUILD.md` explains the fix, and
 `python3 scripts/audit_msrv.py` diagnoses it.
 
@@ -192,9 +192,9 @@ usually two lines to fix.
 
 ## Where to read next
 
-- **`docs/ARCHITECTURE.md`** — what every part does. Written for whoever builds
+- **`docs/ARCHITECTURE.md`**: what every part does. Written for whoever builds
   the interface.
-- **`docs/HACKATHON.md`** — how this maps to each bounty.
-- **`docs/FEASIBILITY.md`** — the honest assessment, including what is still
+- **`docs/HACKATHON.md`**: how this maps to each bounty.
+- **`docs/FEASIBILITY.md`**: the honest assessment, including what is still
   unsolved.
-- **`BUILD.md`** — the toolchain detail, for a developer.
+- **`BUILD.md`**: the toolchain detail, for a developer.

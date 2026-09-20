@@ -32,7 +32,7 @@ inside Solana's platform-tools:
 | 0.30.1 | 1.18.x               | **1.75.0**    | **1.75.0**    |
 | 0.31.x | 2.1.x                | 1.84.1        | 1.84.1        |
 
-Your host `rustc` can be 1.90 and it makes no difference — the on-chain program
+Your host `rustc` can be 1.90 and it makes no difference, the on-chain program
 is compiled by the bundled 1.75.0.
 
 Meanwhile `Cargo.lock` was resolved by your *host* Cargo, which happily picked
@@ -68,7 +68,7 @@ format. Concretely:
   problem) were pinned by hand: `blake3`, and the `digest 0.11` /
   `block-buffer 0.12` / `crypto-common 0.2` chain it pulled in.
 - Every one of the 251 registry crates in the lock was then audited against
-  crates.io. Two entries still exceed 1.75 — `wasip2` and `wit-bindgen` — and
+  crates.io. Two entries still exceed 1.75, `wasip2` and `wit-bindgen`: and
   both are gated behind `cfg(target_os = "wasi")`, so they are never downloaded
   or parsed for the SBF target. `cargo tree -i wasip2` returns "nothing to
   print" for any non-WASI target, which is the check to re-run if you doubt it.
@@ -96,7 +96,7 @@ yarn install
 anchor test
 ```
 
-`cargo test --lib` is the one to run constantly — 48 tests covering PnL,
+`cargo test --lib` is the one to run constantly, 48 tests covering PnL,
 funding, margin, and the liquidation waterfall, in well under a second. It needs
 no Solana toolchain at all.
 
@@ -117,7 +117,7 @@ anchor keys sync     # rewrites declare_id! and Anchor.toml together
 ```
 
 To purge it from history as well, use `git filter-repo` (or BFG) and force-push
-— coordinate with anyone else who has a clone first.
+- coordinate with anyone else who has a clone first.
 
 ## If you would rather upgrade than pin
 

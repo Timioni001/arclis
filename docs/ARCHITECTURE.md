@@ -3,7 +3,7 @@
 *On-chain access to public markets.*
 
 Written for whoever builds the frontend. It covers every account, every
-instruction, the PDA seeds, and the read model a UI needs — including the parts
+instruction, the PDA seeds, and the read model a UI needs, including the parts
 where the UI has to explain something non-obvious to a user.
 
 ---
@@ -38,8 +38,14 @@ pools whose quote token is a tokenized stock.
 | `AgentTreasury` | `["treasury", agent_mint]` | agent |
 | treasury stock vault | `["treasury_stock", treasury]` | treasury |
 
-Seeds are deliberately generic — the brand is not baked into any address, so a
+Seeds are deliberately generic, the brand is not baked into any address, so a
 rename never moves an account.
+
+`Market` carries `cumulative_dividend_index: i128` beside the funding index, and
+`Position` carries the matching `entry_dividend_index`. Both rescale on a split,
+for the same reason the funding index does: the index is quote-per-base, so if a
+base unit splits into four, the amount per unit must quarter or every position's
+unsettled dividend quadruples the instant the split lands.
 
 Note `Position` is seeded by *owner*, and an `AgentTreasury` owns its hedge
 position. So a treasury's position PDA is `["position", treasury_pda, market]`.
@@ -77,9 +83,9 @@ the middle. A position of `2_500_000` is 2.5 shares.
 
 ### Protocol authority
 - `initialize_global_config(default_fee_bps)`
-- `set_protocol_paused(paused)` — global kill switch
-- `set_market_paused(paused)` — one market
-- `initialize_liquidity_pool(cooldown_secs)` — one per market
+- `set_protocol_paused(paused)`: global kill switch
+- `set_market_paused(paused)`: one market
+- `initialize_liquidity_pool(cooldown_secs)`: one per market
 
 That is the complete list of authority powers. **No instruction anywhere moves
 value from a vault to an address the authority chooses.** Worth stating in the
@@ -88,25 +94,31 @@ UI, because it is unusual and checkable.
 ### Oracle keeper
 - `initialize_price_oracle(symbol, initial_price)`
 - `update_price_oracle(price, confidence)`
-- `set_market_session(session)` — `Open` / `Closed` / `PreOpen` / `Halted`
-- `apply_corporate_action(numerator, denominator)`
+- `set_market_session(session)`: `Open` / `Closed` / `PreOpen` / `Halted`
+- `apply_corporate_action(numerator, denominator)`: splits and reverse splits
+- `apply_dividend(per_share)`: cash dividends
 
 ### Anyone (permissionless)
-- `create_market(params)` — any oracle, strict parameter bounds
-- `crank_funding()` — once an interval has elapsed
-- `liquidate()` — against an undercollateralised position, for a penalty share
-- `rebalance_hedge()` — bring a treasury back to its target hedge
+- `create_market(params)`: any oracle, strict parameter bounds
+- `crank_funding()`: once an interval has elapsed
+- `liquidate()`: against an undercollateralised position, for a penalty share
+- `rebalance_hedge()`: bring a treasury back to its target hedge
+- `deposit_insurance(amount)`: pay into a market's backstop. Permissionless in,
+  no way out, and there is deliberately no withdraw counterpart: an insurance
+  fund a privileged key can drain is not an insurance fund. A deposit retires
+  socialised bad debt before it credits the fund, because the first thing that
+  fund owes is the hole.
 
 ### Traders
 - `deposit_collateral(amount)` / `withdraw_collateral(amount)`
-- `open_position(size_delta)` — signed; `+` long, `-` short
-- `close_position(reduce_size)` — unsigned; pass full size to close out
+- `open_position(size_delta)`: signed; `+` long, `-` short
+- `close_position(reduce_size)`: unsigned; pass full size to close out
 
 ### Liquidity providers
 - `deposit_liquidity(amount)`
-- `request_withdraw_liquidity(shares)` — starts the cooldown
+- `request_withdraw_liquidity(shares)`: starts the cooldown
 - `cancel_withdraw_liquidity()`
-- `withdraw_liquidity()` — settles at NAV *now*
+- `withdraw_liquidity()`: settles at NAV *now*
 
 ### Agents
 - `initialize_treasury(hedge_ratio_bps, rebalance_tolerance_bps)`
@@ -115,7 +127,7 @@ UI, because it is unusual and checkable.
 
 ---
 
-## The three things a UI has to explain
+## The four things a UI has to explain
 
 These are where users will be confused, and where a good frontend earns its
 keep.
@@ -136,7 +148,7 @@ Reducing risk against the same price is just letting someone out. So over a
 weekend, **close and reduce stay available and open does not.**
 
 The error is `CannotIncreaseRiskWhileClosed`, distinct from `StaleOracle`, so
-the UI can say *"AAPL opens Monday 09:30 — you can still close"* rather than
+the UI can say *"AAPL opens Monday 09:30, you can still close"* rather than
 surfacing a generic failure. Read `oracle.session` and render state before the
 user picks an action, not after they fail.
 
@@ -146,7 +158,7 @@ Funding does not accrue while closed.
 
 After `apply_corporate_action`, the oracle price drops by the split ratio and
 every position rescales. Nobody's PnL moves. If the UI shows a raw price chart
-across a split it will look like a 75% crash — read `oracle.split_factor` and
+across a split it will look like a 75% crash, read `oracle.split_factor` and
 `corporate_action_seq` and normalise historical prices, or annotate the point.
 
 Positions rescale **lazily**, on next touch. So a stale position account may
@@ -155,7 +167,31 @@ show a pre-split size until it is next used. Compare
 apply `size * oracle / position` and `entry_price * position / oracle` for
 display.
 
-### 3. LP is not a stablecoin vault
+### 3. A dividend is not a crash either
+
+On the ex-date the share price drops by roughly the dividend, mechanically,
+because the buyer no longer receives it. A holder of the actual share is made
+whole by the cash. A long on a naive perp is not: they take the price drop and
+get nothing back. Run that on a 3% yielder four times a year and being long
+costs 3% a year for no reason, while being short earns it. That is a standing
+arbitrage against every long in the market, and it is not a rounding error.
+
+`apply_dividend(per_share)` moves one `i128` on the market
+(`cumulative_dividend_index`), and every open position settles its own share the
+next time it is touched. Longs are credited, shorts pay, and the direction comes
+from the sign of each position's size rather than from the instruction. Same
+cumulative-index trick as funding and splits, same reason: Solana cannot iterate
+position accounts.
+
+The UI should show the credit beside the price drop, because separately they
+look like a loss and a windfall, and together they are a wash. The test that
+pins this is `the_credit_exactly_offsets_the_ex_date_price_drop`.
+
+Like a split, it is only applied while the venue is shut. Applying it mid-session
+would let a position open after the index moved and before the price dropped,
+collecting the credit without the drop.
+
+### 4. LP is not a stablecoin vault
 
 The pool takes the other side of net trader open interest. In an Arclis equity
 market where agent treasuries are structurally short (they hedge spot holdings),
@@ -167,7 +203,7 @@ alpha". That has to be in the deposit flow. Do not describe it as yield.
 Two limits also need surfacing:
 
 - **Cooldown.** `request_withdraw_liquidity` starts `pool.cooldown_secs`.
-  Shares stay at risk while pending — that is deliberate, and it is what stops
+  Shares stay at risk while pending, that is deliberate, and it is what stops
   a run. Settlement is at NAV when it settles, not when it was requested.
 - **Free liquidity.** Even a matured request is capped at what the open book
   does not need (`liquidity::max_withdrawable`). A fully utilised pool allows no
@@ -188,7 +224,7 @@ market.cumulative_funding_index           -> current funding rate
 market.max_leverage, maintenance_margin_bps, initial_margin_bps
 market.taker_fee_bps
 ```
-Current funding rate is not stored — derive it with
+Current funding rate is not stored, derive it with
 `funding::funding_rate_bps(skew, sensitivity, utilization)`, or read the last
 `FundingAccrued` event, which now carries `utilization_bps` because a rate
 without it is misleading.
@@ -223,7 +259,7 @@ nav_per_token               = nav / tokens_outstanding
 hedge health                = |net_delta| vs tolerance band
 ```
 `treasury.last_nav_per_token` is a cache refreshed on rebalance. For a live
-figure, recompute — the cache can be hours stale in a quiet market.
+figure, recompute, the cache can be hours stale in a quiet market.
 
 ## Events
 
@@ -261,27 +297,43 @@ loaded pool automatically pays more to whoever will unload it.
 Every trading instruction follows the same sequence, and the order is not
 interchangeable:
 
-1. Guards — pause, authority, account matching
+1. Guards, pause, authority, account matching
 2. Validate the oracle price **for the intended use** (`IncreaseRisk` / `ReduceRisk`)
-3. `sync_position` — corporate actions **then** funding
+3. `sync_and_settle`: splits **then** dividends and funding, then move the money
 4. Call into `math/`
 5. Write state, reconcile market accounting, settle with the pool
 6. Emit
 
-Step 3's ordering matters: funding settlement multiplies size by an index delta,
-and both are in pre-split units. Settling first would charge funding against a
-size that no longer exists.
+Step 3's ordering matters: both dividend and funding settlement multiply size by
+an index delta, and all three quantities are in pre-split units. Settling first
+would charge against a size that no longer exists.
+
+Step 3 also *moves tokens*, which it did not always. `sync_position` alone
+rewrites the position; on its own it would credit a long its dividend and leave
+the market vault short by exactly that much. Funding has the same shape: it is
+only self-financing when long and short open interest are equal, and they never
+are. So `guards::sync_and_settle` reconciles the market's liability total and
+transfers the difference to or from the pool, in the same instruction. The
+amount moved is read back from the position's collateral rather than taken from
+the owed figures, because both settlements saturate at zero when a position
+cannot cover the charge, and booking the owed amount would let
+`total_collateral` drift above the sum of live positions.
+
+This is why `open_position` and `withdraw_collateral` now carry the pool, the
+pool vault and the token program in their account lists.
 
 ## Status
 
 | | |
 |---|---|
 | `cargo check` / `clippy -D warnings` / `fmt` | clean |
-| Rust unit tests | **114 passing** |
+| Rust unit tests | **127 passing** |
 | DBC TypeScript tests | **37 passing** |
+| App tests | **66 passing**: read model against the Rust, plus registry scoring |
+| Interface audit | clean: 6 screens x 3 widths x 2 themes, no overflow, clipping, contrast failure or undersized target |
 | `tsc --noEmit`, prettier | clean |
-| `anchor build` / `anchor test` | **not run** — no Solana toolchain in the authoring environment |
+| `anchor build` / `anchor test` | **not run**: no Solana toolchain in the authoring environment |
 | Deployed | **no** |
 
-Before the UI goes anywhere near real money, read [`../BUILD.md`](../BUILD.md) —
+Before the UI goes anywhere near real money, read [`../BUILD.md`](../BUILD.md) -
 the program keypair's secret key is in git history and must be rotated.
