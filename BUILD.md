@@ -241,6 +241,58 @@ that earlier instructions had you add by hand has been in
 `programs/arclis/Cargo.toml` since the restructure, so a local copy of it is
 redundant.
 
+### "Test validator does not look started"
+
+```
+Unable to get latest blockhash. Test validator does not look started.
+```
+
+Four causes, in the order they actually occur. `scripts/anchor-test.sh` handles
+all of them and prints the validator log when it still fails, which is the only
+thing that says which one it was.
+
+**1. Anchor's five-second stopwatch.** `solana-test-validator` builds a genesis
+ledger on first start and routinely takes 20 to 40 seconds on an older machine
+or under WSL. Anchor's default `startup_wait` is 5000ms. `Anchor.toml` now sets
+90000, which costs nothing when the validator is quick because Anchor polls and
+proceeds as soon as it answers.
+
+**2. The open-file limit.** The classic WSL killer. Ubuntu ships a limit of
+1024 descriptors; the validator opens far more and dies during genesis with
+nothing useful on stdout. The script raises it for its own shell. To raise the
+hard limit permanently, add to `/etc/security/limits.conf`:
+
+```
+<your-username> hard nofile 65536
+```
+
+then close and reopen the WSL terminal.
+
+**3. A stray validator or a wedged ledger.** An aborted run leaves a process
+holding the ports, or a half-written `.anchor/test-ledger`. Both make the next
+start fail silently. The script clears them.
+
+**4. Memory.** The validator wants around 1.5GB and WSL2 defaults to half the
+host's RAM. On an older machine that can land under it without saying so.
+Create `%UserProfile%\.wslconfig` in Windows:
+
+```
+[wsl2]
+memory=4GB
+```
+
+then `wsl --shutdown` in PowerShell and reopen Ubuntu.
+
+### Running the validator yourself
+
+When the validator is the problem rather than the tests, run it where you can
+see its output:
+
+```bash
+solana-test-validator --reset          # terminal one
+USE_RUNNING_VALIDATOR=1 bash scripts/anchor-test.sh   # terminal two
+```
+
 ### The platform-tools notice
 
 ```

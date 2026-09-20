@@ -36,7 +36,7 @@ die()  { printf '\n  %serror%s %s\n\n' "$red" "$off" "$1" >&2; exit 1; }
 
 # --- 0. preflight ----------------------------------------------------------
 
-step "0/5  Checking the toolchain"
+step "0/6  Checking the toolchain"
 
 command -v anchor >/dev/null || die "anchor not found. Run scripts/setup-ubuntu.sh first."
 command -v solana >/dev/null || die "solana not found. Run scripts/setup-ubuntu.sh first."
@@ -53,14 +53,14 @@ ok "wallet $(solana-keygen pubkey "$WALLET")"
 
 # --- 1. build the program, skipping the IDL step ---------------------------
 
-step "1/5  Building the program (skipping Anchor's IDL step)"
+step "1/6  Building the program (skipping Anchor's IDL step)"
 
 anchor build --no-idl || die "anchor build --no-idl failed. That is a real program build failure, not the IDL issue."
 ok "program built"
 
 # --- 2. reconcile the program ID -------------------------------------------
 
-step "2/5  Reconciling the program ID with the keypair on disk"
+step "2/6  Reconciling the program ID with the keypair on disk"
 
 KEYPAIR="target/deploy/arclis-keypair.json"
 [ -f "$KEYPAIR" ] || die "$KEYPAIR was not produced by the build."
@@ -106,7 +106,7 @@ fi
 
 # --- 3. stage the committed IDL --------------------------------------------
 
-step "3/5  Staging the committed IDL"
+step "3/6  Staging the committed IDL"
 
 [ -f idl/arclis.json ] || die "idl/arclis.json is missing. Run: python3 scripts/build-idl.py"
 
@@ -122,15 +122,108 @@ ok "target/idl/arclis.json ($IX_COUNT instructions, $IDL_ID)"
 
 # --- 4. dependencies for the test runner -----------------------------------
 
-step "4/5  Checking the test runner"
+step "4/6  Checking the test runner"
 
 [ -d node_modules ] || { warn "node_modules missing; installing"; npm install --silent; }
 command -v yarn >/dev/null || ok "yarn not installed (Anchor.toml uses npx, so that is fine)"
 ok "ts-mocha available"
 
-# --- 5. run ----------------------------------------------------------------
+# --- 5. clear the way for the validator ------------------------------------
 
-step "5/5  Running the integration suite"
+step "5/6  Preparing the local validator"
 
-printf '  a local validator starts automatically and is torn down after\n\n'
+# A stray validator from an aborted run holds the ports and the new one dies
+# silently. This is the single most common reason for "does not look started".
+# `-x` matches the executable name, never the command line. `pgrep -f` would
+# also match any shell whose command line happens to contain the string, and
+# the matching `pkill -f` would then kill the terminal you are running this in.
+if pgrep -x solana-test-validator >/dev/null 2>&1; then
+  warn "a solana-test-validator is already running; stopping it"
+  pkill -x solana-test-validator || true
+  sleep 3
+else
+  ok "no stray validator"
+fi
+
+# A half-written ledger from a killed run wedges startup. It is disposable:
+# `anchor test` builds a fresh one every time.
+if [ -d .anchor/test-ledger ] || [ -d test-ledger ]; then
+  rm -rf .anchor/test-ledger test-ledger
+  ok "cleared the stale ledger"
+fi
+
+# The classic WSL killer. Ubuntu ships a 1024 descriptor limit; the validator
+# opens far more than that and exits during genesis with nothing useful on
+# stdout. Raising it for this shell is enough, and needs no privileges as long
+# as the hard limit allows it.
+ulimit -n 65536 2>/dev/null || ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
+NOFILE="$(ulimit -n)"
+if [ "$NOFILE" != "unlimited" ] && [ "$NOFILE" -lt 10000 ]; then
+  warn "open-file limit is only $NOFILE; the validator usually needs ~65536"
+  printf '        to raise the hard limit permanently, add to /etc/security/limits.conf:\n'
+  printf '            %s hard nofile 65536\n' "$(whoami)"
+  printf '        then close and reopen the WSL terminal.\n'
+else
+  ok "open files $NOFILE"
+fi
+
+# The validator wants roughly 1.5GB. WSL2 defaults to half the host's RAM, so
+# an older machine can land under that without saying so.
+if [ -r /proc/meminfo ]; then
+  AVAIL_MB=$(( $(awk '/MemAvailable/ {print $2}' /proc/meminfo) / 1024 ))
+  if [ "$AVAIL_MB" -lt 1500 ]; then
+    warn "only ${AVAIL_MB}MB of memory available; the validator wants ~1500MB"
+    printf '        in Windows, create %%UserProfile%%\\.wslconfig with:\n'
+    printf '            [wsl2]\n            memory=4GB\n'
+    printf '        then run `wsl --shutdown` in PowerShell and reopen Ubuntu.\n'
+  else
+    ok "memory ${AVAIL_MB}MB available"
+  fi
+fi
+
+# --- 6. run ----------------------------------------------------------------
+
+step "6/6  Running the integration suite"
+
+LOG=".anchor/test-ledger/test-ledger-log.txt"
+
+if [ "${USE_RUNNING_VALIDATOR:-}" = "1" ]; then
+  printf '  using a validator you started yourself\n\n'
+  anchor test --skip-build --skip-local-validator
+  exit $?
+fi
+
+printf '  starting a local validator (up to 90s on a slower machine)\n\n'
+
+set +e
 anchor test --skip-build
+RC=$?
+set -e
+
+if [ "$RC" -ne 0 ]; then
+  # Anchor points at the log and leaves you to find it. Print it here: it is
+  # the only thing that says why the validator did not come up.
+  if [ -f "$LOG" ]; then
+    step "Validator log (last 40 lines of $LOG)"
+    tail -40 "$LOG"
+  else
+    step "No validator log was written"
+    printf '  %s does not exist, so the validator died before it could open it.\n' "$LOG"
+    printf '  That is almost always the descriptor limit or memory, both reported above.\n'
+  fi
+
+  cat <<'NEXT'
+
+  If the validator is the problem rather than the tests, run it yourself in a
+  second terminal, where its output is visible:
+
+      solana-test-validator --reset
+
+  then, in this one:
+
+      USE_RUNNING_VALIDATOR=1 bash scripts/anchor-test.sh
+
+NEXT
+fi
+
+exit "$RC"

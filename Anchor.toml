@@ -23,6 +23,18 @@ url = "https://api.apr.dev"
 cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
 
+[test]
+# Anchor's default is 5000ms, which is not enough on a slower machine or under
+# WSL: `solana-test-validator` builds a genesis ledger on first start and
+# routinely takes 20 to 40 seconds. Anchor then reports "Unable to get latest
+# blockhash. Test validator does not look started", which reads like a crash
+# and is really a stopwatch.
+#
+# Waiting longer costs nothing when the validator is quick, because Anchor
+# polls and proceeds as soon as it answers.
+startup_wait = 90000
+shutdown_wait = 5000
+
 [scripts]
 # npx rather than yarn: yarn is one more thing to install on a fresh machine,
 # and npm ships with Node. Scoped to tests/arclis.ts so `anchor test` does not
