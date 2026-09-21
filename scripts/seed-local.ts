@@ -72,6 +72,7 @@ interface Args {
   programId?: string;
   airdrop: string[];
   writeEnv: boolean;
+  allowMainnet: boolean;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -82,6 +83,7 @@ function parseArgs(argv: string[]): Args {
       path.join(os.homedir(), ".config", "solana", "id.json"),
     airdrop: [],
     writeEnv: false,
+    allowMainnet: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -107,6 +109,9 @@ function parseArgs(argv: string[]): Args {
       case "--write-env":
         args.writeEnv = true;
         break;
+      case "--allow-mainnet":
+        args.allowMainnet = true;
+        break;
       case "--help":
       case "-h":
         console.log(USAGE);
@@ -128,6 +133,7 @@ const USAGE = `
     --airdrop <pubkey>    give a wallet SOL and quote tokens. Repeatable.
                           Use this for the wallet you connect in the browser.
     --write-env           write app/.env.local instead of printing it
+    --allow-mainnet       required before this will touch a mainnet URL
 `;
 
 /**
@@ -170,6 +176,35 @@ function localQuoteMintKeypair(): Keypair {
   return Keypair.fromSeed(seed.subarray(0, 32));
 }
 
+/**
+ * Which cluster a URL points at.
+ *
+ * The interface reads `VITE_CLUSTER` to build explorer links, and it accepts
+ * exactly three values. Writing `localnet` for a devnet URL produces links of
+ * the form `?cluster=custom&customUrl=...`, which is the wrong shape for a
+ * public cluster. Unrecognised hosts fall back to devnet, matching what
+ * `config.ts` does with a value it does not know, because guessing mainnet
+ * for a private endpoint is the dangerous direction to be wrong in.
+ */
+type Cluster = "localnet" | "devnet" | "mainnet-beta";
+
+function clusterFor(url: string): { cluster: Cluster; certain: boolean } {
+  const host = (() => {
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return url;
+    }
+  })();
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return { cluster: "localnet", certain: true };
+  }
+  if (/devnet/i.test(host)) return { cluster: "devnet", certain: true };
+  if (/testnet/i.test(host)) return { cluster: "devnet", certain: false };
+  if (/mainnet/i.test(host)) return { cluster: "mainnet-beta", certain: true };
+  return { cluster: "devnet", certain: false };
+}
+
 const dollars = (n: number) => new BN(Math.round(n * SCALE));
 const units = (n: number) => new BN(Math.round(n * SCALE));
 
@@ -187,6 +222,21 @@ async function exists(conn: Connection, address: PublicKey): Promise<boolean> {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  // Before anything opens a socket. This script creates markets and mints
+  // millions of quote tokens; against a local validator or devnet that is the
+  // point, and against mainnet it is a mistake somebody is one flag away from
+  // making. Refusing after the connection is made is refusing too late to be
+  // reassuring.
+  const { cluster, certain } = clusterFor(args.url);
+  if (cluster === "mainnet-beta" && !args.allowMainnet) {
+    throw new Error(
+      "that URL looks like mainnet.\n" +
+        "  This seeds five markets and mints its own quote token, which is not\n" +
+        "  something to do by accident on a live cluster. If you meant it,\n" +
+        "  pass --allow-mainnet.",
+    );
+  }
 
   // Three things can be wrong before a single instruction is built, and each
   // one has a different fix. A parse error from deep inside a keypair loader
@@ -241,15 +291,39 @@ async function main() {
 
   console.log(`\n  program   ${programId.toBase58()}`);
   console.log(`  payer     ${walletKp.publicKey.toBase58()}`);
-  console.log(`  rpc       ${args.url}\n`);
+  console.log(`  rpc       ${args.url}`);
+  console.log(`  cluster   ${cluster}${certain ? "" : "  (guessed from the URL)"}\n`);
 
   // --- payer funding -------------------------------------------------------
+  //
+  // A local validator hands out whatever you ask for. Devnet's faucet is rate
+  // limited and rejects large requests outright, so asking it for 50 SOL fails
+  // the whole run rather than funding anything. Ask for what that faucet will
+  // actually give, and when it refuses, say so and check whether there is
+  // enough already rather than dying on a request that was optional.
+  const MIN_SOL = 0.5;
   const balance = await conn.getBalance(walletKp.publicKey);
   if (balance < 5 * LAMPORTS_PER_SOL) {
-    say("airdropping SOL to the payer");
-    await conn.confirmTransaction(
-      await conn.requestAirdrop(walletKp.publicKey, 50 * LAMPORTS_PER_SOL),
-      "confirmed",
+    const ask = cluster === "localnet" ? 50 : 2;
+    say(`requesting ${ask} SOL for the payer`);
+    try {
+      await conn.confirmTransaction(
+        await conn.requestAirdrop(walletKp.publicKey, ask * LAMPORTS_PER_SOL),
+        "confirmed",
+      );
+    } catch (e: any) {
+      console.log(`      faucet refused: ${e?.message ?? e}`);
+    }
+  }
+
+  const funded = await conn.getBalance(walletKp.publicKey);
+  console.log(`      balance ${(funded / LAMPORTS_PER_SOL).toFixed(3)} SOL`);
+  if (funded < MIN_SOL * LAMPORTS_PER_SOL) {
+    throw new Error(
+      `the payer holds ${(funded / LAMPORTS_PER_SOL).toFixed(3)} SOL, and ` +
+        `seeding ${LISTINGS.length} markets needs about ${MIN_SOL}.\n` +
+        "  Top it up with `solana airdrop 2` (repeat if rate limited) or\n" +
+        "  https://faucet.solana.com, then run this again. It resumes.",
     );
   }
 
@@ -438,10 +512,17 @@ async function main() {
     say(`funding ${target.toBase58()}`);
     const bal = await conn.getBalance(target);
     if (bal < 2 * LAMPORTS_PER_SOL) {
-      await conn.confirmTransaction(
-        await conn.requestAirdrop(target, 10 * LAMPORTS_PER_SOL),
-        "confirmed",
-      );
+      const ask = cluster === "localnet" ? 10 : 1;
+      try {
+        await conn.confirmTransaction(
+          await conn.requestAirdrop(target, ask * LAMPORTS_PER_SOL),
+          "confirmed",
+        );
+      } catch (e: any) {
+        // The quote tokens below are the part that matters and are minted, not
+        // begged for. A refused faucet should not cost the caller those.
+        console.log(`      faucet refused SOL: ${e?.message ?? e}`);
+      }
     }
     const ata = getAssociatedTokenAddressSync(quoteMint, target);
     if (!(await exists(conn, ata))) {
@@ -453,9 +534,9 @@ async function main() {
 
   // --- what the interface needs to read any of this ------------------------
   const env = [
-    "# Written by `npm run seed`. Local validator only.",
+    `# Written by \`npm run seed\` against ${cluster}.`,
     "VITE_DATA_SOURCE=rpc",
-    "VITE_CLUSTER=localnet",
+    `VITE_CLUSTER=${cluster}`,
     `VITE_RPC_URL=${args.url}`,
     `VITE_PROGRAM_ID=${programId.toBase58()}`,
     `VITE_QUOTE_MINT=${quoteMint.toBase58()}`,
