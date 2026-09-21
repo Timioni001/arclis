@@ -464,6 +464,24 @@ a {
   flex: none;
 }
 
+/* Below 600px the strip stops being a row and becomes a stack.
+
+   Measured rather than guessed: it holds one line down to 600px, breaks to two
+   at 580 and to three by 390, where it adds 152px to the hero - the headline,
+   the sentence and the call to action all get pushed down by a credits list
+   nobody opened the page for.
+
+   It is not dropped, it is deferred. The footer carries the same three with
+   their full roles at the end of every page, which on a phone is where a
+   "built on" list belongs anyway: you earn the attention with the product
+   first and spend it on provenance afterwards. Nothing is lost from the
+   accessibility tree either, because those links are the same links. */
+@media (max-width: 599px) {
+  .hero-eco {
+    display: none;
+  }
+}
+
 /* A name set in the interface's own type, for the marks this build cannot
    reproduce faithfully. Deliberately not logo-shaped: it should read as
    Arclis referring to someone, not as an imitation of their identity.
