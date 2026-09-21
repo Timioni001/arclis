@@ -41,3 +41,6 @@ pipeline/dist/
 # Python bytecode, from running the asset scripts
 __pycache__/
 *.pyc
+
+# Wrangler's local state and build cache.
+.wrangler/

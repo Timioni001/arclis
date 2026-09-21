@@ -1,15 +1,16 @@
 # Build and test the interface on every change to it.
 #
-# This is a gate, not a deploy. The site is published by Cloudflare Pages,
-# which builds from this repository itself on push; nothing here uploads
+# This is a gate, not a deploy. The site is published by Cloudflare, which
+# builds from this repository itself on push and deploys with
+# `npx wrangler deploy` against `app/wrangler.jsonc`; nothing here uploads
 # anything. What this exists for is to fail loudly in a pull request when the
 # interface stops typechecking, stops passing its tests, or stops building -
 # before Cloudflare tries the same thing and serves the last good version
 # while nobody notices the new one never shipped.
 #
-# It deliberately builds the way Cloudflare does: no `VITE_BASE`, so the app
-# is rooted at `/`. A gate that builds differently from production is not a
-# gate.
+# It deliberately builds the way Cloudflare does: `working-directory: app`
+# and no `VITE_BASE`, so the app is rooted at `/`. A gate that builds
+# differently from production is not a gate.
 #
 # It used to deploy to GitHub Pages. That was dropped when the project moved
 # to Cloudflare: two publishers for one site is one more than can be right,

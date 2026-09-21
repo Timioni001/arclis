@@ -1,0 +1,27 @@
+{
+  // Publishing config for Cloudflare.
+  //
+  // Connecting this repository to Cloudflare produces a Worker, not a Pages
+  // project - that is the path the dashboard takes now - and a Worker deploys
+  // with `npx wrangler deploy`, which reads this file. Without it the build
+  // succeeds and the deploy step has nothing to publish.
+  //
+  // There is no `main`: this is a static-assets-only Worker. No server code
+  // runs, Cloudflare just serves `dist/` from its edge, which is exactly what
+  // a Vite SPA needs and is why there is no Worker script to review.
+  //
+  // Keep `name` equal to the project name in the dashboard. A mismatch does
+  // not error - it creates a second Worker on a second hostname and leaves
+  // the first one serving whatever it last had.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "arclis",
+  "compatibility_date": "2026-09-21",
+  "assets": {
+    "directory": "./dist",
+    // Arclis routes in `useState`, so there are no deep links to resolve -
+    // but someone sent a link to /registry would otherwise get Cloudflare's
+    // 404 instead of the site. This is consulted only after a static asset
+    // fails to match, so it cannot shadow a real file.
+    "not_found_handling": "single-page-application"
+  }
+}

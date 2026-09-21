@@ -1,8 +1,0 @@
-# Cloudflare Pages: serve the app for any path it does not have a file for.
-#
-# Arclis routes in `useState` rather than with a router, so there are no deep
-# links to resolve - but a visitor who types or is sent /registry would
-# otherwise get Cloudflare's 404 page instead of the site. A 200 rewrite is
-# only consulted after static assets fail to match, so this cannot shadow a
-# real file.
-/*  /index.html  200
