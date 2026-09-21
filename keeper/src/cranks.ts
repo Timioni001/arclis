@@ -183,7 +183,14 @@ export async function scanPositions(
   const out: ScannedPosition[] = [];
   for (const { pubkey, account } of accounts) {
     try {
-      const decoded = coder.accounts.decode("position", account.data) as Record<
+      // "Position", not "position", and `entry_price`, not `entryPrice`.
+      //
+      // A raw `BorshCoder` uses the names the IDL uses; only `Program` does
+      // the camelCase translation. Get the account name wrong and Anchor
+      // throws "Account not found: position"; get a field name wrong and it
+      // is `undefined.toString()`, which is worse, because the catch below
+      // swallows it and the scan silently finds no positions to liquidate.
+      const decoded = coder.accounts.decode("Position", account.data) as Record<
         string,
         any
       >;
@@ -192,9 +199,9 @@ export async function scanPositions(
         owner: decoded.owner,
         market: decoded.market,
         size: BigInt(decoded.size.toString()),
-        entryPrice: BigInt(decoded.entryPrice.toString()),
+        entryPrice: BigInt(decoded.entry_price.toString()),
         collateral: BigInt(decoded.collateral.toString()),
-        entryFundingIndex: BigInt(decoded.entryFundingIndex.toString()),
+        entryFundingIndex: BigInt(decoded.entry_funding_index.toString()),
       });
     } catch {
       // A future account layout, or a partially written account. Skipping one
@@ -307,12 +314,12 @@ export async function liquidatePass(options: LiquidatorOptions): Promise<{
       await config.connection.getMultipleAccountsInfo([a.market, a.oracle]);
     if (!marketInfo || !oracleInfo) continue;
 
-    const market = coder.accounts.decode("market", marketInfo.data) as Record<
+    const market = coder.accounts.decode("Market", marketInfo.data) as Record<
       string,
       any
     >;
     const oracle = coder.accounts.decode(
-      "priceOracle",
+      "PriceOracle",
       oracleInfo.data,
     ) as Record<string, any>;
 
@@ -322,8 +329,8 @@ export async function liquidatePass(options: LiquidatorOptions): Promise<{
     if (session === "preopen" || session === "halted") continue;
 
     const markPrice = BigInt(oracle.price.toString());
-    const fundingIndex = BigInt(market.cumulativeFundingIndex.toString());
-    const maintenance = BigInt(market.maintenanceMarginBps);
+    const fundingIndex = BigInt(market.cumulative_funding_index.toString());
+    const maintenance = BigInt(market.maintenance_margin_bps);
 
     const positions = await scanPositions(config, a.market);
     scanned += positions.length;

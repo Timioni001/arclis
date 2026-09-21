@@ -59,12 +59,68 @@ function ix(
   });
 }
 
-/** Anchor encodes a fieldless enum as `{ open: {} }`. */
+/**
+ * Anchor encodes a fieldless enum as `{ Open: {} }` - the variant spelled
+ * exactly as the IDL spells it.
+ *
+ * This used to lowercase the first letter, on the reasonable-sounding belief
+ * that Anchor camelCases. `Program` does; a raw `BorshCoder` does not, and
+ * this is a raw one. The layout then matches no variant and throws "unable to
+ * infer src variant" from inside buffer-layout - a message that names neither
+ * the instruction nor the enum - so every session write the keeper has ever
+ * attempted failed, and the failure looked like a library problem.
+ */
 function sessionArg(session: MarketSession) {
-  return { [session.charAt(0).toLowerCase() + session.slice(1)]: {} } as Record<
-    string,
-    Record<string, never>
-  >;
+  return { [session]: {} } as Record<string, Record<string, never>>;
+}
+
+/**
+ * The largest price the program will accept in one update, moving toward
+ * `target`.
+ *
+ * `check_deviation` rejects an update more than `MAX_ORACLE_DEVIATION_BPS`
+ * (1000, ten percent) from the price already on-chain. That is a per-update
+ * cap, not an absolute one, and the program says so itself: it "cannot stop a
+ * determined attacker who walks the price over many updates, but it removes
+ * the one-transaction drain".
+ *
+ * Which is what makes a walk the correct response to the one situation the
+ * cap cannot distinguish from an attack: an oracle that has been off long
+ * enough for the market to move past the cap. A seeded price of $228.50
+ * against a real $338.98 is 48% away, and every single publish is rejected
+ * forever. The feed is right, the chain is stale, and nothing gets better by
+ * waiting.
+ *
+ * 950 bps rather than 1000, because the on-chain check floors its division
+ * and a step computed to land exactly on the boundary can land a basis point
+ * the wrong side of it.
+ */
+export const CATCHUP_STEP_BPS = 950n;
+const BPS = 10_000n;
+
+export function cappedStep(
+  current: bigint,
+  target: bigint,
+  stepBps: bigint = CATCHUP_STEP_BPS,
+): bigint {
+  // A never-published oracle has no anchor to deviate from, and the program
+  // waves it through.
+  if (current === 0n) return target;
+
+  const maxDelta = (current * stepBps) / BPS;
+  const delta = target - current;
+  if (delta <= maxDelta && -delta <= maxDelta) return target;
+
+  // Integer division floors, so below about 11 units of price scale the step
+  // rounds to nothing - and a step of nothing is not a slow walk, it is an
+  // infinite one: publish, no movement, reject, publish again, paying a fee
+  // every tick and never arriving. Real prices are millionths of a dollar and
+  // never get near this, which is exactly why it would never have been found
+  // in use. Hand back the target instead and let the program reject it once,
+  // loudly, rather than looping in silence.
+  if (maxDelta === 0n) return target;
+
+  return delta > 0n ? current + maxDelta : current - maxDelta;
 }
 
 export interface KeeperState {
@@ -83,6 +139,13 @@ export interface KeeperOptions {
   feed: PriceFeed;
   symbols: string[];
   state: KeeperState;
+  /**
+   * Walk the price toward the feed in capped steps when the program rejects
+   * an update as too large a jump. Off by default: the same rejection means
+   * "the feed is lying" and "the chain is behind", and only a person knows
+   * which. See `cappedStep`.
+   */
+  catchUp?: boolean;
   /** Overridable for tests. */
   now?: () => number;
 }
@@ -216,17 +279,76 @@ export async function keeperTick(options: KeeperOptions): Promise<{
         published.push(symbol);
       } else if (outcome.error === "OracleDeviationTooLarge") {
         // The program's own circuit breaker fired. This is the correct
-        // outcome for a bad tick and the wrong one for a real gap, and only a
-        // human can tell those apart, so it is loud.
-        config.log(
-          "error",
-          `${symbol} moved more than the deviation cap allows`,
-          {
-            price: quote.price.toString(),
-            hint: "verify against a second source before overriding",
-          },
-        );
-        skipped.push(symbol);
+        // outcome for a bad tick and the wrong one for an oracle that has
+        // simply been off while the market moved, and only a human can tell
+        // those apart - so catching up is opt-in, and loud either way.
+        if (!options.catchUp) {
+          config.log(
+            "error",
+            `${symbol} moved more than the deviation cap allows`,
+            {
+              price: quote.price.toString(),
+              hint: "verify against a second source, then set ORACLE_CATCHUP=yes to walk it in steps",
+            },
+          );
+          skipped.push(symbol);
+        } else {
+          // Read the price actually on-chain - the step has to be measured
+          // from it, and this is the only path that needs it, so the normal
+          // case pays nothing for the extra call.
+          const info = await config.connection.getAccountInfo(oracle);
+          if (!info) {
+            skipped.push(symbol);
+          } else {
+            const current = BigInt(
+              (
+                coder.accounts.decode("PriceOracle", info.data) as {
+                  price: { toString(): string };
+                }
+              ).price.toString(),
+            );
+            const step = cappedStep(current, quote.price);
+            const stepped = await send(
+              config,
+              [
+                ix(
+                  config.programId,
+                  "update_price_oracle",
+                  {
+                    price: new BN(step.toString()),
+                    confidence: new BN(quote.confidence.toString()),
+                  },
+                  [
+                    {
+                      pubkey: config.payer.publicKey,
+                      isSigner: true,
+                      isWritable: false,
+                    },
+                    { pubkey: oracle, isSigner: false, isWritable: true },
+                  ],
+                ),
+              ],
+              `update_price_oracle ${symbol} (catching up)`,
+            );
+            config.log("warn", `${symbol} catching up in capped steps`, {
+              from: current.toString(),
+              to: step.toString(),
+              target: quote.price.toString(),
+              arrived: step === quote.price,
+              ok: stepped.ok,
+            });
+            // Deliberately not recording `printedAt`: this is not the print,
+            // it is a step toward it. Recording it would make the next tick
+            // treat the real price as already published and stop the walk one
+            // step short, forever.
+            if (stepped.ok && step === quote.price) {
+              state.printedAt.set(symbol, quote.printedAt);
+              published.push(symbol);
+            } else {
+              skipped.push(symbol);
+            }
+          }
+        }
       } else {
         skipped.push(symbol);
       }

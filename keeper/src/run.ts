@@ -176,6 +176,9 @@ async function main() {
           feed,
           symbols: SYMBOLS,
           state,
+          // Opt-in, because the rejection it responds to is ambiguous. See
+          // `cappedStep` in oracle-keeper.ts.
+          catchUp: env.ORACLE_CATCHUP === "yes",
         });
         health.published(result.published);
         if (result.published.length || result.sessionsChanged.length) {
