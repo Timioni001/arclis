@@ -443,6 +443,29 @@ async function main() {
       await pace();
     }
 
+    // Publish the price, which is what a keeper does and what the program
+    // insists on. `set_market_session` refuses to open against a mark older
+    // than MAX_ORACLE_STALENESS_SECS - 60 seconds - so that nobody walks
+    // through the door and trades against Friday's close, and every
+    // risk-increasing instruction applies the same rule.
+    //
+    // On a local validator this script runs fast enough that the oracle it
+    // just created is still fresh and the point never comes up. On devnet a
+    // resumed run finds an oracle from an hour ago, and the program is right
+    // to refuse it. Seeding twice is not a reason to weaken a staleness rule;
+    // it is a reason for the seeder to behave like the keeper it stands in
+    // for. Called again before the position opens, because sixty seconds is
+    // not many when every instruction is a network round trip.
+    const publishPrice = async () => {
+      await program.methods
+        .updatePriceOracle(dollars(listing.price), new BN(0))
+        .accounts({ authority: walletKp.publicKey, oracle })
+        .rpc();
+      await pace();
+    };
+
+    await publishPrice();
+
     // A fresh oracle starts Closed, which refuses every increase-risk action.
     // Forced open here so the interface is usable at any hour; the keeper is
     // what decides this from the real NYSE calendar in a running system.
@@ -523,6 +546,8 @@ async function main() {
     // one of them is short so the interface is not only ever exercised from
     // the long side.
     if (listing.long !== 0 && !(await exists(conn, position))) {
+      await publishPrice();
+
       await program.methods
         .depositCollateral(units(TRADER_COLLATERAL))
         .accounts({
