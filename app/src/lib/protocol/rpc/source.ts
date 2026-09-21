@@ -185,6 +185,25 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
         });
       }
 
+      /*
+       * A read that finds nothing does not mean there is nothing.
+       *
+       * Every market is skipped when its accounts come back null, and a
+       * shared endpoint returns nulls for reasons that have nothing to do
+       * with the chain: a rate limit, a lagging replica, a dropped batch. If
+       * that were written through, the interface would go from five markets
+       * to none and back on the next poll, which downstream reads as the
+       * protocol having been emptied.
+       *
+       * So an empty result is treated as a failed read, not as news. The
+       * previous snapshot stands and the error is recorded, exactly as any
+       * other dropped poll.
+       */
+      if (markets.length === 0 && snapshot.markets.length > 0) {
+        lastError = "a refresh returned no markets; kept the last good read";
+        return;
+      }
+
       snapshot = { markets, positions, lpPositions };
       loadedAt = Math.floor(Date.now() / 1000);
       lastError = null;

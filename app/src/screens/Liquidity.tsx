@@ -25,6 +25,7 @@ import {
   NumberField,
   Row,
   SegBar,
+  Empty,
   StatTile,
 } from "../components/ui";
 import { ExposureBreakdown } from "../components/protocol";
@@ -42,8 +43,27 @@ export function Liquidity({
   const [selected, setSelected] = useState(markets[0]?.oracle.symbol ?? "");
   const [amount, setAmount] = useState("5000");
 
+  /*
+   * `markets[0]` is undefined when there are no markets, and this screen
+   * dereferenced it immediately. The mock source always has markets, so it
+   * never came up locally; the chain-backed source starts empty and stays
+   * empty until its first read lands, and that was enough to take the whole
+   * page down with "Cannot read properties of undefined".
+   *
+   * An interface that reads a chain has to survive not having read it yet.
+   */
   const view =
     markets.find((mv) => mv.oracle.symbol === selected) ?? markets[0];
+
+  if (!view) {
+    return (
+      <Empty title="No markets to provide liquidity to">
+        Either none have been created yet, or the interface has not finished
+        its first read of the chain.
+      </Empty>
+    );
+  }
+
   const lp = lpPositions(view.pool.address);
 
   const stats = useMemo(() => {
