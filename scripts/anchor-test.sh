@@ -152,17 +152,53 @@ ok "ts-mocha available"
 
 step "5/6  Preparing the local validator"
 
-# A stray validator from an aborted run holds the ports and the new one dies
-# silently. This is the single most common reason for "does not look started".
-# `-x` matches the executable name, never the command line. `pgrep -f` would
-# also match any shell whose command line happens to contain the string, and
-# the matching `pkill -f` would then kill the terminal you are running this in.
-if pgrep -x solana-test-validator >/dev/null 2>&1; then
-  warn "a solana-test-validator is already running; stopping it"
-  pkill -x solana-test-validator || true
-  sleep 3
+# A validator left over from a seed run or an aborted test holds the RPC port
+# and the new one dies with "port 8899 is already in use".
+#
+# Test the port, not the process name. Two earlier versions of this check were
+# both wrong in instructive ways. `pgrep -f solana-test-validator` matches any
+# shell whose command line contains the string, so the paired `pkill -f` could
+# kill the terminal running this script. `pgrep -x solana-test-validator`
+# cannot match at all: pgrep compares against /proc/<pid>/comm, which the
+# kernel truncates to 15 characters, and the name is 21. pgrep says so on
+# stderr - and that message went to /dev/null, which turned "I cannot check
+# this" into a confident "no stray validator" while a validator held the port.
+#
+# The port is the condition we actually care about, it needs no external tools,
+# and it cannot be fooled by how a process happens to be named.
+VALIDATOR_COMM="solana-test-val" # what the kernel stores, not what you type
+RPC_PORT=8899
+
+port_busy() {
+  (exec 3<>"/dev/tcp/127.0.0.1/$RPC_PORT") 2>/dev/null || return 1
+  exec 3<&-
+  return 0
+}
+
+if port_busy; then
+  warn "something is already listening on $RPC_PORT"
+  if pgrep -x "$VALIDATOR_COMM" >/dev/null 2>&1; then
+    warn "it is a solana-test-validator; stopping it"
+    pkill -x "$VALIDATOR_COMM" || true
+    for _ in $(seq 1 15); do
+      port_busy || break
+      sleep 1
+    done
+  fi
+  if port_busy; then
+    printf '\n'
+    if command -v ss >/dev/null 2>&1; then
+      ss -ltnp 2>/dev/null | grep ":$RPC_PORT" || true
+    elif command -v lsof >/dev/null 2>&1; then
+      lsof -i ":$RPC_PORT" 2>/dev/null || true
+    fi
+    printf '\n'
+    die "port $RPC_PORT is still held. Stop whatever owns it, or reuse it with:
+      USE_RUNNING_VALIDATOR=1 bash scripts/anchor-test.sh"
+  fi
+  ok "port $RPC_PORT freed"
 else
-  ok "no stray validator"
+  ok "port $RPC_PORT is free"
 fi
 
 # A half-written ledger from a killed run wedges startup. It is disposable:
