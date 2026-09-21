@@ -36,9 +36,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Read from `app/.nvmrc` rather than pinned here.
+      #
+      # This was `node-version: 20`, and it was wrong: jsdom 30 needs Node
+      # >= 22.22.2 and reaches it through undici, whose webidl shim
+      # destructures `markAsUncloneable` from `node:worker_threads`. Node 20
+      # does not have that symbol, so it became `undefined` and all five jsdom
+      # suites died on import with "markAsUncloneable is not a function" -
+      # after `npm ci` and `npm run typecheck` had both reported success.
+      #
+      # The floor now lives in exactly one file, which is also the file a
+      # developer's `nvm use` reads, so CI and a laptop cannot drift apart
+      # again. `app/.npmrc` sets `engine-strict`, so a mismatch now fails the
+      # install with the version it wanted rather than a stack trace in undici.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version-file: app/.nvmrc
           cache: npm
           cache-dependency-path: app/package-lock.json
 
