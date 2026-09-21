@@ -165,9 +165,17 @@ export async function scanPositions(
   config: ChainConfig,
   market: PublicKey,
 ): Promise<ScannedPosition[]> {
+  // "Position", for the same reason the decode below says "Position": the IDL
+  // spells it that way and a raw `BorshCoder` does not translate.
+  //
+  // This one hid behind the other. Fixing only the decode left this throwing
+  // "Account not found: position" from a different method on the same object,
+  // and had it not thrown it would have been worse - a discriminator for the
+  // wrong name is a memcmp filter that matches nothing, so the scan would
+  // have returned zero positions, every pass, in silence.
   const discriminator = (
     coder.accounts as unknown as { accountDiscriminator(name: string): Buffer }
-  ).accountDiscriminator("position");
+  ).accountDiscriminator("Position");
 
   const accounts = await config.connection.getProgramAccounts(
     config.programId,

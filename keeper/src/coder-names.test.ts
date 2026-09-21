@@ -47,6 +47,31 @@ describe("account names", () => {
     expect(doc.accounts.map((a) => a.name)).toContain(name);
   });
 
+  /*
+   * `accountDiscriminator` takes the same name as `decode` and was missed
+   * when `decode` was fixed, because this file only tested `decode`. It threw
+   * "Account not found: position" from a different method on the same object.
+   *
+   * Had it not thrown it would have been worse: a discriminator for a name
+   * that does not exist is a memcmp filter matching nothing, so the liquidator
+   * would have scanned cleanly and found zero positions forever.
+   */
+  it.each(DECODED_ACCOUNTS)("%s has a discriminator", (name) => {
+    const accounts = coder.accounts as unknown as {
+      accountDiscriminator(n: string): Buffer;
+    };
+    expect(() => accounts.accountDiscriminator(name)).not.toThrow();
+    expect(accounts.accountDiscriminator(name)).toHaveLength(8);
+  });
+
+  it.each(DECODED_ACCOUNTS)("camelCased %s has no discriminator", (name) => {
+    const camel = name.charAt(0).toLowerCase() + name.slice(1);
+    const accounts = coder.accounts as unknown as {
+      accountDiscriminator(n: string): Buffer;
+    };
+    expect(() => accounts.accountDiscriminator(camel)).toThrow();
+  });
+
   it.each(DECODED_ACCOUNTS)("camelCasing %s would not resolve", (name) => {
     // The guard on the assumption: if a future Anchor starts camelCasing
     // here, this fails and every call site needs revisiting together.
