@@ -16,6 +16,12 @@ test-ledger/
 .env
 .env.*
 !.env.example
+# The one exception, and it is deliberate. A hosted build needs its
+# configuration at build time, and every value in it is public by
+# construction: anything VITE_-prefixed is compiled into the bundle that
+# every visitor downloads. Nothing secret can live there, so nothing secret
+# should ever be put there.
+!app/.env.production
 
 # Local editor state
 .idea/

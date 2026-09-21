@@ -1,0 +1,10 @@
+# For Netlify, Vercel or Cloudflare Pages, which all serve from the domain
+# root, so `base` stays at its default and nothing else is needed.
+#
+#   build command:      npm run build
+#   publish directory:  dist
+#   base directory:     app
+
+[build]
+  command = "npm run build"
+  publish = "dist"

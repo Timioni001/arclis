@@ -137,7 +137,13 @@ export async function loadRegistry(
   });
 
   try {
-    const response = await fetchImpl("/registry.json", {
+    // `BASE_URL` rather than a leading slash. A build served from a
+    // subdirectory - a GitHub Pages project site, a preview path - would ask
+    // the domain root for a file that lives one level down, get the host's
+    // 404 page, and fall back to the modelled dataset while looking like it
+    // had read a snapshot and found nothing.
+    const base = import.meta.env.BASE_URL || "/";
+    const response = await fetchImpl(`${base}registry.json`.replace("//", "/"), {
       headers: { accept: "application/json" },
       cache: "no-cache",
     });
