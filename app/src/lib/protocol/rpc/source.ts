@@ -43,6 +43,12 @@ import {
   decodePosition,
 } from "./decode";
 import { lpPositionPda, marketAddresses, positionPda } from "./pdas";
+import {
+  appendPoint,
+  candlesFrom,
+  fetchPriceHistory,
+  type PricePoint,
+} from "./history";
 
 /**
  * A source that reads a chain, and can say when it last managed to.
@@ -94,6 +100,67 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
   let lastError: string | null = null;
   let owner: PublicKey | null = options.owner ?? null;
 
+  /*
+   * Price history, per oracle, for the lifetime of the page.
+   *
+   * Two sources feed it. `fetchPriceHistory` reads the publishes that already
+   * happened, once per session, because they are on-chain and re-reading them
+   * every thirty seconds would be paying repeatedly for an answer that cannot
+   * change. After that the refresh below extends the series from the price it
+   * is already fetching, which costs nothing at all.
+   *
+   * Backfill failure is not an error anyone needs to see. It means the chart
+   * starts at the moment the page opened instead of an hour earlier, which is
+   * a smaller chart, not a wrong one.
+   */
+  const history = new Map<string, PricePoint[]>();
+  const backfilled = new Set<string>();
+
+  async function backfill(oracles: { key: PublicKey; id: string }[]) {
+    await Promise.all(
+      oracles
+        .filter((o) => !backfilled.has(o.id))
+        .map(async (o) => {
+          backfilled.add(o.id);
+          try {
+            const points = await fetchPriceHistory(
+              connection,
+              o.key,
+              options.programId,
+            );
+            if (points.length === 0) return;
+            // Merge under whatever the live loop has already appended, rather
+            // than over it: the poll may well have landed first.
+            const live = history.get(o.id) ?? [];
+            const merged = points.concat(
+              live.filter((p) => p.t > points[points.length - 1].t),
+            );
+            history.set(o.id, merged);
+          } catch {
+            /* the series simply starts later */
+          }
+        }),
+    );
+  }
+
+  /**
+   * Percentage move over the trailing day, from the series.
+   *
+   * Zero until there is a print old enough to compare against. Reporting a
+   * move against the oldest point available would make a keeper that started
+   * ten minutes ago look like a 24h change, and "biggest movers" would rank
+   * markets by how long the keeper has been up.
+   */
+  function changeOverDay(points: PricePoint[], now: bigint): number {
+    if (points.length < 2) return 0;
+    const cutoff = points[points.length - 1].t - 86_400;
+    const earlier = points.find((p) => p.t >= cutoff) ?? points[0];
+    if (points[0].t > cutoff) return 0;
+    const from = Number(earlier.price);
+    if (from === 0) return 0;
+    return ((Number(now) - from) / from) * 100;
+  }
+
   async function refresh(): Promise<void> {
     try {
       const derived = options.symbols.map((symbol) => ({
@@ -118,7 +185,15 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
         }
       }
 
-      const infos = await getMultiple(connection, keys);
+      // In parallel with the account read, and a no-op after the first call.
+      // Sequencing them would add the backfill's round trip to every first
+      // paint for no reason: neither read depends on the other.
+      const [infos] = await Promise.all([
+        getMultiple(connection, keys),
+        backfill(
+          derived.map((d) => ({ key: d.oracle, id: d.oracle.toBase58() })),
+        ),
+      ]);
 
       const markets: MarketView[] = [];
       const positions: Position[] = [];
@@ -147,17 +222,26 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
           poolVaultInfo ? tokenAccountAmount(poolVaultInfo.data) : 0n,
         );
 
+        // The oracle's own timestamp, not the clock here: two prints can land
+        // in one refresh window, and stamping both with `Date.now()` would
+        // draw a move that never happened.
+        const id = d.oracle.toBase58();
+        const points = appendPoint(history.get(id) ?? [], {
+          t: oracle.lastUpdateTs,
+          price: oracle.price,
+        });
+        history.set(id, points);
+
         markets.push({
           market,
           oracle,
           pool,
-          // Candles and 24h stats come from an indexer over the event stream,
-          // not from account state. Empty is the honest value until one exists,
-          // and the chart renders its own empty state rather than inventing a
-          // line.
-          candles: [] as Candle[],
+          // Reconstructed from the transactions that published each price;
+          // see `history.ts`. Volume stays zero because a price publish
+          // carries no size, and there is no indexer over fills yet.
+          candles: candlesFrom(points) as Candle[],
           volume24h: 0n,
-          changePct24h: 0,
+          changePct24h: changeOverDay(points, oracle.price),
         });
       });
 
