@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { mockSource, type DataSource } from "./lib/protocol/mock";
 import { DATA_SOURCE, MARKET_SYMBOLS, PROGRAM_ID, RPC_URL } from "./lib/config";
 import "./styles/base.css";
@@ -26,12 +27,25 @@ const NAMES: Record<string, string> = {
   META: "Meta Platforms, Inc.",
 };
 
+// An error boundary only sees errors thrown during render. Anything that
+// throws in a promise, a timer or an event handler goes past it and is lost
+// unless something is listening, and the chain-backed source is full of all
+// three. These do not stop the page; they make sure nothing fails in silence.
+window.addEventListener("error", (e) =>
+  console.error("[arclis] uncaught error", e.error ?? e.message),
+);
+window.addEventListener("unhandledrejection", (e) =>
+  console.error("[arclis] unhandled rejection", e.reason),
+);
+
 const root = createRoot(document.getElementById("root")!);
 
 function render(source: DataSource) {
   root.render(
     <StrictMode>
-      <App source={source} />
+      <ErrorBoundary>
+        <App source={source} />
+      </ErrorBoundary>
     </StrictMode>,
   );
 }
