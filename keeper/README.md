@@ -49,8 +49,11 @@ fly launch --no-deploy --copy-config --name arclis-keeper
 fly secrets set KEEPER_KEYPAIR="$(cat ~/.config/solana/id.json)"
 fly secrets set FINNHUB_API_KEY=<your key>     # or POLYGON_API_KEY
 
-# 3. Ship it.
-fly deploy
+# 3. Ship it. `--ha=false` is not optional: Fly otherwise creates a second
+#    machine for zero-downtime deploys, and two keepers on one key publish
+#    every price twice, pay the fee twice, and fill the oracle's transaction
+#    history - which the interface's chart reads - with duplicate prints.
+fly deploy --ha=false
 
 # 4. Watch it come up.
 fly logs
@@ -73,6 +76,9 @@ check, not a service.
 
 `GET /health` returns the state of every loop, and **503 when a loop is
 broken**, which is what Fly restarts on.
+
+`fly status` should show exactly one machine. If it shows two, a deploy ran
+without `--ha=false`; `fly scale count 1` fixes it.
 
 The verdict is about the loops turning, never about price freshness. Markets
 close: overnight and at weekends the correct behaviour is to publish nothing,

@@ -47,6 +47,21 @@ primary_region = "iad"
 kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
+# Deploy with `fly deploy --ha=false`, always.
+#
+# Fly creates a second machine by default for zero-downtime deploys, which is
+# right for a web app and wrong for this. Two keepers sign with the same key
+# and publish on their own ten-second timers: every price is written twice, the
+# fee is paid twice, and the oracle's transaction history - which is where the
+# interface's chart reads its candles from - fills with duplicate prints.
+#
+# There is no fly.toml key for "never more than one". `min_machines_running`
+# sets a floor, not a ceiling. The flag on the deploy is the only control, so
+# it has to be remembered, which is why it is written here.
+#
+#   fly deploy --ha=false
+#   fly scale count 1      # to undo a deploy that already made two
+
 [[vm]]
   size = "shared-cpu-1x"
   # 512MB rather than 256. @solana/web3.js and the Anchor coder are not small,
