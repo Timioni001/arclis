@@ -73,6 +73,7 @@ interface Args {
   airdrop: string[];
   writeEnv: boolean;
   allowMainnet: boolean;
+  delayMs: number | null;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -84,6 +85,7 @@ function parseArgs(argv: string[]): Args {
     airdrop: [],
     writeEnv: false,
     allowMainnet: false,
+    delayMs: null,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -112,6 +114,9 @@ function parseArgs(argv: string[]): Args {
       case "--allow-mainnet":
         args.allowMainnet = true;
         break;
+      case "--delay":
+        args.delayMs = Number(next());
+        break;
       case "--help":
       case "-h":
         console.log(USAGE);
@@ -134,6 +139,9 @@ const USAGE = `
                           Use this for the wallet you connect in the browser.
     --write-env           write app/.env.local instead of printing it
     --allow-mainnet       required before this will touch a mainnet URL
+    --delay <ms>          pause between RPC calls. Default 0 on a local
+                          validator, 400 elsewhere, because a shared endpoint
+                          rate-limits a script that does not wait.
 `;
 
 /**
@@ -208,11 +216,29 @@ function clusterFor(url: string): { cluster: Cluster; certain: boolean } {
 const dollars = (n: number) => new BN(Math.round(n * SCALE));
 const units = (n: number) => new BN(Math.round(n * SCALE));
 
+/**
+ * How long to wait between RPC calls.
+ *
+ * A local validator will take everything as fast as it is offered. A public
+ * endpoint will not: it rate-limits per method, and this script makes about a
+ * dozen calls per listing. Unpaced against devnet it got three markets in
+ * before the node started answering 429 to everything and the run died
+ * part-built.
+ *
+ * Set once from the cluster, overridable with `--delay`.
+ */
+let DELAY_MS = 0;
+const pace = () =>
+  DELAY_MS > 0
+    ? new Promise((resolve) => setTimeout(resolve, DELAY_MS))
+    : Promise.resolve();
+
 let step = 0;
 const say = (msg: string) => console.log(`  ${String(++step).padStart(2)}. ${msg}`);
 const skip = (msg: string) => console.log(`      already done: ${msg}`);
 
 async function exists(conn: Connection, address: PublicKey): Promise<boolean> {
+  await pace();
   return (await conn.getAccountInfo(address)) !== null;
 }
 
@@ -291,8 +317,13 @@ async function main() {
 
   console.log(`\n  program   ${programId.toBase58()}`);
   console.log(`  payer     ${walletKp.publicKey.toBase58()}`);
+  DELAY_MS = args.delayMs ?? (cluster === "localnet" ? 0 : 400);
+
   console.log(`  rpc       ${args.url}`);
-  console.log(`  cluster   ${cluster}${certain ? "" : "  (guessed from the URL)"}\n`);
+  console.log(
+    `  cluster   ${cluster}${certain ? "" : "  (guessed from the URL)"}`,
+  );
+  console.log(`  pacing    ${DELAY_MS}ms between calls\n`);
 
   // --- payer funding -------------------------------------------------------
   //
@@ -336,15 +367,30 @@ async function main() {
   } else {
     say(`creating quote mint ${quoteMint.toBase58()}`);
     await createMint(conn, walletKp, walletKp.publicKey, null, 6, mintKp);
+    await pace();
   }
 
   const payerAta = getAssociatedTokenAddressSync(quoteMint, walletKp.publicKey);
   if (!(await exists(conn, payerAta))) {
-    await createAssociatedTokenAccount(conn, walletKp, quoteMint, walletKp.publicKey);
+    await createAssociatedTokenAccount(
+      conn,
+      walletKp,
+      quoteMint,
+      walletKp.publicKey,
+    );
+    await pace();
   }
   const needed = (LP_DEPOSIT * LISTINGS.length + TRADER_COLLATERAL * 2) * 2;
   say(`minting ${needed.toLocaleString()} quote to the payer`);
-  await mintTo(conn, walletKp, quoteMint, payerAta, walletKp, units(needed).toNumber());
+  await mintTo(
+    conn,
+    walletKp,
+    quoteMint,
+    payerAta,
+    walletKp,
+    units(needed).toNumber(),
+  );
+  await pace();
 
   // --- global config -------------------------------------------------------
   const configPda = pda([Buffer.from("config")]);
@@ -361,6 +407,7 @@ async function main() {
         systemProgram: SystemProgram.programId,
       })
       .rpc();
+    await pace();
   }
 
   // --- one world per listing ----------------------------------------------
@@ -393,6 +440,7 @@ async function main() {
           systemProgram: SystemProgram.programId,
         })
         .rpc();
+      await pace();
     }
 
     // A fresh oracle starts Closed, which refuses every increase-risk action.
@@ -402,6 +450,7 @@ async function main() {
       .setMarketSession({ open: {} })
       .accounts({ authority: walletKp.publicKey, oracle })
       .rpc();
+    await pace();
 
     if (!(await exists(conn, market))) {
       await program.methods
@@ -428,6 +477,7 @@ async function main() {
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
         })
         .rpc();
+      await pace();
     }
 
     if (!(await exists(conn, pool))) {
@@ -445,6 +495,7 @@ async function main() {
           rent: anchor.web3.SYSVAR_RENT_PUBKEY,
         })
         .rpc();
+      await pace();
     }
 
     if (!(await exists(conn, lpPosition))) {
@@ -463,6 +514,7 @@ async function main() {
           systemProgram: SystemProgram.programId,
         })
         .rpc();
+      await pace();
     }
 
     // An empty book renders as zeros everywhere, which looks like a broken
@@ -485,6 +537,7 @@ async function main() {
           systemProgram: SystemProgram.programId,
         })
         .rpc();
+      await pace();
 
       await program.methods
         .openPosition(units(listing.long))
@@ -500,6 +553,7 @@ async function main() {
           tokenProgram: TOKEN_PROGRAM_ID,
         })
         .rpc();
+      await pace();
 
       const side = listing.long > 0 ? "long" : "short";
       console.log(`      ${side} ${Math.abs(listing.long)} units open`);
@@ -527,8 +581,17 @@ async function main() {
     const ata = getAssociatedTokenAddressSync(quoteMint, target);
     if (!(await exists(conn, ata))) {
       await createAssociatedTokenAccount(conn, walletKp, quoteMint, target);
+      await pace();
     }
-    await mintTo(conn, walletKp, quoteMint, ata, walletKp, units(MINT_TO_WALLET).toNumber());
+    await mintTo(
+      conn,
+      walletKp,
+      quoteMint,
+      ata,
+      walletKp,
+      units(MINT_TO_WALLET).toNumber(),
+    );
+    await pace();
     console.log(`      10 SOL and ${MINT_TO_WALLET.toLocaleString()} quote tokens`);
   }
 
