@@ -629,7 +629,11 @@ async function main() {
     `VITE_PROGRAM_ID=${programId.toBase58()}`,
     `VITE_QUOTE_MINT=${quoteMint.toBase58()}`,
     `VITE_MARKETS=${LISTINGS.map((l) => l.symbol).join(",")}`,
-    "VITE_REFRESH_MS=5000",
+    // Five seconds is right for a validator on the same machine. A public
+    // endpoint is shared, rate-limited, and answers in tenths of a second
+    // rather than microseconds, so polling it that hard is both rude and
+    // fragile.
+    `VITE_REFRESH_MS=${cluster === "localnet" ? 5000 : 30000}`,
     "",
   ].join("\n");
 

@@ -43,18 +43,40 @@ function render(source: DataSource) {
 render(mockSource);
 
 if (DATA_SOURCE === "rpc") {
+  console.info(
+    `[arclis] reading ${PROGRAM_ID} at ${RPC_URL}; markets ${MARKET_SYMBOLS.join(", ")}`,
+  );
   void (async () => {
-    const [{ rpcSource }, { PublicKey }] = await Promise.all([
-      import("./lib/protocol/rpc/source"),
-      import("@solana/web3.js"),
-    ]);
-    render(
-      rpcSource({
-        endpoint: RPC_URL,
-        programId: new PublicKey(PROGRAM_ID),
-        symbols: MARKET_SYMBOLS,
-        names: NAMES,
-      }),
-    );
+    try {
+      const [{ rpcSource }, { PublicKey }] = await Promise.all([
+        import("./lib/protocol/rpc/source"),
+        import("@solana/web3.js"),
+      ]);
+      render(
+        rpcSource({
+          endpoint: RPC_URL,
+          programId: new PublicKey(PROGRAM_ID),
+          symbols: MARKET_SYMBOLS,
+          names: NAMES,
+        }),
+      );
+    } catch (e) {
+      /*
+       * Say so. The mock is already on screen, so a failure here leaves a
+       * complete, plausible interface labelled DEMO DATA and no indication
+       * that the thing you configured did not load. That is the worst way to
+       * be wrong: it looks like the configuration was ignored rather than
+       * like something broke, and the first half hour goes into the env file.
+       */
+      console.error(
+        "[arclis] VITE_DATA_SOURCE=rpc, but the chain-backed source failed to " +
+          "start. The interface is still showing mock data.",
+        e,
+      );
+    }
   })();
+} else {
+  console.info(
+    "[arclis] mock data. Set VITE_DATA_SOURCE=rpc in app/.env.local to read a chain.",
+  );
 }
