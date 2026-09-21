@@ -18,6 +18,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { startQualityWatch } from "./lib/perf/quality";
 import { mockSource, type DataSource } from "./lib/protocol/mock";
 import { DATA_SOURCE, MARKET_SYMBOLS, PROGRAM_ID, RPC_URL } from "./lib/config";
 import "./styles/base.css";
@@ -54,10 +55,7 @@ window.addEventListener("unhandledrejection", (e) =>
   console.error("[arclis] unhandled rejection", e.reason),
 );
 
-console.info(
-  "[arclis] add ?lite to the URL to drop the glass lens on a machine without " +
-    "a GPU; ?lite=0 restores it.",
-);
+startQualityWatch();
 
 const root = createRoot(document.getElementById("root")!);
 

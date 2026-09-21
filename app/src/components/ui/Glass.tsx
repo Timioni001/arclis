@@ -31,6 +31,8 @@ import {
 } from "react";
 import { Glass, type GlassOptics } from "@samasante/liquid-glass";
 
+import { getQuality, subscribeQuality } from "../../lib/perf/quality";
+
 /**
  * Should this session render real glass at all?
  *
@@ -46,38 +48,12 @@ const GLASS_QUERIES = [
   "(prefers-reduced-motion: reduce)",
 ];
 
-/**
- * An explicit way to turn the lens off on a machine that cannot carry it.
- *
- * Not automatic, and deliberately not a capability test. A benchmark run at
- * startup would have to be short enough not to delay the first paint and long
- * enough to mean something, and it would be measuring a page that is still
- * loading. Getting that wrong costs every visitor the finish on the strength
- * of a bad guess, which is worse than the problem.
- *
- * So the default is the full thing and the exception is asked for: add `?lite`
- * to the URL once and it sticks, `?lite=0` clears it. For developing on a
- * laptop without a GPU, or presenting from one.
- */
-function liteRequested(): boolean {
-  try {
-    const param = new URLSearchParams(window.location.search).get("lite");
-    if (param !== null) {
-      const on = param !== "0" && param !== "false";
-      window.localStorage.setItem("arclis:lite", on ? "1" : "0");
-      return on;
-    }
-    return window.localStorage.getItem("arclis:lite") === "1";
-  } catch {
-    // Private windows and blocked storage both throw. Neither is a reason to
-    // change how the interface looks.
-    return false;
-  }
-}
-
 function glassWanted(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return true;
-  if (liteRequested()) return false;
+  // Two different questions, both answered elsewhere. `lib/perf/quality`
+  // decides what this machine can carry; the media queries carry what the
+  // reader asked for. Either one is enough to turn the lens off.
+  if (getQuality() === "lite") return false;
   return !GLASS_QUERIES.some((q) => window.matchMedia(q).matches);
 }
 
@@ -92,14 +68,18 @@ export function useGlassEnabled(): boolean {
   useEffect(() => {
     const queries = GLASS_QUERIES.map((q) => window.matchMedia(q));
     // `glassWanted()`, not the media queries alone. Re-deriving the answer
-    // from half its inputs here silently overwrote the `?lite` decision the
-    // initial state had already made correctly, so the switch did nothing and
-    // looked like it had never been wired in.
+    // from half its inputs here silently overwrote the decision the initial
+    // state had already made correctly, so the switch did nothing and looked
+    // exactly like a feature that had never been wired in.
     const update = () => setEnabled(glassWanted());
     update();
     for (const q of queries) q.addEventListener("change", update);
+    // The quality decision arrives later than mount: it is made the first
+    // time the reader scrolls far enough to measure.
+    const unsubscribe = subscribeQuality(update);
     return () => {
       for (const q of queries) q.removeEventListener("change", update);
+      unsubscribe();
     };
   }, []);
 
