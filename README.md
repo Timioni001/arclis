@@ -90,7 +90,8 @@ account, not a ticker.
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
 | `anchor build` | **succeeds** on a contributor machine; not runnable in the authoring environment |
 | Local deployment | **done**: `anchor deploy` to a local validator, seeded by `npm run seed` |
-| Devnet / mainnet deployment | **not done**: needs a funded wallet |
+| Devnet deployment | **done**: [`BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP`](https://explorer.solana.com/address/BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP?cluster=devnet), five markets seeded with pools and open positions |
+| Mainnet deployment | **not done**, and not appropriate: see `docs/FEASIBILITY.md` |
 
 The lockfile has been resolved and audited against the exact rustc that
 `anchor build` uses, so the dependency wall that was blocking the build is
@@ -375,8 +376,9 @@ Listed plainly, because a judge will find them anyway:
 - **DBC migration cannot be oracle-gated.** Graduation is permissionless with no
   oracle hook, so it can fire while the underlying is shut. The monitor warns;
   nothing can enforce.
-- **Nothing is deployed beyond a local validator.** The build, the suite and
-  the seeded interface all run there; devnet and mainnet do not.
+- **Devnet is the furthest this has gone.** The program is deployed and
+  seeded there and the interface reads it, but devnet is not an environment
+  where anything is at stake. Nothing here has met a real counterparty.
 
 ## Next steps
 
