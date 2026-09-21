@@ -1,3 +1,19 @@
+/*
+ * Solana's libraries were written for Node and reach for `Buffer`, which no
+ * browser provides. Vite externalises the `buffer` module rather than
+ * shimming it, and warns that `buffer.Buffer` cannot be accessed in client
+ * code - a warning in development, and a runtime failure in a production
+ * build the moment a code path actually touches it.
+ *
+ * This must run before anything that imports those libraries, which is why it
+ * sits at the top of the entry module rather than anywhere tidier.
+ */
+import { Buffer } from "buffer";
+
+if (!(globalThis as { Buffer?: unknown }).Buffer) {
+  (globalThis as { Buffer?: unknown }).Buffer = Buffer;
+}
+
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
@@ -36,6 +52,11 @@ window.addEventListener("error", (e) =>
 );
 window.addEventListener("unhandledrejection", (e) =>
   console.error("[arclis] unhandled rejection", e.reason),
+);
+
+console.info(
+  "[arclis] add ?lite to the URL to drop the glass lens on a machine without " +
+    "a GPU; ?lite=0 restores it.",
 );
 
 const root = createRoot(document.getElementById("root")!);

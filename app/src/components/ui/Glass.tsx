@@ -46,8 +46,38 @@ const GLASS_QUERIES = [
   "(prefers-reduced-motion: reduce)",
 ];
 
+/**
+ * An explicit way to turn the lens off on a machine that cannot carry it.
+ *
+ * Not automatic, and deliberately not a capability test. A benchmark run at
+ * startup would have to be short enough not to delay the first paint and long
+ * enough to mean something, and it would be measuring a page that is still
+ * loading. Getting that wrong costs every visitor the finish on the strength
+ * of a bad guess, which is worse than the problem.
+ *
+ * So the default is the full thing and the exception is asked for: add `?lite`
+ * to the URL once and it sticks, `?lite=0` clears it. For developing on a
+ * laptop without a GPU, or presenting from one.
+ */
+function liteRequested(): boolean {
+  try {
+    const param = new URLSearchParams(window.location.search).get("lite");
+    if (param !== null) {
+      const on = param !== "0" && param !== "false";
+      window.localStorage.setItem("arclis:lite", on ? "1" : "0");
+      return on;
+    }
+    return window.localStorage.getItem("arclis:lite") === "1";
+  } catch {
+    // Private windows and blocked storage both throw. Neither is a reason to
+    // change how the interface looks.
+    return false;
+  }
+}
+
 function glassWanted(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) return true;
+  if (liteRequested()) return false;
   return !GLASS_QUERIES.some((q) => window.matchMedia(q).matches);
 }
 
@@ -61,7 +91,11 @@ export function useGlassEnabled(): boolean {
 
   useEffect(() => {
     const queries = GLASS_QUERIES.map((q) => window.matchMedia(q));
-    const update = () => setEnabled(!queries.some((q) => q.matches));
+    // `glassWanted()`, not the media queries alone. Re-deriving the answer
+    // from half its inputs here silently overwrote the `?lite` decision the
+    // initial state had already made correctly, so the switch did nothing and
+    // looked like it had never been wired in.
+    const update = () => setEnabled(glassWanted());
     update();
     for (const q of queries) q.addEventListener("change", update);
     return () => {
@@ -248,20 +282,26 @@ export function GlassPanel({
   const inner = `glass-inner ${innerClassName}`.trim();
 
   /*
-   * Chrome never gets the lens, however capable the machine.
+   * Chrome gets the lens like everything else.
    *
-   * The lens is a displacement filter over what is behind the element, and the
-   * sticky bar is the one surface whose backdrop moves on every frame: the
-   * filter re-runs across the whole bar for every scrolled pixel. Measured at
-   * 1440x900, that alone took the page from 16.7ms per frame to 99.9ms - 60fps
-   * down to 10, with every frame late. Dropping only the filter reference and
-   * keeping the blur restored 16.7ms exactly.
+   * It was excluded for a while, because the lens is a displacement filter
+   * over what is behind the element and a sticky bar is the one surface whose
+   * backdrop moves on every frame. Measured on a software rasteriser that
+   * cost 99.9ms per frame against 16.7ms without, and the exclusion was worth
+   * it there.
    *
-   * The frosted `backdrop-filter` in `.topbar-glass` costs nothing measurable
-   * and reads almost the same on a bar this thin. So the lens stays where it
-   * earns its cost, on surfaces that sit still, and the bar is frosted.
+   * It is not a fair measurement of the machines this runs on. That figure
+   * comes from a headless container with no GPU, where every filtered pixel
+   * is a CPU pixel; hardware compositing is the case that matters and it is
+   * not the case that was measured. Taking a finish away from everybody on
+   * the strength of a number from the slowest possible renderer is the wrong
+   * trade.
+   *
+   * `prefers-reduced-transparency` and `prefers-reduced-motion` still turn
+   * the whole thing off, which is the switch that belongs to the reader
+   * rather than to a benchmark.
    */
-  const lens = enabled && weight !== "chrome";
+  const lens = enabled;
 
   // Both branches keep the same two boxes, so a rule written against the inner
   // class applies identically whether or not the lens is running.

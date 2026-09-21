@@ -49,7 +49,7 @@ class NoopResizeObserver {
 afterEach(cleanup);
 
 describe("GlassPanel", () => {
-  it("does not put the lens on chrome, whatever the machine can do", () => {
+  it("gives chrome the lens like any other surface", () => {
     setPreferences({ reduce: false });
     const { container } = render(
       <GlassPanel weight="chrome" as="header" innerClassName="topbar">
@@ -57,29 +57,9 @@ describe("GlassPanel", () => {
       </GlassPanel>,
     );
 
-    // The lens ships its own filter as an `<svg>` beside the children. Its
-    // absence is the property under test: no svg means no displacement
-    // filter, which means no per-frame re-filter of a moving backdrop.
-    expect(container.querySelector("svg")).toBeNull();
-
-    const shell = container.firstElementChild!;
-    expect(shell.className).toContain("glass-chrome");
-    // The shell is the panel itself, not a wrapper the lens introduced.
-    expect(shell.firstElementChild?.tagName).toBe("HEADER");
-  });
-
-  it("keeps chrome frosted rather than opaque when glass is on", () => {
-    setPreferences({ reduce: false });
-    const { container } = render(
-      <GlassPanel weight="chrome">
-        <span>bar</span>
-      </GlassPanel>,
-    );
-
-    // `glass-flat` is the opaque finish for reduced transparency. Chrome
-    // skips the lens for performance, which is a different reason and must
-    // not drag the opaque background along with it: the bar is still meant to
-    // be frosted.
+    // The lens ships its own filter as an `<svg>` beside the children.
+    expect(container.querySelector("svg")).not.toBeNull();
+    expect(container.firstElementChild!.className).toContain("glass-chrome");
     expect(container.firstElementChild!.className).not.toContain("glass-flat");
   });
 
@@ -115,8 +95,12 @@ describe("GlassPanel", () => {
       <GlassPanel weight="panel" innerClassName="body">
         <span>x</span>
       </GlassPanel>,
-    ).container.firstElementChild!;
-    const flatInner = flat.firstElementChild!;
+    ).container;
+    // Found by class, not by position. The lens renders its own wrapper and
+    // the filter's `<svg>` beside the children, so the content box is not the
+    // shell's first child on that branch - which is the whole reason
+    // `innerClassName` exists and layout is not put on the shell.
+    const flatInner = flat.querySelector(".glass-inner")!;
     cleanup();
 
     setPreferences({ reduce: false });
@@ -124,14 +108,14 @@ describe("GlassPanel", () => {
       <GlassPanel weight="chrome" innerClassName="body">
         <span>x</span>
       </GlassPanel>,
-    ).container.firstElementChild!;
-    const litInner = lit.firstElementChild!;
+    ).container;
+    const litInner = lit.querySelector(".glass-inner")!;
 
     // Same inner class on both, which is what lets one rule style the content
     // box regardless of the finish.
-    expect(flatInner.className).toContain("glass-inner");
+    expect(flatInner).not.toBeNull();
     expect(flatInner.className).toContain("body");
-    expect(litInner.className).toContain("glass-inner");
+    expect(litInner).not.toBeNull();
     expect(litInner.className).toContain("body");
   });
 });
