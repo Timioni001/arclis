@@ -25,6 +25,9 @@ export type IconName =
   | "arrowUp"
   | "arrowDown"
   | "arrowRight"
+  | "arrowLeft"
+  | "caretUp"
+  | "caretDown"
   | "wallet"
   | "shield"
   | "droplet"
@@ -93,6 +96,15 @@ const PATHS: Record<IconName, JSX.Element> = {
   arrowUp: <path d="M12 19V5M6 11l6-6 6 6" />,
   arrowDown: <path d="M12 5v14M6 13l6 6 6-6" />,
   arrowRight: <path d="M5 12h14M13 6l6 6-6 6" />,
+  arrowLeft: <path d="M19 12H5M11 18l-6-6 6-6" />,
+  /* Filled rather than stroked, and the only two that are. A price delta is
+     read in peripheral vision at 11px beside a number, where an outline
+     triangle turns to mush; these want to be a solid wedge of the delta's own
+     colour. `fill="currentColor"` overrides the shared `fill="none"`. */
+  caretUp: <path d="M12 8.5l5 7H7l5-7Z" fill="currentColor" stroke="none" />,
+  caretDown: (
+    <path d="M12 15.5l-5-7h10l-5 7Z" fill="currentColor" stroke="none" />
+  ),
   wallet: (
     <>
       <rect x="3" y="6" width="18" height="13" rx="3.5" />

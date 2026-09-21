@@ -114,7 +114,24 @@ a {
   padding: var(--space-4) var(--space-7);
 }
 
-/* The wordmark is the mark; no logo glyph. */
+/* The mark and the word travel together.
+
+   This used to be the word alone, on the argument that the name set in the
+   display face at 800 was mark enough. That reads well inside the page and
+   badly everywhere else: a browser tab is 16px of icon and no room for a
+   word, an iOS home screen is a square, and a link pasted into a channel is
+   whatever the scraper finds. The glyph exists now because those surfaces
+   demanded one, and once it exists the header is where people learn it. */
+.wordmark-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+}
+.arclis-mark {
+  display: block;
+  flex: none;
+}
 .wordmark {
   font-family: var(--font-display);
   font-size: 22px;
@@ -353,6 +370,123 @@ a {
   box-shadow: var(--shadow-lift);
 }
 
+.hero-eyebrow {
+  font-weight: 700;
+  font-size: 12.5px;
+  opacity: 0.7;
+  margin-bottom: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* One diagonal pass of light across the panel, then eight seconds of nothing.
+
+   A sheen that sweeps continuously is a barber's pole; the pause is what
+   makes it read as light rather than as an animation. `transform` and
+   `opacity` only, so it composites and never touches layout. */
+.hero-sheen {
+  position: absolute;
+  inset: -45% -70%;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    104deg,
+    transparent 44%,
+    rgba(255, 255, 255, 0.34) 50%,
+    transparent 56%
+  );
+  opacity: 0;
+  transform: translate3d(-62%, 0, 0);
+  animation: hero-sheen 11s linear infinite;
+  animation-delay: 1.8s;
+}
+/* Dark mode gets a narrower, dimmer band. The light-mode panel is bright
+   enough that white at 34% reads as a highlight; over the dark half of the
+   dark panel the same band reads as a grey smear, so it is tinted to the
+   lime and cut to less than half the strength. */
+:root[data-theme="dark"] .hero-sheen {
+  background: linear-gradient(
+    104deg,
+    transparent 46%,
+    rgba(212, 248, 106, 0.09) 50%,
+    transparent 54%
+  );
+}
+@keyframes hero-sheen {
+  0% {
+    transform: translate3d(-62%, 0, 0);
+    opacity: 0;
+  }
+  7% {
+    opacity: 1;
+  }
+  23% {
+    opacity: 1;
+  }
+  30%,
+  100% {
+    transform: translate3d(62%, 0, 0);
+    opacity: 0;
+  }
+}
+
+/* The "built on" strip, under the call to action.
+
+   Small, quiet, and every entry links out. It is a dependency list rather
+   than a sponsor wall, which is why each one says what it does in three
+   words instead of being a logo on its own. */
+.hero-eco {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-5);
+  list-style: none;
+  margin: var(--space-6) 0 0;
+  padding: 0;
+}
+.hero-eco a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--hero-ink);
+  text-decoration: none;
+  opacity: 0.78;
+  transition: opacity var(--fast) var(--ease-out);
+}
+.hero-eco a:hover {
+  opacity: 1;
+}
+.hero-eco svg,
+.brand-asset {
+  display: block;
+  flex: none;
+}
+
+/* A name set in the interface's own type, for the marks this build cannot
+   reproduce faithfully. Deliberately not logo-shaped: it should read as
+   Arclis referring to someone, not as an imitation of their identity.
+   `currentColor` means it works on the lime hero and the footer surface
+   without either one knowing about the other. */
+.brand-monogram {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* A rounded square, like every other icon chip here, rather than the circle
+     a small `--radius-xs` box turns into. A circular monogram reads as an
+     avatar, which is the one thing these are not. */
+  border-radius: 30%;
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  flex: none;
+  color: inherit;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 30%, transparent);
+}
+
 /* The soft 3D blobs from the reference, as pure CSS. */
 .hero-blobs {
   position: absolute;
@@ -373,6 +507,78 @@ a {
   box-shadow:
     inset 0 -8px 20px rgba(120, 160, 30, 0.22),
     0 12px 30px rgba(120, 160, 30, 0.2);
+  /* Promoted once, up front. Without this the first frame of the drift is
+     the frame that creates the layer, which is the one frame anybody would
+     actually notice. */
+  will-change: transform;
+}
+
+/* The drift.
+
+   Twenty-odd seconds for a fourteen pixel journey. At that rate nothing is
+   ever seen to move; the panel simply refuses to sit completely still, which
+   is the whole difference between a surface and a printed gradient. Three
+   periods that do not divide into each other, so the arrangement never
+   repeats exactly and the eye cannot latch onto a cycle. */
+@keyframes hero-drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-13px, 9px, 0);
+  }
+}
+@keyframes hero-drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(9px, -11px, 0);
+  }
+}
+@keyframes hero-drift-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(-7px, -7px, 0);
+  }
+}
+.hero-blob-a {
+  animation: hero-drift-a 23s ease-in-out infinite;
+}
+.hero-blob-b {
+  animation: hero-drift-b 19s ease-in-out infinite;
+}
+.hero-blob-c {
+  animation: hero-drift-c 27s ease-in-out infinite;
+}
+
+/* Ambient motion is the first thing to go.
+
+   `data-quality="lite"` is set by the frame-interval watch in
+   `lib/perf/quality.ts` when scrolling on this machine is dropping frames.
+   Stopping the loops there is not a visual downgrade anyone notices - they
+   were below the threshold of attention to begin with - and it hands back
+   three composited layers that were repainting forever. */
+:root[data-quality="lite"] .hero-blob,
+:root[data-quality="lite"] .hero-sheen {
+  animation: none;
+}
+:root[data-quality="lite"] .hero-sheen {
+  display: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-blob,
+  .hero-sheen {
+    animation: none;
+  }
+  .hero-sheen {
+    display: none;
+  }
 }
 
 /* ==========================================================================
@@ -613,8 +819,20 @@ a {
 .num-delta[data-dir="flat"] {
   color: var(--text-secondary);
 }
+/* The caret is an SVG now, so `font-size` no longer sizes it; what it needs
+   instead is to sit on the text's optical centre rather than its baseline. */
 .num-delta .glyph {
-  font-size: 0.72em;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+/* A back button leads with its arrow, so the gap belongs on the right of the
+   icon and the label carries the padding. */
+.btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ==========================================================================
@@ -1637,7 +1855,20 @@ input[type="range"]::-moz-range-thumb {
 }
 .site-footer-eco a {
   display: grid;
-  gap: 3px;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  column-gap: var(--space-3);
+  row-gap: 3px;
+  text-decoration: none;
+}
+.site-footer-eco .eco-figure {
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Optically aligned to the cap height of the name beside it rather than to
+     its line box, which sits the mark two pixels high. */
+  margin-top: 2px;
 }
 .eco-name {
   display: inline-flex;

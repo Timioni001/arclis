@@ -326,14 +326,15 @@ pool vault and the token program in their account lists.
 
 | | |
 |---|---|
-| `cargo check` / `clippy -D warnings` / `fmt` | clean |
-| Rust unit tests | **127 passing** |
-| DBC TypeScript tests | **37 passing** |
-| App tests | **66 passing**: read model against the Rust, plus registry scoring |
+| Rust unit tests | **129 passing** |
+| On-chain tests, `anchor test` against a local validator | **25 passing** |
+| Interface tests | **130 passing**: read model against the Rust, plus registry scoring |
+| Keeper and registry pipeline tests | **88 passing** |
+| DBC TypeScript tests | **37 passing**, against the real SDK |
 | Interface audit | clean: 6 screens x 3 widths x 2 themes, no overflow, clipping, contrast failure or undersized target |
-| `tsc --noEmit`, prettier | clean |
-| `anchor build` / `anchor test` | **not run**: no Solana toolchain in the authoring environment |
-| Deployed | **no** |
+| `cargo clippy -D warnings`, `cargo fmt`, `tsc --noEmit`, prettier | clean |
+| Deployed to devnet | **yes**, `BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP` |
+| Mainnet deployment | **not done**: needs a funded wallet |
 
 Before the UI goes anywhere near real money, read [`../BUILD.md`](../BUILD.md) -
 the program keypair has been rotated, and the old secret is still in git history.

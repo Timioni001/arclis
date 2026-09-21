@@ -1,0 +1,14 @@
+{
+  "name": "Arclis",
+  "short_name": "Arclis",
+  "description": "On-chain access to public markets.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#0b0d0a",
+  "theme_color": "#0b0d0a",
+  "icons": [
+    { "src": "favicon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "favicon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "brand/mark.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

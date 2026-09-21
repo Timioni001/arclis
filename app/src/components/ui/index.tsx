@@ -1,4 +1,12 @@
+import { useLayoutEffect, useRef } from "react";
 import type { ReactNode, CSSProperties } from "react";
+import gsap from "gsap";
+import { onIntroFinished } from "../motion/intro";
+import { getQuality } from "../../lib/perf/quality";
+import { BrandMark, ECOSYSTEM } from "./Brand";
+// Imported for use here as well as re-exported: a bare `export ... from` puts
+// the name in the module's exports without binding it in this scope.
+import { Icon } from "./Icon";
 export { Icon, type IconName } from "./Icon";
 /**
  * UI primitives.
@@ -223,12 +231,11 @@ export function Delta({
 }) {
   const n = typeof value === "bigint" ? Number(value) : value;
   const dir = n > 0 ? "up" : n < 0 ? "down" : "flat";
-  const glyph = dir === "up" ? "▲" : dir === "down" ? "▼" : "";
   return (
     <span className="num-delta num" data-dir={dir}>
-      {showGlyph && (
+      {showGlyph && dir !== "flat" && (
         <span className="glyph" aria-hidden>
-          {glyph}
+          <Icon name={dir === "up" ? "caretUp" : "caretDown"} size={11} />
         </span>
       )}
       <span>{children}</span>
@@ -441,7 +448,38 @@ export function Legend({
   );
 }
 
-/** The front-page banner: lime gradient, soft blobs, headline, pill CTA. */
+/**
+ * The front-page banner, and the first thing anyone sees of Arclis.
+ *
+ * # What moves, and when
+ *
+ * Three separate things, deliberately not one:
+ *
+ *  1. **The entrance.** Eyebrow, headline, body, call to action and the
+ *     ecosystem strip rise in sequence, once, after the opening overlay has
+ *     lifted. It is driven from `onIntroFinished` rather than a matching
+ *     delay, because a hardcoded 1.6s is wrong the moment anyone hits Skip.
+ *  2. **The drift.** The blobs travel a few pixels on a very long loop. This
+ *     is the difference between a gradient and a surface, and it is the only
+ *     thing on the page that moves while nobody is touching anything - so it
+ *     is slow enough that you notice it only if you look for it.
+ *  3. **The sheen.** One diagonal pass of light across the panel, every
+ *     eleven seconds.
+ *
+ * Both loops are CSS keyframes on `transform` and `opacity` alone, which is
+ * what keeps them on the compositor instead of in layout. Neither runs under
+ * `prefers-reduced-motion`, and neither runs when the adaptive quality watch
+ * has decided this machine is struggling.
+ *
+ * # Why the entrance hides the text with JavaScript rather than CSS
+ *
+ * `opacity: 0` in the stylesheet is a promise that some script will undo it.
+ * If the bundle fails, the page is blank prose-first content that a crawler
+ * would have read perfectly well. Hiding in a layout effect means the text is
+ * only ever invisible while the code that reveals it is already running, and
+ * the timeline below reveals it unconditionally - no scroll trigger, no
+ * intersection observer, nothing that can decline to fire.
+ */
 export function Hero({
   eyebrow,
   title,
@@ -449,6 +487,8 @@ export function Hero({
   body,
   cta,
   onCta,
+  /** The "built on" strip. Off by default; the front page turns it on. */
+  ecosystem = false,
 }: {
   eyebrow?: string;
   title: string;
@@ -456,16 +496,68 @@ export function Hero({
   body?: ReactNode;
   cta?: string;
   onCta?: () => void;
+  ecosystem?: boolean;
 }) {
+  const ref = useRef<HTMLElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (
+      getQuality() === "lite" ||
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      return;
+    }
+
+    const rows = el.querySelectorAll<HTMLElement>(".hero-rise");
+    if (rows.length === 0) return;
+
+    // Synchronously, before the browser paints this frame. A `gsap.from` here
+    // would show the settled text for one frame and then snap it back down.
+    gsap.set(rows, { opacity: 0, y: 16 });
+
+    let tween: gsap.core.Tween | undefined;
+    let played = false;
+    const play = () => {
+      if (played) return;
+      played = true;
+      tween = gsap.to(rows, {
+        opacity: 1,
+        y: 0,
+        duration: 0.82,
+        stagger: 0.075,
+        ease: "power3.out",
+        // Leaves no inline transform behind, so the CTA's own hover
+        // transition is not competing with a stale matrix.
+        clearProps: "transform,opacity",
+      });
+    };
+    const stop = onIntroFinished(play);
+
+    // The headline is the page. It does not get to depend on an animation
+    // library, an overlay and a latch all behaving: if the opening has not
+    // released it within three seconds - twice the splash's own length - it
+    // plays anyway. Nothing about the product is worth a blank hero.
+    const watchdog = window.setTimeout(play, 3000);
+
+    return () => {
+      stop();
+      window.clearTimeout(watchdog);
+      tween?.kill();
+      gsap.set(rows, { clearProps: "transform,opacity" });
+    };
+  }, []);
+
   return (
-    <section className="hero">
+    <section className="hero" ref={ref}>
       <div className="hero-blobs" aria-hidden>
         <span
-          className="hero-blob"
+          className="hero-blob hero-blob-a"
           style={{ width: 168, height: 168, right: "6%", top: "-28%" }}
         />
         <span
-          className="hero-blob"
+          className="hero-blob hero-blob-b"
           style={{
             width: 96,
             height: 96,
@@ -475,7 +567,7 @@ export function Hero({
           }}
         />
         <span
-          className="hero-blob"
+          className="hero-blob hero-blob-c"
           style={{
             width: 54,
             height: 54,
@@ -485,28 +577,32 @@ export function Hero({
           }}
         />
       </div>
+      <span className="hero-sheen" aria-hidden />
       <div className="hero-body">
-        {eyebrow && (
-          <div
-            style={{
-              fontWeight: 700,
-              fontSize: 12.5,
-              opacity: 0.7,
-              marginBottom: 10,
-              letterSpacing: "0.04em",
-            }}
-          >
-            {eyebrow}
-          </div>
-        )}
-        <h1>
+        {eyebrow && <div className="hero-eyebrow hero-rise">{eyebrow}</div>}
+        <h1 className="hero-rise">
           {title} {highlight && <span className="hero-mark">{highlight}</span>}
         </h1>
-        {body && <p>{body}</p>}
+        {body && <p className="hero-rise">{body}</p>}
         {cta && (
-          <button className="hero-cta" onClick={onCta}>
-            {cta} <span aria-hidden>→</span>
-          </button>
+          <div className="hero-rise">
+            <button className="hero-cta" onClick={onCta}>
+              {cta}
+              <Icon name="arrowRight" size={17} />
+            </button>
+          </div>
+        )}
+        {ecosystem && (
+          <ul className="hero-eco hero-rise" aria-label="Built on">
+            {ECOSYSTEM.map((b) => (
+              <li key={b.id}>
+                <a href={b.href} target="_blank" rel="noreferrer noopener">
+                  <BrandMark brand={b} size={18} />
+                  <span>{b.short}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
         )}
       </div>
     </section>

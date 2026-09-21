@@ -88,8 +88,24 @@ function forget() {
   }
 }
 
+/**
+ * Publish the decision to CSS as `<html data-quality>`.
+ *
+ * The ambient motion - the hero's drifting blobs, its sheen, the shader - has
+ * to stop as one thing, and each of those is a keyframe animation with no
+ * React component behind it to re-render. One attribute on the root is one
+ * selector to gate them all on, and it costs nothing to keep in sync.
+ */
+function reflect(quality: Quality) {
+  if (typeof document === "undefined") return;
+  document.documentElement.setAttribute("data-quality", quality);
+}
+
 function set(quality: Quality, reason: string) {
   decided = true;
+  // Ahead of the equality check below: the very first decision is usually
+  // "full", which is already `current`, and the attribute still has to appear.
+  reflect(quality);
   if (current === quality) return;
   current = quality;
   store(quality);
@@ -113,6 +129,8 @@ export function subscribeQuality(fn: () => void): () => void {
  */
 export function startQualityWatch(): void {
   if (decided) return;
+  // Before any measurement, so the page is never briefly unlabelled.
+  reflect(current);
 
   const override = readOverride();
   if (override === "auto") {

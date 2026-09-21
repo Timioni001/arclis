@@ -275,20 +275,23 @@ anchor build && anchor test       # see BUILD.md first
 | | |
 |---|---|
 | `cargo check` / `clippy -D warnings` / `fmt` | clean |
-| Rust unit tests | **127 passing** |
+| Rust unit tests | **129 passing** |
+| On-chain tests, `anchor test` against a local validator | **25 passing** |
+| Interface tests | **130 passing**: read model against the Rust, plus registry scoring |
+| Keeper and registry pipeline tests | **88 passing** |
 | DBC TypeScript tests | **37 passing**, against the real SDK |
-| App tests | **66 passing**: read model against the Rust, plus registry scoring |
 | Interface audit | clean: 6 screens x 3 widths x 2 themes, no overflow, clipping, contrast failure or undersized target |
-| `tsc --noEmit`, prettier | clean |
-| `anchor build` | **not run here**: no Solana toolchain in this environment |
-| `anchor test` | **25 passing** on a machine with the toolchain; not runnable in the authoring environment |
+| `cargo clippy -D warnings`, `cargo fmt`, `tsc --noEmit`, prettier | clean |
+| Deployed to devnet | **yes**, `BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP` |
 | Mainnet deployment | **not done**: needs a funded wallet |
 
 "Working code on mainnet beats slides" is the right bar and this has not cleared
-it. What it has: a program that compiles, 230 tests across both languages
-covering every piece of arithmetic that decides who gets paid, and tooling whose
-output has been run and verified end to end. The gap to mainnet is a funded
-wallet and `anchor build`, not unfinished work.
+it. What it has: 409 tests across both languages covering every piece of
+arithmetic that decides who gets paid, 25 of which run the real instructions
+against a validator rather than a model of one; a program deployed to devnet
+with an interface reading it; and tooling whose output has been run and
+verified end to end. The gap to mainnet is a funded wallet and an audit, not
+unfinished work.
 
 Before deploying anything that holds value, read **[`BUILD.md`](../BUILD.md)** -
 including the part about the program keypair rotation, whose old secret is in

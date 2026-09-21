@@ -62,6 +62,7 @@ export function Markets({
         highlight="own."
         body="Look up any tokenized stock on Solana and see its real backing, custody and redemption rights. Then trade it on a perpetual that respects market hours, halts, splits and dividends."
         cta="Look up a tokenized stock"
+        ecosystem
         onCta={() =>
           onExplore
             ? onExplore()
@@ -305,16 +306,32 @@ export function Markets({
         })}
       </div>
 
+      {/*
+        Counted, not estimated. These had drifted - the page claimed 24
+        instructions against 26, and 34 interface tests against 130 - which is
+        a bad thing for a project whose whole argument is that it tells you
+        what is actually there. Recount before changing them:
+
+          grep -c 'pub fn ' programs/arclis/src/lib.rs   instructions
+          cargo test --lib                               unit
+          npm run test:integration                       against a validator
+          npm --prefix app test                          interface
+          npm run test:dbc                               DBC tooling
+      */}
       <div className="stat-tiles">
         <StatTile
           label="Program"
-          value="24 instructions"
+          value="26 instructions"
           sub="sessions, splits, pool, treasuries"
         />
-        <StatTile label="On-chain tests" value="114 passing" />
+        <StatTile
+          label="Program tests"
+          value="154 passing"
+          sub="129 unit, 25 against a validator"
+        />
         <StatTile
           label="Interface tests"
-          value="34 passing"
+          value="130 passing"
           sub="read model vs the program"
         />
         <StatTile

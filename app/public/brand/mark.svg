@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Arclis">
+  <!--
+    The Arclis mark.
+
+    A rising arc that stops short of its destination, and a detached point
+    where it is heading. That gap is the product: the curve is the market,
+    the point is what the thing is actually worth, and Arclis is the part
+    that tells you how far apart they are.
+
+    Drawn on a 32 grid from four primitives - a rounded tile, a cubic, a
+    dot - so `scripts/make-icons.py` can rasterise the identical geometry
+    for the PNG sizes that social scrapers and iOS home screens require.
+    Two sources that must not drift; keep the numbers here and there equal.
+  -->
+  <defs>
+    <linearGradient id="arclis-tile" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d4f86a"/>
+      <stop offset="1" stop-color="#aadd1f"/>
+    </linearGradient>
+  </defs>
+  <rect width="32" height="32" rx="8.5" fill="url(#arclis-tile)"/>
+  <path d="M7 23.8C13.5 23.2 18.2 19.2 21.4 11.2"
+        fill="none" stroke="#16210c" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="23.4" cy="5.9" r="2.15" fill="#16210c"/>
+</svg>

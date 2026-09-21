@@ -232,7 +232,7 @@ export function PriceTicker({
       </span>
       {direction && (
         <span className="ticker-arrow" aria-hidden>
-          {direction === "up" ? "▲" : "▼"}
+          <Icon name={direction === "up" ? "caretUp" : "caretDown"} size={11} />
         </span>
       )}
     </span>

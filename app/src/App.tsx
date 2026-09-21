@@ -31,6 +31,7 @@ import { explorerAddress, REFRESH_INTERVAL_MS } from "./lib/config";
 import { ago } from "./lib/format";
 import { Icon } from "./components/ui";
 import { Footer } from "./components/ui/Footer";
+import { Wordmark } from "./components/ui/Brand";
 import { GlassPanel } from "./components/ui/Glass";
 
 const TABS = [
@@ -160,9 +161,12 @@ export function App({ source }: { source: DataSource }) {
           innerClassName="topbar"
           as="header"
         >
-          {/* The wordmark is the mark. No logo glyph: the name set in the
-            display face at 800 carries it. */}
-          <div className="wordmark crisp">arclis</div>
+          {/* Mark and word together. The mark had to be drawn for the tab
+            icon and the link preview anyway; putting it here is what makes
+            those two surfaces recognisable as this one. */}
+          <div className="crisp">
+            <Wordmark />
+          </div>
 
           <button
             className="nav-toggle"

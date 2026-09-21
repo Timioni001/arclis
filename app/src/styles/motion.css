@@ -25,6 +25,12 @@
   justify-items: center;
   gap: var(--space-4);
 }
+/* The mark leads, the word follows. `place-items: center` on `.splash-inner`
+   already centres it; all this needs is to not inherit the grid's gap twice. */
+.splash-mark {
+  display: flex;
+  margin-bottom: calc(var(--space-2) * -1);
+}
 .splash-word {
   display: flex;
 }
@@ -263,7 +269,9 @@
   transition: none;
 }
 .ticker-arrow {
-  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
 }
 .ticker[data-direction="up"] .ticker-arrow {
   color: var(--positive);

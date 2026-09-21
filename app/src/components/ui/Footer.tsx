@@ -16,31 +16,14 @@
  */
 
 import { Icon } from "./Icon";
-
-const ECOSYSTEM = [
-  {
-    name: "Solana",
-    role: "Settlement. Markets, positions and the counterparty pool are on-chain accounts.",
-    href: "https://solana.com",
-  },
-  {
-    name: "Meteora",
-    role: "Liquidity. Dynamic Bonding Curve configs for stock-quoted pools, and DLMM depth in the registry.",
-    href: "https://meteora.ag",
-  },
-  {
-    name: "Clawpump",
-    role: "Distribution. The launch surface a new stock-quoted market opens through.",
-    href: "https://clawpump.com",
-  },
-];
+import { BrandMark, ECOSYSTEM, Wordmark } from "./Brand";
 
 export function Footer({ onNavigate }: { onNavigate?: (tab: string) => void }) {
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
         <div className="site-footer-brand">
-          <div className="wordmark">arclis</div>
+          <Wordmark size={26} />
           <p>
             On-chain access to public markets. Look up what a tokenized stock is
             actually backed by, then trade it on a perpetual that respects
@@ -76,6 +59,9 @@ export function Footer({ onNavigate }: { onNavigate?: (tab: string) => void }) {
             {ECOSYSTEM.map((e) => (
               <li key={e.name}>
                 <a href={e.href} target="_blank" rel="noreferrer noopener">
+                  <span className="eco-figure">
+                    <BrandMark brand={e} size={22} />
+                  </span>
                   <span className="eco-name">
                     {e.name}
                     <Icon name="arrowRight" size={13} />

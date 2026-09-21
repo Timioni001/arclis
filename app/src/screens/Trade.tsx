@@ -14,6 +14,7 @@ import {
   Button,
   Card,
   Delta,
+  Icon,
   Metric,
   Notice,
   NumberField,
@@ -199,11 +200,12 @@ export function Trade({
   return (
     <div className="page">
       <button
-        className="btn btn-sm"
+        className="btn btn-sm btn-back"
         style={{ alignSelf: "flex-start" }}
         onClick={onBack}
       >
-        ← Overview
+        <Icon name="arrowLeft" size={15} />
+        Overview
       </button>
 
       {/* --- market header --- */}

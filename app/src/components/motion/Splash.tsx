@@ -16,6 +16,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import gsap from "gsap";
+import { introFinished } from "./intro";
+import { ArclisMark } from "../ui/Brand";
 
 const SEEN_KEY = "arclis-splash-seen";
 
@@ -48,6 +50,16 @@ export function Splash() {
   useEffect(() => {
     if (done) {
       markSeen();
+      // The single place the page is released, and the reason this lives in
+      // an effect keyed on `done` rather than in the timeline's `onComplete`.
+      //
+      // React runs the previous effect's cleanup - `ctx.revert()`, which
+      // tears down every animation the splash's GSAP context owns - before it
+      // runs this body. Signalling from `onComplete` instead happens while
+      // that context is still active and still collecting: the hero's
+      // entrance tween gets adopted by it and reverted on unmount, leaving a
+      // headline that is permanently invisible and no error anywhere.
+      introFinished();
       return;
     }
     const el = ref.current;
@@ -55,7 +67,7 @@ export function Splash() {
 
     const finish = () => {
       markSeen();
-      setDone(true);
+      setDone(true); // releases the page, via the `done` branch above
     };
 
     const ctx = gsap.context(() => {
@@ -64,13 +76,23 @@ export function Splash() {
       // The letters rise out of a mask, the rule under them draws across, then
       // the whole thing lifts away. Total: about 1.6s.
       timeline
-        .from(".splash-letter", {
-          yPercent: 115,
+        .from(".splash-mark", {
+          scale: 0.82,
           opacity: 0,
-          duration: 0.72,
-          stagger: 0.055,
-          ease: "power4.out",
+          duration: 0.56,
+          ease: "power3.out",
         })
+        .from(
+          ".splash-letter",
+          {
+            yPercent: 115,
+            opacity: 0,
+            duration: 0.72,
+            stagger: 0.055,
+            ease: "power4.out",
+          },
+          "-=0.34",
+        )
         .from(
           ".splash-rule",
           {
@@ -88,8 +110,13 @@ export function Splash() {
         )
         .to(el, { opacity: 0, duration: 0.36, ease: "power1.out" }, "-=0.22");
 
+      // Jump to the end, then end it by hand. Whether seeking a timeline
+      // fires its `onComplete` depends on how GSAP is asked to seek, and the
+      // page being released must not rest on that; `finish` only sets state,
+      // so calling it here and again from `onComplete` is free.
       const skip = () => {
         timeline.progress(1);
+        finish();
       };
       el.addEventListener("click", skip);
       window.addEventListener("keydown", skip, { once: true });
@@ -110,6 +137,9 @@ export function Splash() {
   return (
     <div className="splash" ref={ref} role="presentation">
       <div className="splash-inner">
+        <div className="splash-mark">
+          <ArclisMark size={54} />
+        </div>
         <div className="splash-word">
           {"arclis".split("").map((letter, i) => (
             <span className="splash-mask" key={i}>
@@ -120,7 +150,13 @@ export function Splash() {
         <div className="splash-rule" />
         <div className="splash-tag">On-chain access to public markets</div>
       </div>
-      <button className="splash-skip" onClick={() => setDone(true)}>
+      <button
+        className="splash-skip"
+        onClick={() => {
+          markSeen();
+          setDone(true);
+        }}
+      >
         Skip
       </button>
     </div>

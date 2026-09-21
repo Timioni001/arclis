@@ -161,16 +161,20 @@ Not decoration, the design needs it:
 
 | | |
 |---|---|
-| Rust unit tests | **114 passing** |
+| Rust unit tests | **129 passing** |
+| On-chain tests, `anchor test` against a local validator | **25 passing** |
+| Interface tests | **130 passing** |
+| Keeper and registry pipeline tests | **88 passing** |
 | DBC tests, against Meteora's real SDK | **37 passing** |
 | `clippy -D warnings`, `fmt`, `tsc`, prettier | clean |
-| `anchor build` / `anchor test` | **not run**: no Solana toolchain in the authoring environment |
+| Deployed to devnet | **yes**, `BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP` |
 | Deployed to mainnet | **no** |
 
 "Working code on mainnet beats slides" is the right bar, and this has not
-cleared it. What it has: a program that compiles, 151 tests covering every piece
-of arithmetic that decides who gets paid, and tooling whose output has been run
-end to end.
+cleared it. What it has cleared: 409 tests, of which 25 open real positions,
+crank funding, apply a split and liquidate an account against a validator
+rather than against a model of one; a program deployed to devnet and an
+interface reading it; and tooling whose output has been run end to end.
 
 Known gaps are listed plainly in [`FEASIBILITY.md`](FEASIBILITY.md), the
 biggest is that a weekend gap will outrun the insurance fund, and the pool can
