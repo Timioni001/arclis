@@ -1,0 +1,20 @@
+# The keeper image needs the keeper, the IDL and the lockfile. Everything else
+# is build context uploaded to a remote builder for no reason - `target/` alone
+# is gigabytes of Rust artifacts.
+.git
+.github
+node_modules
+target
+app
+programs
+tests
+pipeline
+server
+docs
+migrations
+.anchor
+test-ledger
+**/dist
+**/*-keypair.json
+.env
+.env.*

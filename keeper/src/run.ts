@@ -40,6 +40,7 @@ import {
 } from "./prices/providers";
 import type { PriceFeed } from "./prices/types";
 import { isCovered, KNOWN_THROUGH } from "./calendar";
+import { newHealth, startHealthServer } from "./health";
 
 const env = process.env;
 
@@ -122,6 +123,34 @@ async function main() {
   const state = newKeeperState();
   const abort = new AbortController();
 
+  /*
+   * The health surface, off unless HEALTH_PORT is set.
+   *
+   * Off by default because a local run does not need a listening socket, and
+   * on in a container because "the process exists" is not the same as "the
+   * keeper is publishing" - a wedged RPC call leaves a process that is alive,
+   * idle and useless, and a host cannot tell the difference without being
+   * told.
+   */
+  const health = newHealth({
+    rpc: RPC_URL,
+    programId: config.programId.toBase58(),
+    keeper: config.payer.publicKey.toBase58(),
+    symbols: SYMBOLS,
+    feed: feed.name,
+  });
+  const healthPort = Number(env.HEALTH_PORT ?? 0);
+  if (healthPort > 0) {
+    startHealthServer(health, healthPort, abort.signal, log);
+  }
+
+  const PRICE_INTERVAL_MS = Number(env.PRICE_INTERVAL_MS ?? 10_000);
+  const FUNDING_INTERVAL_MS = Number(env.FUNDING_INTERVAL_MS ?? 60_000);
+  const LIQUIDATOR_INTERVAL_MS = Number(env.LIQUIDATOR_INTERVAL_MS ?? 5_000);
+  const CORPORATE_INTERVAL_MS = Number(env.CORPORATE_INTERVAL_MS ?? 3_600_000);
+  health.register("oracle", PRICE_INTERVAL_MS);
+  health.register("funding", FUNDING_INTERVAL_MS);
+
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.on(signal, () => {
       log("info", `${signal} received, draining`);
@@ -140,7 +169,7 @@ async function main() {
     loop(
       config,
       "oracle",
-      Number(env.PRICE_INTERVAL_MS ?? 10_000),
+      PRICE_INTERVAL_MS,
       async () => {
         const result = await keeperTick({
           config,
@@ -148,6 +177,7 @@ async function main() {
           symbols: SYMBOLS,
           state,
         });
+        health.published(result.published);
         if (result.published.length || result.sessionsChanged.length) {
           log("info", "published", {
             prices: result.published,
@@ -156,6 +186,7 @@ async function main() {
         }
       },
       abort.signal,
+      health.reporter("oracle"),
     ),
   );
 
@@ -165,11 +196,12 @@ async function main() {
     loop(
       config,
       "funding",
-      Number(env.FUNDING_INTERVAL_MS ?? 60_000),
+      FUNDING_INTERVAL_MS,
       async () => {
         await crankFunding(config, SYMBOLS);
       },
       abort.signal,
+      health.reporter("funding"),
     ),
   );
 
@@ -182,7 +214,7 @@ async function main() {
       loop(
         config,
         "liquidator",
-        Number(env.LIQUIDATOR_INTERVAL_MS ?? 5_000),
+        LIQUIDATOR_INTERVAL_MS,
         async () => {
           const result = await liquidatePass({
             config,
@@ -215,7 +247,7 @@ async function main() {
       loop(
         config,
         "corporate",
-        Number(env.CORPORATE_INTERVAL_MS ?? 3_600_000),
+        CORPORATE_INTERVAL_MS,
         async () => {
           await corporateTick({
             config,

@@ -1,0 +1,55 @@
+# The Arclis keeper.
+#
+# Publishes oracle prices, cranks funding, runs the liquidator and watches for
+# corporate actions. It is the reason the site shows a live price rather than
+# "Oracle update delayed", and it has to stay up to do that.
+
+app = "arclis-keeper"
+primary_region = "iad"
+
+[build]
+  dockerfile = "keeper/Dockerfile"
+
+# Public configuration only. Everything here is on-chain or in the frontend
+# bundle already. The keypair and the price-feed key are secrets, set with
+# `fly secrets set` - see keeper/README.md.
+[env]
+  RPC_URL = "https://api.devnet.solana.com"
+  PROGRAM_ID = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP"
+  QUOTE_MINT = "8nMZjpyLpGGtnCkdCotT8jWUDUpSnJeVjeuazyYVvqGu"
+  MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL"
+  HEALTH_PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Both false, and this is the setting that matters most in the file.
+  #
+  # Fly's defaults suspend a machine that has no inbound traffic and wake it on
+  # the next request. That is right for a web app and fatal here: nothing ever
+  # requests anything of the keeper, so it would be suspended within minutes
+  # and the oracle would go stale exactly as it is now. It is a worker that
+  # happens to answer a health check, not a service.
+  auto_stop_machines = false
+  auto_start_machines = false
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "60s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    timeout = "5s"
+
+# The keeper handles SIGTERM: it aborts its loops, lets in-flight sends
+# settle, and exits. Thirty seconds is more than that needs and stops a deploy
+# from killing a transaction mid-confirmation.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 512MB rather than 256. @solana/web3.js and the Anchor coder are not small,
+  # and a keeper that is OOM-killed every few hours is worse than one that
+  # costs marginally more.
+  memory = "512mb"

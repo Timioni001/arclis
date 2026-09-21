@@ -187,16 +187,23 @@ export async function loop(
   intervalMs: number,
   work: () => Promise<void>,
   signal?: AbortSignal,
+  /**
+   * Called after every pass, with whether it threw. Optional: this is where
+   * the health endpoint learns the loop is still turning, and the loop is the
+   * only place that knows, since it owns both the catch and the schedule.
+   */
+  report?: (outcome: { ok: boolean; error?: string }) => void,
 ): Promise<void> {
   config.log("info", `${name} started`, { intervalMs });
   while (!signal?.aborted) {
     const started = Date.now();
     try {
       await work();
+      report?.({ ok: true });
     } catch (err) {
-      config.log("error", `${name} threw`, {
-        message: String((err as Error)?.message ?? err),
-      });
+      const message = String((err as Error)?.message ?? err);
+      config.log("error", `${name} threw`, { message });
+      report?.({ ok: false, error: message });
     }
     const elapsed = Date.now() - started;
     await sleep(Math.max(0, intervalMs - elapsed));
