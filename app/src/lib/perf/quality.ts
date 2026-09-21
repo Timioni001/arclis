@@ -60,14 +60,31 @@ function store(quality: Quality) {
   }
 }
 
-/** `?lite` pins lite, `?lite=0` pins full. Either way, stop measuring. */
-function readOverride(): Quality | null {
+/**
+ * `?lite` pins lite, `?lite=0` pins full, `?lite=auto` forgets and measures
+ * again.
+ *
+ * The third one exists because the first two are sticky by design, and a
+ * sticky decision with no way back is a trap: anyone who tried the switch
+ * once can no longer see what this machine would have chosen for itself, and
+ * the only way out was clearing site data by hand.
+ */
+function readOverride(): Quality | "auto" | null {
   try {
     const param = new URLSearchParams(window.location.search).get("lite");
     if (param === null) return null;
+    if (param === "auto" || param === "reset") return "auto";
     return param !== "0" && param !== "false" ? "lite" : "full";
   } catch {
     return null;
+  }
+}
+
+function forget() {
+  try {
+    window.localStorage.removeItem(KEY);
+  } catch {
+    /* nothing stored, nothing to forget */
   }
 }
 
@@ -98,16 +115,19 @@ export function startQualityWatch(): void {
   if (decided) return;
 
   const override = readOverride();
-  if (override) {
+  if (override === "auto") {
+    forget();
+    console.info("[arclis] visual quality: measuring again on next scroll");
+  } else if (override) {
     set(override, "asked for in the URL");
     return;
-  }
-
-  const remembered = readStored();
-  if (remembered) {
-    decided = true;
-    current = remembered;
-    return;
+  } else {
+    const remembered = readStored();
+    if (remembered) {
+      decided = true;
+      current = remembered;
+      return;
+    }
   }
 
   let samples: number[] = [];

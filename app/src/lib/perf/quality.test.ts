@@ -123,3 +123,19 @@ describe("visual quality", () => {
     expect(seen).toContain("lite");
   });
 });
+
+describe("returning to automatic", () => {
+  it("forgets a remembered verdict and measures again", async () => {
+    // Pretend a previous visit decided lite.
+    localStorage.setItem("arclis:lite", "1");
+    window.history.replaceState({}, "", "/?lite=auto");
+
+    const q = await freshModule();
+    withFrameInterval(16); // this time the machine keeps up
+    q.startQualityWatch();
+    window.dispatchEvent(new Event("scroll"));
+    await settle();
+
+    expect(q.getQuality()).toBe("full");
+  });
+});
