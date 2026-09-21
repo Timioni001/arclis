@@ -84,7 +84,7 @@ account, not a ticker.
 | DBC tests (`npm run test:dbc`) | **37 passing**, against the real Meteora SDK, no network |
 | Keeper and pipeline tests (`npm run keeper:test`) | **88 passing**: the NYSE calendar to the minute across holidays and both DST transitions, liquidation health, mint parsing, the depth ladder, and the live-snapshot fallbacks |
 | App tests (`npm run app:test`) | **104 passing**: the read model against the Rust, the registry's scoring, every instruction's account list against the IDL, and the glass and grid rules that two measured layout bugs came in through |
-| Integration tests (`anchor test`) | **25 written, 24 executed and passing** on a contributor machine, covering the pool, splits, dividends, insurance, session gating, a real liquidation and the bad-debt waterfall. The 25th was added after that run. Not runnable in the authoring environment, which has no Solana toolchain |
+| Integration tests (`anchor test`) | **25 passing** on a contributor machine, covering the pool, splits, dividends, insurance, session gating, a real liquidation and the bad-debt waterfall. Not runnable in the authoring environment, which has no Solana toolchain |
 | Interface audit | **clean** across 6 screens x 3 widths x 2 themes: no overflow, clipping, contrast failure or undersized touch target |
 | IDL (`npm run idl`) | **generated**: 26 instructions, committed under `idl/` |
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
@@ -98,7 +98,8 @@ fixed. The SBF build and the integration suite have since been run on a
 machine with the toolchain, and they earned their keep immediately: the suite
 found a silent SBF stack-frame overflow that was corrupting instruction
 arguments, and a liquidation path that never settled the trader's PnL against
-the liquidity pool. Both are fixed and covered. See `docs/FEASIBILITY.md` for
+the liquidity pool. Both are fixed and covered, and the bad-debt waterfall
+test written afterwards passed on its first execution. See `docs/FEASIBILITY.md` for
 what the suite has *not* resolved.
 
 **Read [`BUILD.md`](BUILD.md) first** if `anchor build` is failing. It also

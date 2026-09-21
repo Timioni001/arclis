@@ -281,7 +281,7 @@ anchor build && anchor test       # see BUILD.md first
 | Interface audit | clean: 6 screens x 3 widths x 2 themes, no overflow, clipping, contrast failure or undersized target |
 | `tsc --noEmit`, prettier | clean |
 | `anchor build` | **not run here**: no Solana toolchain in this environment |
-| `anchor test` | **25 written, 24 executed and passing** on a machine with the toolchain; not runnable in the authoring environment |
+| `anchor test` | **25 passing** on a machine with the toolchain; not runnable in the authoring environment |
 | Mainnet deployment | **not done**: needs a funded wallet |
 
 "Working code on mainnet beats slides" is the right bar and this has not cleared
