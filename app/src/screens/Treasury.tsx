@@ -11,7 +11,15 @@ import type {
   Treasury as TreasuryAccount,
 } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
-import { Card, Delta, Metric, Notice, Row, StatTile } from "../components/ui";
+import {
+  Card,
+  Delta,
+  Empty,
+  Metric,
+  Notice,
+  Row,
+  StatTile,
+} from "../components/ui";
 import { HedgeHealth } from "../components/protocol";
 import { ago, shares as fmtShares, usd, pctPlain } from "../lib/format";
 
@@ -38,6 +46,21 @@ export function Treasury({
           </p>
         </div>
       </header>
+
+      {/*
+        An empty list rendered nothing at all, which reads as a broken screen
+        rather than an empty one. It is neither: treasuries are found by
+        scanning the event stream, and nothing indexes it yet. Saying that is
+        more useful than a blank page and more honest than inventing rows.
+      */}
+      {treasuries.length === 0 && (
+        <Empty title="No agent treasuries are being tracked">
+          Treasuries are discovered by scanning the program&apos;s event
+          stream, which needs an indexer this deployment does not run yet. The
+          vault itself is implemented and covered by the on-chain suite; what
+          is missing is the service that finds them.
+        </Empty>
+      )}
 
       {treasuries.map((t) => {
         const view = markets.find((mv) => mv.market.address === t.market);

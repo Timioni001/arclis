@@ -12,6 +12,8 @@
  * malicious injected wallet has very little to work with.
  */
 
+import { CLUSTER } from "../config";
+
 export interface DetectedWallet {
   name: string;
   icon: string;
@@ -124,9 +126,31 @@ export function startWalletDiscovery(
   };
 }
 
+/**
+ * The Wallet Standard chain identifier for wherever this build points.
+ *
+ * It was hardcoded to devnet, which happened to be right for a devnet
+ * deployment and would have been wrong everywhere else: a wallet asked to
+ * sign for `solana:devnet` while the app talks to mainnet either refuses or,
+ * worse, signs against the wrong chain. The cluster is already configured;
+ * there is no reason to state it twice when only one of the two can be right.
+ */
+function chainId(): string {
+  switch (CLUSTER) {
+    case "mainnet-beta":
+      return "solana:mainnet";
+    case "devnet":
+      return "solana:devnet";
+    default:
+      // A local validator has no registered chain identifier of its own, and
+      // wallets treat devnet as the nearest equivalent.
+      return "solana:devnet";
+  }
+}
+
 export async function connectWallet(
   wallet: DetectedWallet,
-  chain = "solana:devnet",
+  chain = chainId(),
 ): Promise<string> {
   const standard = wallet.handle as StandardWallet;
   const feature = standard.features?.["standard:connect"] as
