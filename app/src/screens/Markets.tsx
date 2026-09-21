@@ -25,6 +25,7 @@ import { SessionBadge } from "../components/protocol";
 import { Sparkline } from "../components/charts/PriceChart";
 import { bpsToPct, confidencePct, pct, toPrice, usd } from "../lib/format";
 import { PriceTicker } from "../components/ui/data";
+import { BrandMark, brandById } from "../components/ui/Brand";
 
 export function Markets({
   markets,
@@ -334,8 +335,25 @@ export function Markets({
           value="130 passing"
           sub="read model vs the program"
         />
+        {/*
+          The one stat tile that carries a mark, and the only place outside
+          the hero strip and the footer that does.
+
+          This is a claim about our own tooling - `tools/dbc` builds real DBC
+          configs and the suite runs against Meteora's published SDK - so the
+          mark is evidence, not a placement. The registry deliberately does
+          not do this: it lists Meteora DLMM alongside Orca Whirlpool and
+          Raydium CLMM as venues, and giving one of them a logo on a page that
+          says it "does not rank, endorse, or accept payment for placement"
+          would be exactly the thing that sentence promises not to do.
+        */}
         <StatTile
-          label="Meteora DBC tooling"
+          label={
+            <span className="metric-label-brand">
+              <BrandMark brand={brandById("meteora")} size={14} />
+              Meteora DBC tooling
+            </span>
+          }
           value="37 passing"
           sub="against the real SDK"
         />

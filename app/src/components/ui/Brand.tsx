@@ -9,18 +9,23 @@
  * cost a few hundred bytes each, paint with the first frame, and inherit
  * `currentColor` so they follow the theme instead of fighting it.
  *
- * # Why Meteora and Clawpump are set rather than drawn
+ * # Why Solana is drawn and the other two are files
  *
- * The Solana mark is here because its geometry is public, fixed and simple
- * enough to reproduce exactly. The other two are not: neither publishes an
- * SVG this build can reach, and a logo drawn from memory is worse than no
- * logo - it is a wrong logo, on a page whose entire argument is that it tells
- * you what things actually are.
+ * The Solana mark's geometry is public, fixed and simple enough to reproduce
+ * exactly, so it is paths. Meteora and Clawpump are the artwork their teams
+ * publish, supplied as PNG and prepared by
+ * `scripts/prepare-brand-assets.py` - which is not a formality: both arrived
+ * as square artwork on a flat field, one on white and one on near-black, and
+ * dropped in as-is each would be a hard white or black square sitting on the
+ * lime hero. The script flood-fills the background from the border only, so
+ * the white glints inside Clawpump's claw survive while the bands across it
+ * and the gaps between Meteora's stripes open up, then crops to content and
+ * downsamples premultiplied so no halo comes back at the edges.
  *
- * So they are typeset instead, in the interface's own type, clearly as
- * Arclis's treatment of a name rather than an imitation of a mark. To use the
- * real ones, drop the official file at `app/public/brand/<id>.svg` and give
- * that entry an `asset` below; nothing else changes.
+ * A brand with neither `mark` nor `asset` falls through to a monogram set in
+ * the interface's own type: clearly Arclis referring to a name rather than an
+ * imitation of a mark, which is the only honest thing to show when the real
+ * one is not available.
  */
 
 import type { ReactNode } from "react";
@@ -138,7 +143,7 @@ export interface EcosystemBrand {
   href: string;
   /** The real mark, where one can be reproduced faithfully. */
   mark?: (size: number) => ReactNode;
-  /** Drop an official SVG at `public/brand/<asset>` to use it instead. */
+  /** A prepared file in `public/brand/`, used in preference to `mark`. */
   asset?: string;
 }
 
@@ -157,6 +162,7 @@ export const ECOSYSTEM: EcosystemBrand[] = [
     short: "Meteora DBC and DLMM",
     role: "Liquidity. Dynamic Bonding Curve configs for stock-quoted pools, and DLMM depth in the registry.",
     href: "https://meteora.ag",
+    asset: "meteora.png",
   },
   {
     id: "clawpump",
@@ -164,8 +170,16 @@ export const ECOSYSTEM: EcosystemBrand[] = [
     short: "Launches on Clawpump",
     role: "Distribution. The launch surface a new stock-quoted market opens through.",
     href: "https://clawpump.com",
+    asset: "clawpump.png",
   },
 ];
+
+/** Look one up by id, so call sites do not index into the array by position. */
+export function brandById(id: string): EcosystemBrand {
+  const found = ECOSYSTEM.find((b) => b.id === id);
+  if (!found) throw new Error(`no ecosystem brand "${id}"`);
+  return found;
+}
 
 /**
  * One ecosystem mark at a fixed optical size.
@@ -190,7 +204,6 @@ export function BrandMark({
         width={size}
         height={size}
         className="brand-asset"
-        loading="lazy"
         decoding="async"
       />
     );

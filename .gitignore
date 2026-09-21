@@ -37,3 +37,7 @@ app/tsconfig.tsbuildinfo
 # doing. Generate it with `npm run registry:build`.
 app/public/registry.json
 pipeline/dist/
+
+# Python bytecode, from running the asset scripts
+__pycache__/
+*.pyc

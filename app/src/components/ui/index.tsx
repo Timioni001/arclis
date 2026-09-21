@@ -597,7 +597,7 @@ export function Hero({
             {ECOSYSTEM.map((b) => (
               <li key={b.id}>
                 <a href={b.href} target="_blank" rel="noreferrer noopener">
-                  <BrandMark brand={b} size={18} />
+                  <BrandMark brand={b} size={20} />
                   <span>{b.short}</span>
                 </a>
               </li>

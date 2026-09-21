@@ -464,6 +464,18 @@ a {
   flex: none;
 }
 
+/* A mark inside a metric label. `line-height: 0` on the row keeps the label's
+   own leading from pushing the 14px mark off the cap height it sits beside. */
+.metric-label-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 0;
+}
+.metric-label-brand > * {
+  flex: none;
+}
+
 /* Below 600px the strip stops being a row and becomes a stack.
 
    Measured rather than guessed: it holds one line down to 600px, breaks to two
