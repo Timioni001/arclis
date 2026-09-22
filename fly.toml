@@ -7,6 +7,21 @@
 app = "arclis-keeper"
 primary_region = "iad"
 
+# These two belong up here, above every table, and that is the whole point.
+#
+# In TOML a bare key after a table header belongs to that table. They were
+# written below `[[http_service.checks]]`, so they parsed as properties of the
+# health check, Fly ignored them, and the graceful drain they describe was
+# never configured. `fly launch` rewrote the file and dropped them, which is
+# how it was noticed: it was not discarding settings, it was discarding keys
+# that had never done anything.
+#
+# What they are for: the keeper handles SIGTERM by aborting its loops and
+# letting in-flight sends settle. Thirty seconds is more than that needs and
+# stops a deploy from killing a transaction mid-confirmation.
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
 [build]
   dockerfile = "keeper/Dockerfile"
 
@@ -23,29 +38,26 @@ primary_region = "iad"
 [http_service]
   internal_port = 8080
   force_https = true
-  # Both false, and this is the setting that matters most in the file.
+  # "off", and this is the setting that matters most in the file.
   #
   # Fly's defaults suspend a machine that has no inbound traffic and wake it on
   # the next request. That is right for a web app and fatal here: nothing ever
   # requests anything of the keeper, so it would be suspended within minutes
-  # and the oracle would go stale exactly as it is now. It is a worker that
-  # happens to answer a health check, not a service.
-  auto_stop_machines = false
+  # and the oracle would go stale. It is a worker that happens to answer a
+  # health check, not a service.
+  #
+  # Spelled as a string rather than `false`: Fly's schema moved to
+  # "off"/"stop"/"suspend" and normalises the old boolean to this anyway.
+  auto_stop_machines = "off"
   auto_start_machines = false
   min_machines_running = 1
 
   [[http_service.checks]]
-    grace_period = "60s"
+    grace_period = "1m0s"
     interval = "30s"
     method = "GET"
     path = "/health"
     timeout = "5s"
-
-# The keeper handles SIGTERM: it aborts its loops, lets in-flight sends
-# settle, and exits. Thirty seconds is more than that needs and stops a deploy
-# from killing a transaction mid-confirmation.
-kill_signal = "SIGTERM"
-kill_timeout = "30s"
 
 # Deploy with `fly deploy --ha=false`, always.
 #
