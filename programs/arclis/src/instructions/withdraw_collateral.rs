@@ -85,32 +85,14 @@ pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
         &ctx.accounts.token_program,
         &oracle_key,
     )?;
-    ctx.accounts.position.debit_collateral(amount)?;
-
-    // With collateral already debited, the ratio computed here is the
-    // post-withdrawal ratio. Requiring *initial* margin rather than maintenance
-    // means a trader cannot withdraw straight down to the liquidation boundary
-    // and leave the vault holding a position that is one tick from bad debt.
-    let margin_ratio_bps_after = {
-        let position = &ctx.accounts.position;
-        if position.is_flat() {
-            i128::MAX
-        } else {
-            let ratio = position.margin_ratio_bps(mark_price, funding_index)?;
-            require!(
-                ratio >= i128::from(ctx.accounts.market.initial_margin_bps),
-                ArclisError::WithdrawalBreaksMargin
-            );
-            ratio
-        }
-    };
-
-    // Check against the vault's real balance, not our own bookkeeping, so a
-    // divergence between the two fails loudly here instead of at the token
-    // program with an opaque error.
-    ctx.accounts
-        .market
-        .require_payable(ctx.accounts.vault.amount, amount)?;
+    let margin_ratio_bps_after = debit_collateral(
+        &mut ctx.accounts.position,
+        &ctx.accounts.market,
+        mark_price,
+        funding_index,
+        ctx.accounts.vault.amount,
+        amount,
+    )?;
 
     let bump = [ctx.accounts.market.bump];
     let seeds = Market::signer_seeds(&oracle_key, &bump);
@@ -139,4 +121,46 @@ pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
         margin_ratio_bps_after,
     });
     Ok(())
+}
+
+/// Take collateral off a position, refusing to leave it under-margined.
+///
+/// Shared with the agent treasury's hedge, for the reason set out on
+/// `credit_collateral`: the treasury's position is owned by a PDA, so the
+/// signer differs while the solvency rules must not. Returns the post-
+/// withdrawal margin ratio for the event.
+///
+/// The caller does the transfer and `market.debit_collateral`, which are the
+/// parts that depend on where the tokens are going.
+pub(crate) fn debit_collateral(
+    position: &mut Position,
+    market: &Market,
+    mark_price: u64,
+    funding_index: i128,
+    vault_amount: u64,
+    amount: u64,
+) -> Result<i128> {
+    position.debit_collateral(amount)?;
+
+    // With collateral already debited, the ratio computed here is the
+    // post-withdrawal ratio. Requiring *initial* margin rather than maintenance
+    // means a trader cannot withdraw straight down to the liquidation boundary
+    // and leave the vault holding a position that is one tick from bad debt.
+    let margin_ratio_bps_after = if position.is_flat() {
+        i128::MAX
+    } else {
+        let ratio = position.margin_ratio_bps(mark_price, funding_index)?;
+        require!(
+            ratio >= i128::from(market.initial_margin_bps),
+            ArclisError::WithdrawalBreaksMargin
+        );
+        ratio
+    };
+
+    // Check against the vault's real balance, not our own bookkeeping, so a
+    // divergence between the two fails loudly here instead of at the token
+    // program with an opaque error.
+    market.require_payable(vault_amount, amount)?;
+
+    Ok(margin_ratio_bps_after)
 }

@@ -49,22 +49,47 @@ export function Treasury({
 
       {/*
         An empty list rendered nothing at all, which reads as a broken screen
-        rather than an empty one. It is neither: treasuries are found by
-        scanning the event stream, and nothing indexes it yet. Saying that is
-        more useful than a blank page and more honest than inventing rows.
+        rather than an empty one. It is neither, and the distinction is worth
+        stating: the interface now enumerates every `AgentTreasury` the program
+        owns on each scan, so an empty list is the chain's answer rather than a
+        missing feature.
       */}
       {treasuries.length === 0 && (
-        <Empty title="No agent treasuries are being tracked">
-          Treasuries are discovered by scanning the program&apos;s event
-          stream, which needs an indexer this deployment does not run yet. The
-          vault itself is implemented and covered by the on-chain suite; what
-          is missing is the service that finds them.
+        <Empty title="No agent treasuries on this deployment yet">
+          Every treasury the program holds is listed here, found by scanning
+          the program&apos;s accounts. None have been opened on this
+          deployment. Launch an agent against a tokenized stock and its
+          treasury appears on the next scan.
         </Empty>
       )}
 
       {treasuries.map((t) => {
         const view = markets.find((mv) => mv.market.address === t.market);
-        if (!view) return null;
+
+        /*
+         * A treasury whose market is not one of the symbols this interface
+         * tracks used to be dropped silently. Dropping it is the worst of the
+         * options: the scan found a real account and the screen showed
+         * nothing, which is indistinguishable from the scan having failed.
+         * The hedge maths needs the market's mark and funding index, so the
+         * full card genuinely cannot be drawn; naming the treasury and saying
+         * why can.
+         */
+        if (!view) {
+          return (
+            <Card key={t.address}>
+              <div className="card-head">
+                <h2 style={{ fontSize: 20 }}>{t.agentName}</h2>
+              </div>
+              <div className="card-note">
+                This treasury hedges a market outside the symbols this
+                interface tracks, so its exposure cannot be valued here. It
+                holds {fmtShares(t.stockQty, { dp: 0 })} shares against market{" "}
+                {t.market.slice(0, 8)}…
+              </div>
+            </Card>
+          );
+        }
         const pos = positionFor(t.address);
         const perpSize = pos?.size ?? 0n;
 

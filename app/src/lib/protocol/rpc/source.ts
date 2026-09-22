@@ -36,13 +36,18 @@ import type {
 } from "../types";
 import type { DataSource } from "../mock";
 import {
+  accountDiscriminator,
   decodeLpPosition,
   decodeMarket,
+  decodeMetadataName,
   decodeOracle,
   decodePool,
   decodePosition,
+  decodeTreasury,
+  metadataPda,
 } from "./decode";
 import { lpPositionPda, marketAddresses, positionPda } from "./pdas";
+import { encodeBase58 } from "../../auth/base58";
 import {
   appendPoint,
   candlesFrom,
@@ -76,9 +81,24 @@ interface Snapshot {
   markets: MarketView[];
   positions: Position[];
   lpPositions: LpPosition[];
+  treasuries: Treasury[];
+  /** Each treasury's own hedge position, by treasury address. */
+  treasuryPositions: Record<string, Position>;
 }
 
-const EMPTY: Snapshot = { markets: [], positions: [], lpPositions: [] };
+const EMPTY: Snapshot = {
+  markets: [],
+  positions: [],
+  lpPositions: [],
+  treasuries: [],
+  treasuryPositions: {},
+};
+
+/**
+ * Refreshes between treasury scans. One in ten, at a thirty-second poll, is a
+ * `getProgramAccounts` every five minutes.
+ */
+export const TREASURY_RESCAN_EVERY = 10;
 
 export interface RpcSourceOptions {
   endpoint: string;
@@ -116,6 +136,10 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
   const history = new Map<string, PricePoint[]>();
   const backfilled = new Set<string>();
 
+  let treasuries: Treasury[] = [];
+  let treasuryPositions: Record<string, Position> = {};
+  let refreshes = 0;
+
   async function backfill(oracles: { key: PublicKey; id: string }[]) {
     await Promise.all(
       oracles
@@ -141,6 +165,102 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
           }
         }),
     );
+  }
+
+  /*
+   * Agent treasuries, found by scanning rather than by derivation.
+   *
+   * This screen used to return an empty array with a comment saying
+   * treasuries needed an indexer. That was wrong, and it is worth writing
+   * down why, because the same reasoning applies to the two readers below
+   * that genuinely do need one.
+   *
+   * `AgentTreasury` is an account, not an event. Its PDA seed is the agent's
+   * mint, so no derivation finds it without already knowing every agent that
+   * exists, but every one of them carries Anchor's eight-byte discriminator
+   * in its first bytes. `getProgramAccounts` with a `memcmp` on those bytes
+   * enumerates the set in one call, which is exactly how the keeper already
+   * finds positions to liquidate. Corporate actions and the activity feed are
+   * different: those are emitted events with no account left behind, and for
+   * those an indexer really is the only answer.
+   *
+   * The cost is that `getProgramAccounts` is the heaviest call a public
+   * endpoint serves and the first one it rate limits. Treasuries are created
+   * by hand and then change slowly, so the scan runs on the first refresh and
+   * every `TREASURY_RESCAN_EVERY` after it, and a new treasury shows up within
+   * a few minutes rather than within one poll. That is the right trade for an
+   * account type that appears a handful of times a week.
+   */
+  const TREASURY_DISCRIMINATOR = accountDiscriminator("AgentTreasury");
+
+  async function scanTreasuries(): Promise<void> {
+    const accounts = await connection.getProgramAccounts(options.programId, {
+      filters: [
+        {
+          memcmp: {
+            offset: 0,
+            bytes: encodeBase58(Uint8Array.from(TREASURY_DISCRIMINATOR)),
+          },
+        },
+      ],
+    });
+
+    const decoded = accounts.flatMap(({ pubkey, account }) => {
+      try {
+        return [decodeTreasury(pubkey, account.data)];
+      } catch {
+        // One unreadable treasury must not cost the others. This happens for
+        // real during an upgrade, when an account written by the previous
+        // layout is still on chain.
+        return [];
+      }
+    });
+
+    /*
+     * Two follow-up reads per treasury, batched into one call.
+     *
+     * The hedge position is owned by the treasury PDA itself, not by any
+     * wallet, so it derives from the same seeds as a trader's position with
+     * the treasury in the owner slot. The metadata account carries the agent
+     * token's name, which is not on the treasury and should not be: the mint
+     * already has somewhere to put it.
+     */
+    const followups: PublicKey[] = [];
+    for (const t of decoded) {
+      const treasury = new PublicKey(t.address);
+      const market = new PublicKey(t.market);
+      followups.push(
+        positionPda(options.programId, treasury, market),
+        metadataPda(new PublicKey(t.agentMint)),
+      );
+    }
+    const infos =
+      followups.length > 0 ? await getMultiple(connection, followups) : [];
+
+    const positionsByTreasury: Record<string, Position> = {};
+    const named = decoded.map((t, i) => {
+      const posInfo = infos[i * 2];
+      const metaInfo = infos[i * 2 + 1];
+      if (posInfo) {
+        positionsByTreasury[t.address] = decodePosition(
+          positionPda(
+            options.programId,
+            new PublicKey(t.address),
+            new PublicKey(t.market),
+          ),
+          posInfo.data,
+        );
+      }
+      const name = metaInfo ? decodeMetadataName(metaInfo.data) : null;
+      return name ? { ...t, agentName: name } : t;
+    });
+
+    // Newest first: a treasury with no rebalance yet has `lastNavTs` of zero
+    // and sorts last, which is where a treasury nobody has touched belongs.
+    named.sort((a, b) => b.lastNavTs - a.lastNavTs);
+
+    treasuries = named;
+    treasuryPositions = positionsByTreasury;
   }
 
   /**
@@ -188,11 +308,22 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
       // In parallel with the account read, and a no-op after the first call.
       // Sequencing them would add the backfill's round trip to every first
       // paint for no reason: neither read depends on the other.
+      const dueForScan = refreshes % TREASURY_RESCAN_EVERY === 0;
+      refreshes += 1;
+
       const [infos] = await Promise.all([
         getMultiple(connection, keys),
         backfill(
           derived.map((d) => ({ key: d.oracle, id: d.oracle.toBase58() })),
         ),
+        // A failed scan keeps the treasuries already found. It is the same
+        // judgement as the backfill's: a rate limit on the heaviest call in
+        // the refresh must not empty a screen that was populated a moment ago.
+        dueForScan
+          ? scanTreasuries().catch(() => {
+              /* keep the last good scan */
+            })
+          : Promise.resolve(),
       ]);
 
       const markets: MarketView[] = [];
@@ -288,7 +419,7 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
         return;
       }
 
-      snapshot = { markets, positions, lpPositions };
+      snapshot = { markets, positions, lpPositions, treasuries, treasuryPositions };
       loadedAt = Math.floor(Date.now() / 1000);
       lastError = null;
     } catch (e) {
@@ -312,6 +443,8 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
       owner = next ? new PublicKey(next) : null;
       // The previous snapshot's positions belong to whoever was signed in
       // before. Keeping them would show one account's positions to another.
+      // Treasuries are deliberately left in place: they belong to agents, not
+      // to whoever is signed in, and are the same for every visitor.
       snapshot = { ...snapshot, positions: [], lpPositions: [] };
     },
 
@@ -326,11 +459,14 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
     lpPosition: (poolAddress) =>
       snapshot.lpPositions.find((p) => p.pool === poolAddress),
 
-    // Treasuries, corporate actions and activity are all event-stream or
-    // scan-based rather than derivable from a known address, so they need an
-    // indexer. Returning empty is what the screens' empty states are for.
-    treasuries: () => [] as Treasury[],
-    treasuryPosition: () => undefined,
+    treasuries: () => snapshot.treasuries,
+    treasuryPosition: (treasuryAddress) =>
+      snapshot.treasuryPositions[treasuryAddress],
+
+    // Corporate actions and the activity feed are emitted events that leave no
+    // account behind, so unlike treasuries above they cannot be scanned for
+    // and do need an indexer. Returning empty is what the screens' empty
+    // states are for.
     corporateActions: () => [] as CorporateAction[],
     activity: () => [] as ActivityEvent[],
   };

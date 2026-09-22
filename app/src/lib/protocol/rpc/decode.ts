@@ -13,7 +13,7 @@
  */
 
 import { BorshCoder, type Idl } from "@coral-xyz/anchor";
-import type { PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import idl from "../../../idl/arclis.json";
 import type {
   LiquidityPool,
@@ -22,6 +22,7 @@ import type {
   MarketSession,
   Oracle,
   Position,
+  Treasury,
 } from "../types";
 
 export const ARCLIS_IDL = idl as Idl;
@@ -218,4 +219,108 @@ export function errorMessage(code: number): string | null {
     Array<{ code: number; name: string; msg?: string }> | undefined;
   const hit = errors?.find((e) => e.code === code);
   return hit ? (hit.msg ?? hit.name) : null;
+}
+
+/**
+ * The discriminator Anchor writes into the first eight bytes of an account.
+ *
+ * Exposed because enumerating accounts of one type is a `getProgramAccounts`
+ * call with a `memcmp` on those bytes, and computing them by hand in the
+ * caller would be a second place for the IDL's spelling to drift.
+ *
+ * The name is the IDL's, for the same reason `decode` takes the IDL's: pass
+ * `"agentTreasury"` and Anchor throws. That failure is the good case. The bad
+ * one is a discriminator for a name that happens to exist but is not the one
+ * wanted, which produces a filter that matches nothing and a scan that returns
+ * an empty list in silence.
+ */
+export function accountDiscriminator(name: string): Buffer {
+  return (
+    coder.accounts as unknown as { accountDiscriminator(n: string): Buffer }
+  ).accountDiscriminator(name);
+}
+
+/**
+ * An agent treasury.
+ *
+ * `agentName` is not on the account. There is no name field, deliberately:
+ * thirty-two bytes of mutable string on every treasury, to hold something the
+ * token's own metadata already holds. So the caller resolves it and this
+ * falls back to the mint, which is at least unambiguous.
+ */
+export function decodeTreasury(
+  address: PublicKey,
+  data: Buffer,
+  meta: { agentName?: string } = {},
+): Treasury {
+  const a: any = coder.accounts.decode("AgentTreasury", data);
+  const agentMint = a.agent_mint.toBase58();
+  return {
+    address: address.toBase58(),
+    authority: a.authority.toBase58(),
+    agentMint,
+    agentName: meta.agentName ?? shortMint(agentMint),
+    stockMint: a.stock_mint.toBase58(),
+    market: a.market.toBase58(),
+    stockQty: big(a.stock_qty),
+    tokensOutstanding: big(a.tokens_outstanding),
+    hedgeRatioBps: num(a.hedge_ratio_bps),
+    rebalanceToleranceBps: num(a.rebalance_tolerance_bps),
+    hedgingEnabled: Boolean(a.hedging_enabled),
+    lastNavPerToken: big(a.last_nav_per_token),
+    lastNavTs: num(a.last_nav_ts),
+  };
+}
+
+function shortMint(mint: string): string {
+  return `Agent ${mint.slice(0, 4)}…${mint.slice(-4)}`;
+}
+
+/**
+ * The Metaplex Token Metadata program, and the name field inside its account.
+ *
+ * Reading this directly rather than through `@metaplex-foundation/*` is a
+ * deliberate trade. The layout of the first three fields has been fixed since
+ * v1 and is two lines to parse; the SDK is a dependency tree larger than the
+ * rest of this interface's chain code put together, pulled in to read one
+ * string.
+ *
+ * Layout: key (1) + update_authority (32) + mint (32) = 65, then the name as
+ * a Borsh string. Metaplex pads it to `MAX_NAME_LENGTH`, so the trailing NULs
+ * are expected and trimmed rather than treated as corruption.
+ */
+export const METADATA_PROGRAM_ID = new PublicKey(
+  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+);
+
+const NAME_OFFSET = 1 + 32 + 32;
+
+export function metadataPda(mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode("metadata"),
+      METADATA_PROGRAM_ID.toBuffer(),
+      mint.toBuffer(),
+    ],
+    METADATA_PROGRAM_ID,
+  )[0];
+}
+
+/** The `name` out of a Token Metadata account, or null if it is not one. */
+export function decodeMetadataName(data: Buffer | Uint8Array): string | null {
+  if (data.length < NAME_OFFSET + 4) return null;
+  const len =
+    data[NAME_OFFSET] |
+    (data[NAME_OFFSET + 1] << 8) |
+    (data[NAME_OFFSET + 2] << 16) |
+    (data[NAME_OFFSET + 3] << 24);
+  // A plausible length is the whole check. A wrong account type reaching here
+  // reads some other field as a length, and anything outside this range says
+  // so more reliably than any guess at the bytes that follow.
+  if (len <= 0 || len > 64 || data.length < NAME_OFFSET + 4 + len) return null;
+  const raw = new TextDecoder().decode(
+    Uint8Array.from(data.slice(NAME_OFFSET + 4, NAME_OFFSET + 4 + len)),
+  );
+  const name = raw.replace(/\0+$/, "").trim();
+  return name.length > 0 ? name : null;
 }

@@ -20,11 +20,15 @@ import { describe, expect, it } from "vitest";
 
 import ARCLIS_IDL from "../../../idl/arclis.json";
 import {
+  accountDiscriminator,
   decodeLpPosition,
   decodeMarket,
+  decodeMetadataName,
   decodeOracle,
   decodePool,
   decodePosition,
+  decodeTreasury,
+  metadataPda,
 } from "./decode";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -208,5 +212,120 @@ describe("account decoding", () => {
     expect(lp.pendingShares).toBe(1_000n);
     expect(lp.cooldownEndsTs).toBe(1_800_003_600);
     expect(lp.lastDepositTs).toBe(1_800_000_000);
+  });
+
+  /*
+   * Treasuries were the screen that showed nothing. The source returned a
+   * hardcoded empty array behind a comment claiming they needed an indexer,
+   * so no decoder existed to be wrong. These pin the one down before the
+   * screen depends on it.
+   */
+  it("reads an agent treasury", async () => {
+    const data = await enc("AgentTreasury", {
+      authority: KEY,
+      agent_mint: OTHER,
+      stock_mint: KEY,
+      market: OTHER,
+      stock_vault: KEY,
+      stock_qty: 12_500_000_000n,
+      tokens_outstanding: 1_000_000_000_000n,
+      hedge_ratio_bps: 9_000,
+      rebalance_tolerance_bps: 250,
+      hedging_enabled: true,
+      last_nav_per_token: 1_234n,
+      last_nav_ts: 1_800_000_000n,
+      bump: 255,
+      stock_vault_bump: 254,
+      _reserved: Array(64).fill(0),
+    });
+
+    const t = decodeTreasury(KEY, data);
+    expect(t.address).toBe(KEY.toBase58());
+    expect(t.agentMint).toBe(OTHER.toBase58());
+    expect(t.market).toBe(OTHER.toBase58());
+    // Quantities the screen divides by, so `undefined` reaching them would be
+    // NaN on the page rather than a thrown error.
+    expect(t.stockQty).toBe(12_500_000_000n);
+    expect(t.tokensOutstanding).toBe(1_000_000_000_000n);
+    expect(t.hedgeRatioBps).toBe(9_000);
+    expect(t.rebalanceToleranceBps).toBe(250);
+    expect(t.hedgingEnabled).toBe(true);
+    expect(t.lastNavTs).toBe(1_800_000_000);
+  });
+
+  it("names a treasury after its mint when metadata says nothing", async () => {
+    const data = await enc("AgentTreasury", {
+      authority: KEY,
+      agent_mint: OTHER,
+      stock_mint: KEY,
+      market: OTHER,
+      stock_vault: KEY,
+      stock_qty: 0n,
+      tokens_outstanding: 0n,
+      hedge_ratio_bps: 0,
+      rebalance_tolerance_bps: 0,
+      hedging_enabled: false,
+      last_nav_per_token: 0n,
+      last_nav_ts: 0n,
+      bump: 255,
+      stock_vault_bump: 254,
+      _reserved: Array(64).fill(0),
+    });
+
+    // Never blank: an unnamed agent still needs a heading on its card.
+    expect(decodeTreasury(KEY, data).agentName).toContain(OTHER.toBase58().slice(0, 4));
+    expect(decodeTreasury(KEY, data, { agentName: "Quant Alpha" }).agentName).toBe(
+      "Quant Alpha",
+    );
+  });
+
+  /*
+   * The discriminator is the whole treasury scan. A wrong one is a `memcmp`
+   * that matches nothing, so the screen goes back to being empty and says so
+   * confidently, which is worse than the bug it replaced.
+   */
+  it("derives the treasury discriminator from the IDL's own name", () => {
+    expect(accountDiscriminator("AgentTreasury")).toHaveLength(8);
+    // The raw coder does not camelCase, and this is the spelling that has
+    // cost this codebase four outages.
+    expect(() => accountDiscriminator("agentTreasury")).toThrow();
+  });
+});
+
+describe("token metadata", () => {
+  /** A Metaplex metadata account, as far as the name field. */
+  const withName = (name: string, pad = 32) => {
+    const padded = Buffer.alloc(pad);
+    Buffer.from(name, "utf8").copy(padded);
+    const out = Buffer.alloc(1 + 32 + 32 + 4 + pad);
+    out.writeUInt8(4, 0);
+    KEY.toBuffer().copy(out, 1);
+    OTHER.toBuffer().copy(out, 33);
+    out.writeUInt32LE(pad, 65);
+    padded.copy(out, 69);
+    return out;
+  };
+
+  it("reads the name and trims Metaplex's NUL padding", () => {
+    expect(decodeMetadataName(withName("Quant Alpha"))).toBe("Quant Alpha");
+  });
+
+  it("returns null rather than garbage for an account of another type", () => {
+    // Zeroes read as a zero-length name; random bytes read as an absurd one.
+    expect(decodeMetadataName(Buffer.alloc(200))).toBeNull();
+    const bogus = Buffer.alloc(200, 0xff);
+    expect(decodeMetadataName(bogus)).toBeNull();
+  });
+
+  it("returns null for an account too short to hold a name", () => {
+    expect(decodeMetadataName(Buffer.alloc(10))).toBeNull();
+  });
+
+  it("derives the metadata PDA under the Metaplex program", () => {
+    const pda = metadataPda(OTHER);
+    expect(pda.toBase58()).toHaveLength(44);
+    // Different mints, different accounts. A constant here would name every
+    // agent after whichever one was launched first.
+    expect(metadataPda(KEY).toBase58()).not.toBe(pda.toBase58());
   });
 });

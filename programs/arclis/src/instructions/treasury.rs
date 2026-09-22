@@ -6,12 +6,24 @@
 //!    stock (`scripts/dbc/`). Contributors pay in AAPLx.
 //! 2. The curve graduates. The agent calls `initialize_treasury`, then
 //!    `deposit_stock` with the raise.
-//! 3. `rebalance_hedge` — permissionless — opens the offsetting perp short.
-//!    Anyone can crank it; the tolerance band stops it being farmed.
-//! 4. The agent draws operating budget with `withdraw_stock`, which refuses to
-//!    leave a hedge it can no longer support.
+//! 3. The agent calls `fund_treasury_hedge` to post margin for the short.
+//! 4. `rebalance_hedge` — permissionless — opens and maintains the offsetting
+//!    perp short. Anyone can crank it; the tolerance band stops it being
+//!    farmed.
+//! 5. The agent draws operating budget with `withdraw_stock`, which refuses to
+//!    leave a hedge it can no longer support, and can take margin back out
+//!    with `defund_treasury_hedge`.
 //!
-//! Step 3 is the one worth looking at. It is permissionless on purpose: an
+//! Step 3 is not paperwork, and it did not exist for most of this program's
+//! life. `rebalance_hedge` takes the treasury's position as an account that
+//! already exists, and every instruction that can create a position seeds it
+//! by `owner.key()` where `owner` is a `Signer`. The treasury's position is
+//! owned by the treasury PDA, which cannot sign a client transaction, so there
+//! was no reachable path to the account `rebalance_hedge` required: the hedge
+//! could never be opened, and the whole feature was dead on arrival behind an
+//! instruction that looked complete.
+//!
+//! Step 4 is the one worth looking at. It is permissionless on purpose: an
 //! agent whose keeper falls over should not silently drift back to fully long,
 //! and the whole point of putting this on-chain rather than in the agent's own
 //! process is that the hedge survives the agent being down.
@@ -21,7 +33,10 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::errors::ArclisError;
 use crate::events::{PoolSettled, SettlementReason};
+use crate::events::{CollateralDeposited, CollateralWithdrawn};
 use crate::events::{TreasuryHedgeRebalanced, TreasuryInitialized, TreasuryStockMoved};
+use crate::instructions::deposit_collateral::credit_collateral;
+use crate::instructions::withdraw_collateral::debit_collateral;
 use crate::instructions::guards::{
     require_protocol_live, require_tradable, settle_with_pool, sync_and_settle,
 };
@@ -144,6 +159,225 @@ pub fn set_treasury_policy(
     treasury.rebalance_tolerance_bps = rebalance_tolerance_bps;
     treasury.hedging_enabled = hedging_enabled;
     treasury.tokens_outstanding = tokens_outstanding;
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// hedge margin in / out
+// ---------------------------------------------------------------------------
+
+/// Post or reclaim the margin behind the treasury's perp hedge.
+///
+/// One account context serves both directions because they need the same set:
+/// the pool and both vaults are only touched on the way out, but the settle
+/// that runs first on a withdrawal is the pool's to pay, and asking for them
+/// on the way in as well costs a reader nothing and keeps one struct to check.
+#[derive(Accounts)]
+pub struct MoveTreasuryHedgeMargin<'info> {
+    /// The agent. Unlike `deposit_stock`, this is not permissionless in either
+    /// direction: margin posted here is spendable by the perp engine, so the
+    /// signer that can put it at risk is the one that owns the treasury.
+    #[account(mut)]
+    pub authority: Signer<'info>,
+
+    #[account(seeds = [GlobalConfig::SEED], bump = config.bump)]
+    pub config: Box<Account<'info, GlobalConfig>>,
+
+    #[account(
+        seeds = [AgentTreasury::SEED, treasury.agent_mint.as_ref()],
+        bump = treasury.bump,
+        has_one = authority @ ArclisError::Unauthorized,
+    )]
+    pub treasury: Box<Account<'info, AgentTreasury>>,
+
+    #[account(
+        mut,
+        address = treasury.market @ ArclisError::TreasuryAssetMismatch,
+        seeds = [Market::SEED, oracle.key().as_ref()],
+        bump = market.bump,
+    )]
+    pub market: Box<Account<'info, Market>>,
+
+    #[account(address = market.oracle @ ArclisError::OracleMismatch)]
+    pub oracle: Box<Account<'info, PriceOracle>>,
+
+    /// The treasury's own perp position. This is the account that nothing else
+    /// in the program could bring into existence.
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = Position::SIZE,
+        seeds = [Position::SEED, treasury.key().as_ref(), market.key().as_ref()],
+        bump
+    )]
+    pub position: Box<Account<'info, Position>>,
+
+    /// The agent's quote-token account. On the way in it must be the
+    /// authority's own, so an agent cannot fund its hedge out of someone
+    /// else's account it happens to hold a delegation on.
+    #[account(
+        mut,
+        constraint = authority_token_account.owner == authority.key() @ ArclisError::Unauthorized,
+        constraint = authority_token_account.mint == vault.mint @ ArclisError::VaultMismatch,
+    )]
+    pub authority_token_account: Box<Account<'info, TokenAccount>>,
+
+    #[account(mut, address = market.vault @ ArclisError::VaultMismatch)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+
+    #[account(
+        mut,
+        address = market.liquidity_pool @ ArclisError::PoolMismatch,
+        seeds = [LiquidityPool::SEED, market.key().as_ref()],
+        bump = pool.bump,
+    )]
+    pub pool: Box<Account<'info, LiquidityPool>>,
+
+    #[account(mut, address = pool.vault @ ArclisError::VaultMismatch)]
+    pub pool_vault: Box<Account<'info, TokenAccount>>,
+
+    pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
+}
+
+/// Post margin for the hedge, creating the treasury's position on first call.
+///
+/// This is the missing link described at the top of the file. Without it
+/// `rebalance_hedge` fails on a position account that does not exist and
+/// cannot be made, so the treasury holds its stock fully long for ever.
+///
+/// The accounting is `deposit_collateral`'s, called rather than copied: a
+/// treasury's position is an ordinary position as far as margin, funding,
+/// splits and liquidation are concerned, and the moment it stops being one is
+/// the moment an agent's hedge starts behaving differently from the book it is
+/// hedging against.
+pub fn fund_treasury_hedge(
+    ctx: Context<MoveTreasuryHedgeMargin>,
+    amount: u64,
+) -> Result<()> {
+    require_tradable(&ctx.accounts.config, &ctx.accounts.market)?;
+    require!(amount > 0, ArclisError::InsufficientCollateral);
+
+    let now = Clock::get()?.unix_timestamp;
+    let market_key = ctx.accounts.market.key();
+    let treasury_key = ctx.accounts.treasury.key();
+
+    token::transfer(
+        CpiContext::new(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.authority_token_account.to_account_info(),
+                to: ctx.accounts.vault.to_account_info(),
+                authority: ctx.accounts.authority.to_account_info(),
+            },
+        ),
+        amount,
+    )?;
+
+    credit_collateral(
+        &mut ctx.accounts.position,
+        &mut ctx.accounts.market,
+        &ctx.accounts.oracle,
+        treasury_key,
+        market_key,
+        ctx.bumps.position,
+        amount,
+        now,
+    )?;
+
+    // The same event a trader's deposit emits, with the treasury as owner, so
+    // one activity feed covers both rather than needing a treasury-shaped
+    // special case to show the same fact.
+    emit!(CollateralDeposited {
+        market: market_key,
+        owner: treasury_key,
+        amount,
+        collateral_after: ctx.accounts.position.collateral,
+    });
+    Ok(())
+}
+
+/// Take margin back out of the hedge, to the agent's own account.
+///
+/// Its counterpart exists for the reason any deposit needs a withdrawal:
+/// without it, margin an agent posts is reachable only by liquidation. The
+/// initial-margin check inside `debit_collateral` is what stops this being a
+/// way to strip a live short down to the liquidation boundary, and the payout
+/// goes to the treasury's authority rather than to whoever cranked it.
+pub fn defund_treasury_hedge(
+    ctx: Context<MoveTreasuryHedgeMargin>,
+    amount: u64,
+) -> Result<()> {
+    require_tradable(&ctx.accounts.config, &ctx.accounts.market)?;
+    require!(amount > 0, ArclisError::InsufficientCollateral);
+
+    let now = Clock::get()?.unix_timestamp;
+    // Taking margin out raises leverage on the short that is still standing,
+    // so it takes the strict price budget, exactly as a trader's withdrawal
+    // does: no drawing against a frozen weekend mark.
+    let mark_price = ctx
+        .accounts
+        .oracle
+        .validated_price(now, PriceUse::IncreaseRisk)?;
+    let funding_index = ctx.accounts.market.cumulative_funding_index;
+    let oracle_key = ctx.accounts.oracle.key();
+    let treasury_key = ctx.accounts.treasury.key();
+
+    // A position that has never been funded is a zeroed `init_if_needed`
+    // account, and debiting it would fail on the arithmetic rather than say
+    // what is wrong. This is the readable version of the same refusal.
+    require_keys_eq!(
+        ctx.accounts.position.owner,
+        treasury_key,
+        ArclisError::Unauthorized
+    );
+
+    sync_and_settle(
+        &mut ctx.accounts.position,
+        &ctx.accounts.oracle,
+        &mut ctx.accounts.market,
+        &ctx.accounts.vault,
+        &mut ctx.accounts.pool,
+        &ctx.accounts.pool_vault,
+        &ctx.accounts.token_program,
+        &oracle_key,
+    )?;
+
+    let margin_ratio_bps_after = debit_collateral(
+        &mut ctx.accounts.position,
+        &ctx.accounts.market,
+        mark_price,
+        funding_index,
+        ctx.accounts.vault.amount,
+        amount,
+    )?;
+
+    let bump = [ctx.accounts.market.bump];
+    let seeds = Market::signer_seeds(&oracle_key, &bump);
+
+    token::transfer(
+        CpiContext::new_with_signer(
+            ctx.accounts.token_program.to_account_info(),
+            Transfer {
+                from: ctx.accounts.vault.to_account_info(),
+                to: ctx.accounts.authority_token_account.to_account_info(),
+                authority: ctx.accounts.market.to_account_info(),
+            },
+            &[&seeds],
+        ),
+        amount,
+    )?;
+
+    ctx.accounts.market.debit_collateral(amount)?;
+    ctx.accounts.position.last_update_ts = now;
+
+    emit!(CollateralWithdrawn {
+        market: ctx.accounts.market.key(),
+        owner: treasury_key,
+        amount,
+        collateral_after: ctx.accounts.position.collateral,
+        margin_ratio_bps_after,
+    });
     Ok(())
 }
 

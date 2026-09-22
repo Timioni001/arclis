@@ -54,35 +54,6 @@ pub fn handler(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
     let market_key = ctx.accounts.market.key();
     let owner_key = ctx.accounts.owner.key();
 
-    // `init_if_needed` gives a zeroed account on first use. Initialise it
-    // before touching any field, and snapshot the market's current funding
-    // index so a brand-new position is not charged for funding that accrued
-    // before it existed.
-    {
-        let position = &mut ctx.accounts.position;
-        if position.owner == Pubkey::default() {
-            position.owner = owner_key;
-            position.market = market_key;
-            position.size = 0;
-            position.entry_price = 0;
-            position.collateral = 0;
-            position.entry_funding_index = ctx.accounts.market.cumulative_funding_index;
-            position.entry_dividend_index = ctx.accounts.market.cumulative_dividend_index;
-            position.entry_split_factor = ctx.accounts.oracle.split_factor;
-            position.bump = ctx.bumps.position;
-            position._reserved = [0u8; 8];
-        } else {
-            // Re-using an existing account: it must be this owner's, in this
-            // market. The PDA seeds already guarantee it, but an explicit check
-            // costs nothing and survives a future seed change.
-            require_keys_eq!(position.owner, owner_key, ArclisError::Unauthorized);
-            require_keys_eq!(position.market, market_key, ArclisError::VaultMismatch);
-            // Depositing does not need a price, but it must not leave a
-            // position holding a stale split factor for the next instruction.
-            position.normalize_for_splits(ctx.accounts.oracle.split_factor)?;
-        }
-    }
-
     token::transfer(
         CpiContext::new(
             ctx.accounts.token_program.to_account_info(),
@@ -95,7 +66,74 @@ pub fn handler(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
         amount,
     )?;
 
-    let position = &mut ctx.accounts.position;
+    credit_collateral(
+        &mut ctx.accounts.position,
+        &mut ctx.accounts.market,
+        &ctx.accounts.oracle,
+        owner_key,
+        market_key,
+        ctx.bumps.position,
+        amount,
+        now,
+    )?;
+
+    emit!(CollateralDeposited {
+        market: market_key,
+        owner: owner_key,
+        amount,
+        collateral_after: ctx.accounts.position.collateral,
+    });
+    Ok(())
+}
+
+/// Open or top up a position, and move the market's liability with it.
+///
+/// Split out of the handler above because the agent treasury needs exactly
+/// these rules under a different signer. A treasury's hedge position is owned
+/// by the treasury PDA, which cannot sign a client transaction, so the account
+/// context has to differ; the accounting must not. Keeping one copy of it is
+/// the difference between a treasury position that behaves like every other
+/// position and one that drifts its own way under splits or funding.
+///
+/// The caller does the token transfer, because that is the part that genuinely
+/// differs: who authorises it and where the tokens come from.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn credit_collateral(
+    position: &mut Position,
+    market: &mut Market,
+    oracle: &PriceOracle,
+    owner_key: Pubkey,
+    market_key: Pubkey,
+    position_bump: u8,
+    amount: u64,
+    now: i64,
+) -> Result<()> {
+    // `init_if_needed` gives a zeroed account on first use. Initialise it
+    // before touching any field, and snapshot the market's current funding
+    // index so a brand-new position is not charged for funding that accrued
+    // before it existed.
+    if position.owner == Pubkey::default() {
+        position.owner = owner_key;
+        position.market = market_key;
+        position.size = 0;
+        position.entry_price = 0;
+        position.collateral = 0;
+        position.entry_funding_index = market.cumulative_funding_index;
+        position.entry_dividend_index = market.cumulative_dividend_index;
+        position.entry_split_factor = oracle.split_factor;
+        position.bump = position_bump;
+        position._reserved = [0u8; 8];
+    } else {
+        // Re-using an existing account: it must be this owner's, in this
+        // market. The PDA seeds already guarantee it, but an explicit check
+        // costs nothing and survives a future seed change.
+        require_keys_eq!(position.owner, owner_key, ArclisError::Unauthorized);
+        require_keys_eq!(position.market, market_key, ArclisError::VaultMismatch);
+        // Depositing does not need a price, but it must not leave a position
+        // holding a stale split factor for the next instruction.
+        position.normalize_for_splits(oracle.split_factor)?;
+    }
+
     position.collateral = position
         .collateral
         .checked_add(amount)
@@ -103,13 +141,6 @@ pub fn handler(ctx: Context<DepositCollateral>, amount: u64) -> Result<()> {
     position.last_update_ts = now;
 
     // The market's liability total moves in lockstep with trader collateral.
-    ctx.accounts.market.credit_collateral(amount)?;
-
-    emit!(CollateralDeposited {
-        market: market_key,
-        owner: owner_key,
-        amount,
-        collateral_after: position.collateral,
-    });
+    market.credit_collateral(amount)?;
     Ok(())
 }

@@ -1156,6 +1156,177 @@
       ]
     },
     {
+      "name": "fund_treasury_hedge",
+      "docs": [
+        "Post margin for a treasury's hedge, opening its position on first call.",
+        "",
+        "`rebalance_hedge` below takes that position as an account that already",
+        "exists, and nothing else in this program could create it: every other",
+        "path seeds a position by a `Signer`'s key, and a treasury's position is",
+        "owned by the treasury PDA. Without this instruction the hedge could",
+        "never be opened at all."
+      ],
+      "discriminator": [
+        126,
+        183,
+        59,
+        249,
+        213,
+        148,
+        96,
+        248
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The agent. Unlike `deposit_stock`, this is not permissionless in either",
+            "direction: margin posted here is spendable by the perp engine, so the",
+            "signer that can put it at risk is the one that owns the treasury."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "treasury"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The treasury's own perp position. This is the account that nothing else",
+            "in the program could bring into existence."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority_token_account",
+          "docs": [
+            "The agent's quote-token account. On the way in it must be the",
+            "authority's own, so an agent cannot fund its hedge out of someone",
+            "else's account it happens to hold a delegation on."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "defund_treasury_hedge",
+      "docs": [
+        "Return hedge margin to the agent, subject to the same initial-margin",
+        "floor a trader's withdrawal is held to."
+      ],
+      "discriminator": [
+        235,
+        162,
+        89,
+        38,
+        168,
+        111,
+        150,
+        70
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "docs": [
+            "The agent. Unlike `deposit_stock`, this is not permissionless in either",
+            "direction: margin posted here is spendable by the perp engine, so the",
+            "signer that can put it at risk is the one that owns the treasury."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config"
+        },
+        {
+          "name": "treasury"
+        },
+        {
+          "name": "market",
+          "writable": true
+        },
+        {
+          "name": "oracle"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The treasury's own perp position. This is the account that nothing else",
+            "in the program could bring into existence."
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority_token_account",
+          "docs": [
+            "The agent's quote-token account. On the way in it must be the",
+            "authority's own, so an agent cannot fund its hedge out of someone",
+            "else's account it happens to hold a delegation on."
+          ],
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true
+        },
+        {
+          "name": "pool",
+          "writable": true
+        },
+        {
+          "name": "pool_vault",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "rebalance_hedge",
       "docs": [
         "Permissionless: anyone may bring a treasury back to its target hedge.",

@@ -210,7 +210,7 @@ pub mod arclis {
     // --- agent treasuries ---------------------------------------------------
     //
     // An agent that raised on a stock-quoted bonding curve holds a treasury
-    // levered to one company's earnings. These four turn that into an operating
+    // levered to one company's earnings. These turn that into an operating
     // budget: hold the stock, short the matching perp, publish an honest NAV.
 
     pub fn initialize_treasury(
@@ -243,6 +243,29 @@ pub mod arclis {
 
     pub fn withdraw_stock(ctx: Context<MoveTreasuryStock>, amount: u64) -> Result<()> {
         instructions::treasury::withdraw_stock(ctx, amount)
+    }
+
+    /// Post margin for a treasury's hedge, opening its position on first call.
+    ///
+    /// `rebalance_hedge` below takes that position as an account that already
+    /// exists, and nothing else in this program could create it: every other
+    /// path seeds a position by a `Signer`'s key, and a treasury's position is
+    /// owned by the treasury PDA. Without this instruction the hedge could
+    /// never be opened at all.
+    pub fn fund_treasury_hedge(
+        ctx: Context<MoveTreasuryHedgeMargin>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::treasury::fund_treasury_hedge(ctx, amount)
+    }
+
+    /// Return hedge margin to the agent, subject to the same initial-margin
+    /// floor a trader's withdrawal is held to.
+    pub fn defund_treasury_hedge(
+        ctx: Context<MoveTreasuryHedgeMargin>,
+        amount: u64,
+    ) -> Result<()> {
+        instructions::treasury::defund_treasury_hedge(ctx, amount)
     }
 
     /// Permissionless: anyone may bring a treasury back to its target hedge.
