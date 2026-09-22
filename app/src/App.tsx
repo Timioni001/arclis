@@ -10,7 +10,7 @@
  * does not receive it at all, which is what makes "this page never asks for a
  * wallet" a property of the code rather than a promise in a comment.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { DataSource } from "./lib/protocol/mock";
 import { modelledRegistry } from "./lib/registry/data";
 import { loadRegistry, type LiveRegistry } from "./lib/registry/live";
@@ -115,7 +115,25 @@ export function App({ source }: { source: DataSource }) {
     REFRESH_INTERVAL_MS,
   );
 
-  const markets = useMemo(() => source.markets(), [source]);
+  /*
+   * Read every render. Not memoised, and that is the point.
+   *
+   * This was `useMemo(() => source.markets(), [source])`, which looks
+   * obviously right and is obviously wrong: the source is a mutable snapshot
+   * holder whose identity never changes, by design, so the memo ran once - on
+   * the first render, before the first read of the chain had landed - and
+   * returned the same empty array forever after.
+   *
+   * Overview, Portfolio, Liquidity and Treasuries all take `markets`, so all
+   * four rendered their "nothing here" state permanently while the chain had
+   * five markets on it. Trade was the only screen that worked, purely because
+   * it reads `source.market(symbol)` on the line below instead.
+   *
+   * `markets()` hands back the snapshot's own array, so this is a property
+   * read, and its identity changes only when a refresh replaces the snapshot -
+   * which is exactly when these screens should re-render anyway.
+   */
+  const markets = source.markets();
   const view = source.market(symbol) ?? markets[0];
 
   const openMarket = useCallback((s: string) => {
