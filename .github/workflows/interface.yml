@@ -20,7 +20,14 @@ name: Interface
 
 on:
   push:
-    branches: [main]
+    # Working branches too, not just main.
+    #
+    # This gate caught a broken build on d3e6b39 forty minutes before
+    # Cloudflare did, and it caught it *after* the merge, because it only ran
+    # on main. A check that can only fail once the code is live is a report,
+    # not a gate. Work here lands through a fast-forward rather than a pull
+    # request, so the branch push is the only moment left to catch anything.
+    branches: [main, "claude/**"]
     paths:
       - "app/**"
       - "idl/**"
