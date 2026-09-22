@@ -22,7 +22,8 @@
     "registry:build": "ts-node pipeline/src/run.ts",
     "registry:prerender": "ts-node pipeline/src/prerender.ts",
     "assistant": "tsx server/dev.ts",
-    "seed": "tsx scripts/seed-local.ts"
+    "seed": "tsx scripts/seed-local.ts",
+    "seed:treasury": "tsx scripts/seed-treasury.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",

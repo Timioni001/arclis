@@ -385,3 +385,133 @@ export async function liquidatePass(options: LiquidatorOptions): Promise<{
 
   return { scanned, attempted, liquidated };
 }
+
+// ---------------------------------------------------------------------------
+// Treasury hedges
+// ---------------------------------------------------------------------------
+
+/** A treasury account as the rebalancer needs it. */
+export interface ScannedTreasury {
+  address: PublicKey;
+  agentMint: PublicKey;
+  market: PublicKey;
+  hedgingEnabled: boolean;
+}
+
+/**
+ * Every agent treasury the program holds.
+ *
+ * Same shape as `scanPositions`: a treasury's PDA seed is its agent mint, and
+ * the set of agents is not knowable in advance, so the discriminator is the
+ * only handle. There is no second `memcmp` here because there is no market
+ * filter worth applying - treasuries are counted in the tens, not the
+ * thousands, and one pass covers every market at once.
+ *
+ * "AgentTreasury", with the IDL's capitalisation. A raw `BorshCoder` does not
+ * camelCase, and the wrong name here is a filter that matches nothing, so the
+ * rebalancer would find no treasuries and say nothing about it.
+ */
+export async function scanTreasuries(
+  config: ChainConfig,
+): Promise<ScannedTreasury[]> {
+  const discriminator = (
+    coder.accounts as unknown as { accountDiscriminator(name: string): Buffer }
+  ).accountDiscriminator("AgentTreasury");
+
+  const accounts = await config.connection.getProgramAccounts(
+    config.programId,
+    { filters: [{ memcmp: { offset: 0, bytes: bs58(discriminator) } }] },
+  );
+
+  const out: ScannedTreasury[] = [];
+  for (const { pubkey, account } of accounts) {
+    try {
+      const decoded = coder.accounts.decode("AgentTreasury", account.data) as
+        Record<string, any>;
+      out.push({
+        address: pubkey,
+        agentMint: new PublicKey(decoded.agent_mint),
+        market: new PublicKey(decoded.market),
+        hedgingEnabled: Boolean(decoded.hedging_enabled),
+      });
+    } catch {
+      // One treasury written by a previous account layout must not cost the
+      // rest of the pass.
+    }
+  }
+  return out;
+}
+
+/**
+ * Bring every treasury back inside its tolerance band.
+ *
+ * This is the crank the on-chain design counts on. `rebalance_hedge` is
+ * permissionless precisely so an agent whose own keeper is down does not
+ * silently drift back to fully long, and that promise is only worth anything
+ * if somebody is actually cranking it. Nobody was.
+ *
+ * `RebalanceNotNeeded` is the normal answer and is already benign, like
+ * `FundingNotDue` on the funding crank: the program decides when a hedge has
+ * drifted, not this. So the pass submits for every treasury whose market it
+ * can price and lets the band do the filtering, rather than duplicating the
+ * drift arithmetic here where it could disagree with the chain's.
+ */
+export async function rebalancePass(
+  config: ChainConfig,
+  symbols: string[],
+): Promise<{ scanned: number; rebalanced: string[] }> {
+  const treasuries = await scanTreasuries(config);
+  if (treasuries.length === 0) return { scanned: 0, rebalanced: [] };
+
+  // Market address back to symbol, so a treasury can be matched to the
+  // addresses its instruction needs.
+  const byMarket = new Map<string, ReturnType<typeof addressesFor>>();
+  for (const symbol of symbols) {
+    const a = addressesFor(config.programId, symbol);
+    byMarket.set(a.market.toBase58(), a);
+  }
+
+  const rebalanced: string[] = [];
+  for (const treasury of treasuries) {
+    if (!treasury.hedgingEnabled) continue;
+    const a = byMarket.get(treasury.market.toBase58());
+    // A treasury hedging a market this keeper does not run is not this
+    // keeper's to crank.
+    if (!a) continue;
+
+    const position = pda(config.programId, [
+      seed("position"),
+      treasury.address.toBuffer(),
+      a.market.toBuffer(),
+    ]);
+
+    const outcome = await send(
+      config,
+      [
+        ix(config.programId, "rebalance_hedge", {}, [
+          { pubkey: config.payer.publicKey, isSigner: true, isWritable: false },
+          ro(a.config),
+          rw(treasury.address),
+          rw(a.market),
+          ro(a.oracle),
+          rw(position),
+          rw(a.pool),
+          rw(a.poolVault),
+          rw(a.marketVault),
+          ro(TOKEN_PROGRAM_ID),
+        ]),
+      ],
+      `rebalance_hedge ${treasury.address.toBase58().slice(0, 8)}`,
+    );
+
+    if (outcome.ok) {
+      rebalanced.push(treasury.address.toBase58());
+      config.log("info", "rebalanced an agent hedge", {
+        treasury: treasury.address.toBase58(),
+        signature: outcome.signature,
+      });
+    }
+  }
+
+  return { scanned: treasuries.length, rebalanced };
+}

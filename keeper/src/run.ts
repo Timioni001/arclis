@@ -25,7 +25,7 @@ import {
   type ChainConfig,
 } from "./chain";
 import { keeperTick, newKeeperState } from "./oracle-keeper";
-import { crankFunding, liquidatePass } from "./cranks";
+import { crankFunding, liquidatePass, rebalancePass } from "./cranks";
 import {
   corporateTick,
   ephemeralAppliedLog,
@@ -148,6 +148,14 @@ async function main() {
   const FUNDING_INTERVAL_MS = Number(env.FUNDING_INTERVAL_MS ?? 60_000);
   const LIQUIDATOR_INTERVAL_MS = Number(env.LIQUIDATOR_INTERVAL_MS ?? 5_000);
   const CORPORATE_INTERVAL_MS = Number(env.CORPORATE_INTERVAL_MS ?? 3_600_000);
+  /*
+   * Agent hedges. Five minutes, which is slack next to the other loops, and
+   * deliberately so: a rebalance is a `getProgramAccounts` scan followed by a
+   * taker trade, so cranking it hard costs both RPC quota and fees to chase
+   * drift the tolerance band exists to ignore. The band, not this interval, is
+   * what decides when a hedge is wrong.
+   */
+  const REBALANCE_INTERVAL_MS = Number(env.REBALANCE_INTERVAL_MS ?? 300_000);
   health.register("oracle", PRICE_INTERVAL_MS);
   health.register("funding", FUNDING_INTERVAL_MS);
 
@@ -236,6 +244,27 @@ async function main() {
       consequence: "underwater positions will become bad debt",
     });
   }
+
+  // Agent hedges. `rebalance_hedge` is permissionless on purpose, so that an
+  // agent whose own keeper is down does not drift back to fully long. Nothing
+  // was cranking it, which made the promise empty.
+  tasks.push(
+    loop(
+      config,
+      "rebalancer",
+      REBALANCE_INTERVAL_MS,
+      async () => {
+        const result = await rebalancePass(config, SYMBOLS);
+        if (result.rebalanced.length) {
+          log("info", "rebalanced agent hedges", {
+            count: result.rebalanced.length,
+            of: result.scanned,
+          });
+        }
+      },
+      abort.signal,
+    ),
+  );
 
   // Corporate actions. Hourly is plenty: the window is the whole overnight,
   // and the ex-date is known days ahead.
