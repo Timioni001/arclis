@@ -29,6 +29,67 @@ export interface EventMarker {
 const PAD = { top: 12, right: 58, bottom: 20, left: 8 };
 const VOL_H = 40;
 
+/**
+ * The vertical domain the chart is drawn against.
+ *
+ * Extracted from the component because the interesting case has no pixels in
+ * it: a market that has not moved. Overnight, at a weekend, or in the minutes
+ * after the keeper first catches up, every candle carries the same price, and
+ * the naive domain is then zero wide.
+ *
+ * `priceMax - priceMin || 1` used to be the guard, which is worse than no
+ * guard at all: prices are integers at 1e6 scale, so it produced a domain one
+ * *millionth of a dollar* tall. Every axis label formatted to the same number,
+ * the whole series sat on one line, and the chart read as broken rather than
+ * as still.
+ *
+ * So a still market gets a floor: the domain is never narrower than
+ * `MIN_SPAN_BPS` of the price itself, centred on it. The line still sits flat
+ * in the middle - it should, nothing moved - but the axis around it is real,
+ * and a move starting mid-session opens the scale out naturally.
+ */
+const MIN_SPAN_BPS = 40; // 0.4% of price, split either side
+/** How far a marker may stretch the domain past the candles themselves. */
+const MARKER_ALLOWANCE = 0.45;
+/** Breathing room above and below, once the domain is settled. */
+const PADDING = 0.06;
+
+export function priceDomain(
+  candles: Candle[],
+  markers: PriceMarker[] = [],
+): { min: number; max: number } {
+  const priceMin = Math.min(...candles.map((c) => Number(c.l)));
+  const priceMax = Math.max(...candles.map((c) => Number(c.h)));
+  const priceSpan = priceMax - priceMin;
+
+  // The price series owns the scale. A marker may widen the domain, but only
+  // so far: a liquidation price 40% below spot would otherwise compress the
+  // whole candle series into a few pixels at the top of the plot. Markers
+  // outside the allowance are pinned to the edge and flagged instead.
+  //
+  // The allowance is measured against the floor, not against the raw span,
+  // or a still market would let any marker take the scale over completely.
+  const reach = Math.max(priceSpan, (priceMax * MIN_SPAN_BPS) / 10_000);
+  let min = priceMin;
+  let max = priceMax;
+  for (const mk of markers) {
+    const v = Number(mk.price);
+    if (v < min) min = Math.max(v, priceMin - reach * MARKER_ALLOWANCE);
+    if (v > max) max = Math.min(v, priceMax + reach * MARKER_ALLOWANCE);
+  }
+
+  let span = max - min;
+  const floor = Math.max((priceMax * MIN_SPAN_BPS) / 10_000, 1);
+  if (span < floor) {
+    const mid = (max + min) / 2;
+    min = mid - floor / 2;
+    max = mid + floor / 2;
+    span = floor;
+  }
+
+  return { min: min - span * PADDING, max: max + span * PADDING };
+}
+
 export function PriceChart({
   candles,
   height = 340,
@@ -49,27 +110,7 @@ export function PriceChart({
   const geom = useMemo(() => {
     if (!candles.length) return null;
     const plotH = height - PAD.top - PAD.bottom - VOL_H;
-    const lows = candles.map((c) => Number(c.l));
-    const highs = candles.map((c) => Number(c.h));
-    const priceMin = Math.min(...lows);
-    const priceMax = Math.max(...highs);
-    const priceSpan = priceMax - priceMin || 1;
-
-    // The price series owns the scale. A marker may widen the domain, but only
-    // so far: a liquidation price 40% below spot would otherwise compress the
-    // whole candle series into a few pixels at the top of the plot. Markers
-    // outside the allowance are pinned to the edge and flagged instead.
-    const ALLOWANCE = 0.45;
-    let min = priceMin;
-    let max = priceMax;
-    for (const mk of markers) {
-      const v = Number(mk.price);
-      if (v < min) min = Math.max(v, priceMin - priceSpan * ALLOWANCE);
-      if (v > max) max = Math.min(v, priceMax + priceSpan * ALLOWANCE);
-    }
-    const span = max - min || 1;
-    min -= span * 0.06;
-    max += span * 0.06;
+    const { min, max } = priceDomain(candles, markers);
 
     const plotW = W - PAD.left - PAD.right;
     const x = (i: number) =>
@@ -191,7 +232,11 @@ export function PriceChart({
             const oy = y(Number(c.o));
             const cy = y(Number(c.c));
             const top = Math.min(oy, cy);
-            const bodyH = Math.max(1, Math.abs(cy - oy));
+            // Two pixels, not one. A candle whose open and close match has a
+            // zero-height body, and at one pixel against a narrow bar it
+            // renders as a speck rather than as the flat bar a still period
+            // actually is.
+            const bodyH = Math.max(2, Math.abs(cy - oy));
             return (
               <g key={i}>
                 <line

@@ -25,7 +25,7 @@ import { Portfolio } from "./screens/Portfolio";
 import { AuthSheet } from "./components/auth/AuthSheet";
 import { Splash } from "./components/motion/Splash";
 import { AmbientShader } from "./components/motion/AmbientShader";
-import { AddressDisplay, NotificationBell } from "./components/ui/data";
+import { AddressDisplay } from "./components/ui/data";
 import { useLiveSource } from "./lib/protocol/useLiveSource";
 import { explorerAddress, REFRESH_INTERVAL_MS } from "./lib/config";
 import { ago } from "./lib/format";
@@ -134,6 +134,21 @@ export function App({ source }: { source: DataSource }) {
    * which is exactly when these screens should re-render anyway.
    */
   const markets = source.markets();
+
+  /*
+   * One failed poll is not an outage.
+   *
+   * `api.devnet.solana.com` is shared and rate limits under load, so a
+   * dropped read is routine; the previous snapshot is still good and the next
+   * poll usually succeeds. Flipping the badge to RPC ERROR on the first one
+   * made the interface flash red and recover repeatedly, which reads as a
+   * malfunction rather than as a retry - and trains anyone watching to
+   * discount the badge when it finally means something.
+   */
+  const ERROR_AFTER_CONSECUTIVE = 3;
+  const degraded =
+    liveStatus.lastError !== null &&
+    liveStatus.consecutiveErrors >= ERROR_AFTER_CONSECUTIVE;
   const view = source.market(symbol) ?? markets[0];
 
   const openMarket = useCallback((s: string) => {
@@ -231,17 +246,18 @@ export function App({ source }: { source: DataSource }) {
             ) : (
               <button
                 className="pill demo-pill"
-                data-tone={liveStatus.lastError ? "halted" : "open"}
+                data-tone={degraded ? "halted" : "open"}
                 onClick={liveStatus.refresh}
                 title={
-                  liveStatus.lastError ??
-                  (liveStatus.loadedAt
-                    ? `Last read ${ago(liveStatus.loadedAt, now)}`
-                    : "Reading the chain")
+                  degraded
+                    ? (liveStatus.lastError ?? "The endpoint is not answering")
+                    : liveStatus.loadedAt
+                      ? `Last read ${ago(liveStatus.loadedAt, now)}`
+                      : "Reading the chain"
                 }
               >
                 <span className="dot" aria-hidden />
-                {liveStatus.lastError
+                {degraded
                   ? "RPC ERROR"
                   : liveStatus.refreshing
                     ? "SYNCING"
@@ -250,10 +266,15 @@ export function App({ source }: { source: DataSource }) {
             )}
 
             <div className="icon-cluster">
-              <button className="icon-btn" aria-label="Search">
-                <Icon name="search" />
-              </button>
-              <NotificationBell count={0} />
+              {/*
+                There were a search button and a notification bell here. Both
+                did nothing: no handler on one, no notifications behind the
+                other. A control that does not respond is a defect a viewer
+                finds in the first ten seconds, and neither was load-bearing,
+                so neither is here now. A market search is worth building
+                properly when there is something to search that the Overview
+                grid does not already show.
+              */}
               <button
                 className="icon-btn"
                 onClick={() => setTheme(theme === "dark" ? "light" : "dark")}

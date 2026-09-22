@@ -29,6 +29,16 @@ export interface LiveStatus {
   /** Unix seconds of the last successful read, or null before the first one. */
   loadedAt: number | null;
   lastError: string | null;
+  /**
+   * How many polls in a row have failed.
+   *
+   * The distinction the interface needs and `lastError` cannot make: one
+   * dropped poll against a shared endpoint is normal and the previous
+   * snapshot is still perfectly good, while several in a row means the
+   * endpoint is gone. Showing the same alarm for both trains people to
+   * ignore it.
+   */
+  consecutiveErrors: number;
   refreshing: boolean;
   refresh: () => void;
 }
@@ -42,6 +52,7 @@ export function useLiveSource(
   // copying it into state would mean two sources of truth.
   const [, bump] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
+  const [consecutiveErrors, setConsecutiveErrors] = useState(0);
 
   const live = isLive(source);
 
@@ -61,6 +72,11 @@ export function useLiveSource(
       await source.refresh();
       if (cancelled) return;
       setRefreshing(false);
+      // `refresh` records its failure on the source rather than throwing, so
+      // the outcome is read back off it afterwards.
+      setConsecutiveErrors((n) =>
+        (source as LiveDataSource).lastError ? n + 1 : 0,
+      );
       bump((n) => n + 1);
     };
 
@@ -84,6 +100,7 @@ export function useLiveSource(
     live,
     loadedAt: live ? (source as LiveDataSource).loadedAt : null,
     lastError: live ? (source as LiveDataSource).lastError : null,
+    consecutiveErrors,
     refreshing,
     refresh: () => {
       if (isLive(source)) void source.refresh().then(() => bump((n) => n + 1));
