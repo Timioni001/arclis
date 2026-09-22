@@ -75,7 +75,18 @@ export function candlesForTimeframe(
   const window = TF_SECONDS[tf];
   const points = view.points;
   if (!points || points.length === 0) {
-    return { candles: view.candles.slice(-90), coverage: null };
+    // A source whose candles are already real OHLC bars (the modelled one)
+    // gets them filtered by the same window. Re-bucketing their closes would
+    // throw away the highs and lows it already has.
+    const bars = view.candles;
+    if (bars.length === 0) return { candles: [], coverage: null };
+    const last = bars[bars.length - 1].t;
+    const from = window === null ? -Infinity : last - window;
+    const inWindow = bars.filter((c) => c.t >= from);
+    return {
+      candles: inWindow.length >= 2 ? inWindow : bars.slice(-2),
+      coverage: null,
+    };
   }
 
   // Measured from the newest print, not from the wall clock. A market that

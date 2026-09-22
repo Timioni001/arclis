@@ -87,18 +87,20 @@ describe("candlesForTimeframe", () => {
     expect(candlesForTimeframe(view(dayOfPrints()), "ALL").coverage).toBeNull();
   });
 
-  it("falls back to the candle tail when a source carries no prints", () => {
+  it("filters ready-made candles by the window when a source has no prints", () => {
     const v = view(undefined);
-    v.candles = Array.from({ length: 200 }, (_, i) => ({
-      t: NOW - (200 - i) * 60,
+    // Hourly bars over four days, as the modelled source produces.
+    v.candles = Array.from({ length: 96 }, (_, i) => ({
+      t: NOW - (95 - i) * HOUR,
       o: 1n,
-      h: 1n,
+      h: 2n,
       l: 1n,
-      c: 1n,
+      c: 2n,
       v: 0n,
     }));
-    // Degrades to the old behaviour rather than to an empty chart.
-    expect(candlesForTimeframe(v, "1H").candles).toHaveLength(90);
+    // Kept as bars rather than re-bucketed, which would discard their wicks.
+    expect(candlesForTimeframe(v, "1D").candles).toHaveLength(25);
+    expect(candlesForTimeframe(v, "ALL").candles).toHaveLength(96);
   });
 
   it("returns an empty series rather than throwing on no prints at all", () => {

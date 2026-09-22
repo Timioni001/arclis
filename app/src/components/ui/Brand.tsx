@@ -169,7 +169,7 @@ export const ECOSYSTEM: EcosystemBrand[] = [
     name: "Clawpump",
     short: "Launches on Clawpump",
     role: "Distribution. The launch surface a new stock-quoted market opens through.",
-    href: "https://clawpump.com",
+    href: "https://clawpump.tech",
     asset: "clawpump.png",
   },
 ];
