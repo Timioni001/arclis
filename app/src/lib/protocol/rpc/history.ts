@@ -30,14 +30,12 @@
 
 import type { Connection, PublicKey } from "@solana/web3.js";
 import { coder } from "./decode";
-import type { Candle } from "../types";
+import type { Candle, PricePoint } from "../types";
 
-/** One published print. */
-export interface PricePoint {
-  /** Unix seconds, from the cluster. */
-  t: number;
-  price: bigint;
-}
+// Re-exported so every caller keeps importing it from here, where the code
+// that produces prints lives, while the single definition sits with the rest
+// of the read model in `types.ts`.
+export type { PricePoint } from "../types";
 
 /**
  * The IDL spells this `update_price_oracle`, and a raw `BorshCoder` returns
@@ -150,17 +148,66 @@ export async function fetchPriceHistory(
 }
 
 /** How many candles a chart wants, regardless of how much history exists. */
-const TARGET_CANDLES = 96;
-/** Never bucket finer than this: the keeper publishes about every 10s. */
-const MIN_BUCKET_SECS = 30;
+export const TARGET_CANDLES = 96;
+/** Never bucket finer than this, whatever the arithmetic below says. */
+export const MIN_BUCKET_SECS = 30;
+
+/**
+ * How many prints a bar needs before it is a bar.
+ *
+ * This is the constant the chart was missing, and the reason it drew as a row
+ * of disconnected dashes at different heights rather than as candles.
+ *
+ * A candlestick is four numbers, and all four come from the prints that fall
+ * inside its bucket. Give a bucket one print and open, high, low and close are
+ * that one price: a doji with no wicks, drawn as a two-pixel horizontal line.
+ * A whole series of those is not a broken renderer, it is a correct rendering
+ * of buckets that each hold a single price.
+ *
+ * The old bucket width came only from the span: an hour of history over 96
+ * target candles is a 37-second bucket, against a keeper publishing every 60
+ * seconds. Every bucket got exactly one print, so every candle was a doji,
+ * every time, and no amount of restyling would have changed it.
+ *
+ * So the bucket is also held to a multiple of the observed publish cadence.
+ * Four prints a bar gives a body and wicks that mean something, at the cost of
+ * a quarter as many bars, which is the right side of that trade: fifteen real
+ * candles beat sixty dashes.
+ */
+export const MIN_PRINTS_PER_CANDLE = 4;
+
+/**
+ * The typical gap between prints, in seconds.
+ *
+ * The median rather than the mean, because the series has outliers by
+ * construction: a market closes and the next print is fifteen hours later.
+ * One overnight gap would drag a mean wide enough to bucket a whole session
+ * into one bar.
+ */
+export function printCadence(points: PricePoint[]): number {
+  if (points.length < 2) return 0;
+  const gaps: number[] = [];
+  for (let i = 1; i < points.length; i++) {
+    const gap = points[i].t - points[i - 1].t;
+    if (gap > 0) gaps.push(gap);
+  }
+  if (gaps.length === 0) return 0;
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)];
+}
 
 /**
  * Bucket prints into OHLC candles.
  *
- * The bucket width is derived from the span rather than fixed, because the
- * span is whatever the keeper has had time to publish: a chart of ten minutes
- * of history and a chart of three weeks both have to look like a chart. A
- * fixed 1h bucket would draw the first as a single bar.
+ * The bucket width is derived rather than fixed, because the span is whatever
+ * the keeper has had time to publish: a chart of ten minutes of history and a
+ * chart of three weeks both have to look like a chart. A fixed 1h bucket would
+ * draw the first as a single bar.
+ *
+ * It is derived from two things, not one. The span sets an upper bound on how
+ * many bars are useful; the publish cadence sets a lower bound on how wide a
+ * bar has to be to hold enough prints to have a shape. See
+ * `MIN_PRINTS_PER_CANDLE`.
  *
  * Volume is zero and stays zero. It is not in this data - a price publish
  * carries no size - and drawing a volume bar from something else would be
@@ -174,7 +221,11 @@ export function candlesFrom(points: PricePoint[]): Candle[] {
   }
 
   const span = points[points.length - 1].t - points[0].t;
-  const bucket = Math.max(MIN_BUCKET_SECS, Math.ceil(span / TARGET_CANDLES));
+  const bucket = Math.max(
+    MIN_BUCKET_SECS,
+    printCadence(points) * MIN_PRINTS_PER_CANDLE,
+    Math.ceil(span / TARGET_CANDLES),
+  );
 
   const candles: Candle[] = [];
   let current: Candle | null = null;

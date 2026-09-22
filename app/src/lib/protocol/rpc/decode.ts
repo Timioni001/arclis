@@ -13,7 +13,7 @@
  */
 
 import { BorshCoder, type Idl } from "@coral-xyz/anchor";
-import { PublicKey } from "@solana/web3.js";
+import type { PublicKey } from "@solana/web3.js";
 import idl from "../../../idl/arclis.json";
 import type {
   LiquidityPool,
@@ -277,9 +277,9 @@ function shortMint(mint: string): string {
 }
 
 /**
- * The Metaplex Token Metadata program, and the name field inside its account.
+ * Read the `name` out of a Metaplex Token Metadata account.
  *
- * Reading this directly rather than through `@metaplex-foundation/*` is a
+ * Doing it directly rather than through `@metaplex-foundation/*` is a
  * deliberate trade. The layout of the first three fields has been fixed since
  * v1 and is two lines to parse; the SDK is a dependency tree larger than the
  * rest of this interface's chain code put together, pulled in to read one
@@ -288,23 +288,10 @@ function shortMint(mint: string): string {
  * Layout: key (1) + update_authority (32) + mint (32) = 65, then the name as
  * a Borsh string. Metaplex pads it to `MAX_NAME_LENGTH`, so the trailing NULs
  * are expected and trimmed rather than treated as corruption.
+ *
+ * The account's address is derived in `pdas.ts`, with the rest of the seeds.
  */
-export const METADATA_PROGRAM_ID = new PublicKey(
-  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
-);
-
 const NAME_OFFSET = 1 + 32 + 32;
-
-export function metadataPda(mint: PublicKey): PublicKey {
-  return PublicKey.findProgramAddressSync(
-    [
-      new TextEncoder().encode("metadata"),
-      METADATA_PROGRAM_ID.toBuffer(),
-      mint.toBuffer(),
-    ],
-    METADATA_PROGRAM_ID,
-  )[0];
-}
 
 /** The `name` out of a Token Metadata account, or null if it is not one. */
 export function decodeMetadataName(data: Buffer | Uint8Array): string | null {

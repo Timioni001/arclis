@@ -176,9 +176,26 @@ export interface MarketView {
   oracle: Oracle;
   pool: LiquidityPool;
   candles: Candle[];
+  /**
+   * The prints the candles were bucketed from, when the source has them.
+   *
+   * A chart with timeframe tabs cannot work from candles alone. Bucket width
+   * is chosen for the whole series, so slicing the last N of those bars gives
+   * a 1H tab and a 1W tab the same bar width and a different bar count, which
+   * is not what either label claims. Re-bucketing the prints inside the chosen
+   * window is the only way the tabs mean what they say.
+   */
+  points?: PricePoint[];
   /** 24h stats, derived off-chain from the event stream. */
   volume24h: bigint;
   changePct24h: number;
+}
+
+/** One published price, as the oracle stamped it. */
+export interface PricePoint {
+  /** Unix seconds, from the cluster. */
+  t: number;
+  price: bigint;
 }
 
 /** The transaction lifecycle every on-chain action moves through. DESIGN.md §27. */

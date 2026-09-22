@@ -29,6 +29,7 @@ import {
   appendPoint,
   candlesFrom,
   fetchPriceHistory,
+  printCadence,
   type PricePoint,
 } from "./history";
 
@@ -325,5 +326,90 @@ describe("reading the publish history", () => {
     );
     const times = points.map((p) => p.t);
     expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+});
+
+/*
+ * The chart drew a row of disconnected dashes at different heights, and the
+ * bug was here rather than in the renderer.
+ *
+ * A candlestick's four numbers all come from the prints inside its bucket.
+ * The bucket width used to come only from the span, so an hour of history
+ * over 96 target candles was a 37-second bucket against a keeper publishing
+ * every 60 seconds: one print per bucket, every bucket, so open equalled high
+ * equalled low equalled close and every candle was a flat two-pixel line at
+ * its own price. The renderer was correct. The buckets were wrong.
+ */
+describe("candles have bodies", () => {
+  /** An hour of prints, one a minute, walking upward. */
+  const minutely = (count: number, stepCents = 25): PricePoint[] =>
+    Array.from({ length: count }, (_, i) => ({
+      t: 1_800_000_000 + i * 60,
+      price: 200_000_000n + BigInt(i * stepCents * 10_000),
+    }));
+
+  const isDoji = (c: { o: bigint; h: bigint; l: bigint; c: bigint }) =>
+    c.o === c.h && c.h === c.l && c.l === c.c;
+
+  it("reads the publish cadence off the prints", () => {
+    expect(printCadence(minutely(60))).toBe(60);
+  });
+
+  it("takes the median gap, so one overnight close does not set the bucket", () => {
+    const points = minutely(30);
+    // A weekend: fifteen hours with no print, then trading resumes.
+    points.push({ t: points[points.length - 1].t + 54_000, price: 210_000_000n });
+    for (let i = 1; i <= 30; i++) {
+      points.push({
+        t: points[points.length - 1].t + 60,
+        price: 210_000_000n + BigInt(i * 250_000),
+      });
+    }
+    // The mean gap here is over 900s. The median is the cadence that matters.
+    expect(printCadence(points)).toBe(60);
+  });
+
+  it("gives an hour of minutely prints candles that are not all dojis", () => {
+    const candles = candlesFrom(minutely(60));
+
+    // The assertion that matters. Before the cadence floor this was 60 dojis.
+    expect(candles.length).toBeGreaterThan(2);
+    expect(candles.every(isDoji)).toBe(false);
+  });
+
+  it("puts several prints in each bucket rather than one", () => {
+    const points = minutely(60);
+    const candles = candlesFrom(points);
+    // Four prints a bar, so roughly a quarter as many bars as prints. Fewer
+    // bars is the point: fifteen real candles beat sixty dashes.
+    expect(candles.length).toBeLessThanOrEqual(points.length / 3);
+  });
+
+  it("still draws a flat series flat, rather than inventing a body", () => {
+    // A market that genuinely has not moved must not be dressed up. This is
+    // the case the old code handled correctly and the fix must not break.
+    const flat: PricePoint[] = Array.from({ length: 60 }, (_, i) => ({
+      t: 1_800_000_000 + i * 60,
+      price: 200_000_000n,
+    }));
+    expect(candlesFrom(flat).every(isDoji)).toBe(true);
+  });
+
+  it("does not widen the bucket when prints are already dense", () => {
+    // Ten-second prints over ten minutes: the span rule already gives buckets
+    // holding several prints, and the cadence floor must not coarsen it past
+    // what the history can support.
+    const dense: PricePoint[] = Array.from({ length: 60 }, (_, i) => ({
+      t: 1_800_000_000 + i * 10,
+      price: 200_000_000n + BigInt(i * 100_000),
+    }));
+    const candles = candlesFrom(dense);
+    expect(candles.length).toBeGreaterThan(5);
+    expect(candles.every(isDoji)).toBe(false);
+  });
+
+  it("returns no cadence for a series too short to have one", () => {
+    expect(printCadence([])).toBe(0);
+    expect(printCadence([{ t: 1, price: 1n }])).toBe(0);
   });
 });

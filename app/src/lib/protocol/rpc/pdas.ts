@@ -129,3 +129,27 @@ export function marketAddresses(
     poolVault: poolVaultPda(programId, pool),
   };
 }
+
+/**
+ * The Metaplex Token Metadata account for a mint.
+ *
+ * Not this program's PDA, but derived under the same rule and for the same
+ * reason the others are here: an agent's name lives on its token's metadata,
+ * and a wrong derivation would show up as a nameless agent rather than as an
+ * error. One function, seeds only, like everything else in this file.
+ */
+export const METADATA_PROGRAM_ID = new PublicKey(
+  "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s",
+);
+
+export function metadataPda(mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      new TextEncoder().encode("metadata"),
+      METADATA_PROGRAM_ID.toBuffer(),
+      mint.toBuffer(),
+    ],
+    METADATA_PROGRAM_ID,
+  )[0];
+}
+

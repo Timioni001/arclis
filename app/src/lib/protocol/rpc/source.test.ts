@@ -23,8 +23,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import ARCLIS_IDL from "../../../idl/arclis.json";
 import { rpcSource, TREASURY_RESCAN_EVERY } from "./source";
-import { metadataPda } from "./decode";
-import { marketAddresses, positionPda } from "./pdas";
+import { marketAddresses, metadataPda, positionPda } from "./pdas";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const coder = new BorshCoder(ARCLIS_IDL as any);

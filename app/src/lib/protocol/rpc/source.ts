@@ -44,9 +44,13 @@ import {
   decodePool,
   decodePosition,
   decodeTreasury,
-  metadataPda,
 } from "./decode";
-import { lpPositionPda, marketAddresses, positionPda } from "./pdas";
+import {
+  lpPositionPda,
+  marketAddresses,
+  metadataPda,
+  positionPda,
+} from "./pdas";
 import { encodeBase58 } from "../../auth/base58";
 import {
   appendPoint,
@@ -371,6 +375,10 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
           // see `history.ts`. Volume stays zero because a price publish
           // carries no size, and there is no indexer over fills yet.
           candles: candlesFrom(points) as Candle[],
+          // The prints themselves, so the chart's timeframe tabs can re-bucket
+          // inside the window they name rather than slicing bars chosen for
+          // the whole series.
+          points,
           volume24h: 0n,
           changePct24h: changeOverDay(points, oracle.price),
         });

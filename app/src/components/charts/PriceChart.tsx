@@ -193,6 +193,11 @@ export function PriceChart({
       .map((c, i) => `${x(i).toFixed(2)} ${y(Number(c.c)).toFixed(2)}`)
       .join(" L ");
 
+  /** Every bar is a single print: no bodies, no wicks, nothing to connect. */
+  const allDojis = candles.every(
+    (c) => c.o === c.h && c.h === c.l && c.l === c.c,
+  );
+
   const active = hover !== null ? candles[hover] : null;
   const last = candles[candles.length - 1];
 
@@ -291,7 +296,33 @@ export function PriceChart({
             />
           </>
         ) : (
-          candles.map((c, i) => {
+          <>
+            {/*
+              A guide line through the closes, drawn only when every bar is a
+              doji.
+
+              A bucket holding one print has open, high, low and close all
+              equal, so the bar is a flat two-pixel dash with no wick. A row of
+              those at different heights is a correct drawing of the data and
+              an unreadable one: it looks like a broken renderer rather than a
+              price that moved. `candlesFrom` now buckets wide enough that this
+              is rare, but "rare" is not "never" on a series with irregular
+              gaps, and a chart must never look broken.
+
+              Only when *every* bar is a doji. One flat bar inside a normal
+              series is information, and drawing a line through those would be
+              adding a second series nobody asked for.
+            */}
+            {allDojis && (
+              <path
+                d={linePath}
+                fill="none"
+                stroke="var(--chart-1)"
+                strokeWidth={1}
+                opacity={0.45}
+              />
+            )}
+            {candles.map((c, i) => {
             const col = up(c) ? "var(--positive)" : "var(--negative)";
             const oy = y(Number(c.o));
             const cy = y(Number(c.c));
@@ -321,7 +352,8 @@ export function PriceChart({
                 />
               </g>
             );
-          })
+            })}
+          </>
         )}
 
         {/* The time axis. Four labels, evenly spaced, so the series reads as

@@ -230,6 +230,10 @@ function buildMarket(seed: Seed, index: number): MarketView {
     oracle,
     pool,
     candles,
+    // One print per bar is all a modelled series has; it is enough for the
+    // chart to re-bucket a timeframe, and it keeps mock and chain on the same
+    // code path rather than giving the mock a chart the chain does not get.
+    points: candles.map((c) => ({ t: c.t, price: c.c })),
     volume24h: candles.slice(-24).reduce((a, c) => a + c.v, 0n),
     changePct24h,
   };

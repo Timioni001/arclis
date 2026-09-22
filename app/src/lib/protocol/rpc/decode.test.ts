@@ -19,6 +19,7 @@ import { PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
 
 import ARCLIS_IDL from "../../../idl/arclis.json";
+import { metadataPda } from "./pdas";
 import {
   accountDiscriminator,
   decodeLpPosition,
@@ -28,7 +29,6 @@ import {
   decodePool,
   decodePosition,
   decodeTreasury,
-  metadataPda,
 } from "./decode";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
