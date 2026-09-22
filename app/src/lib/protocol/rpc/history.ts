@@ -48,48 +48,100 @@ export interface PricePoint {
  */
 const PUBLISH_IX = "update_price_oracle";
 
-/** Cap the scan. Enough for a chart, small enough to stay one batch. */
-export const DEFAULT_HISTORY_LIMIT = 200;
+/** Signatures per request. The RPC maximum, and one batched fetch each. */
+export const PAGE_SIZE = 200;
+/**
+ * Stop once the chart has this much to draw.
+ *
+ * Not a hard limit on history, a floor on usefulness: paging continues only
+ * while the series is still too short to be a chart.
+ */
+export const TARGET_POINTS = 60;
+/** A ceiling on effort, so a busy oracle cannot turn this into a crawl. */
+export const MAX_PAGES = 5;
 
+export interface HistoryOptions {
+  targetPoints?: number;
+  maxPages?: number;
+  pageSize?: number;
+}
+
+/**
+ * # Why this pages instead of taking the most recent 200 signatures
+ *
+ * `getSignaturesForAddress` returns every transaction that *mentions* the
+ * oracle, and publishing prices is a small minority of those. `crank_funding`
+ * names the oracle as a read-only account and runs once a minute per symbol,
+ * so the stream is mostly funding cranks; a single page of 200 covers roughly
+ * three hours and can contain no price change whatsoever.
+ *
+ * That is exactly what happened: overnight, with the market closed and the
+ * keeper correctly publishing nothing new, every publish inside the window
+ * carried the same price and the chart drew one flat line across the screen.
+ * The prices before it - a real 48% move - were three pages back.
+ *
+ * So it pages until the series is long enough to be worth drawing, and stops
+ * early the moment it is. A quiet oracle needs one page; a busy one pays for
+ * a few more, once per session.
+ */
 export async function fetchPriceHistory(
   connection: Connection,
   oracle: PublicKey,
   programId: PublicKey,
-  limit: number = DEFAULT_HISTORY_LIMIT,
+  options: HistoryOptions = {},
 ): Promise<PricePoint[]> {
-  const signatures = await connection.getSignaturesForAddress(oracle, {
-    limit,
-  });
-  const usable = signatures.filter((s) => !s.err).map((s) => s.signature);
-  if (usable.length === 0) return [];
-
-  const transactions = await connection.getParsedTransactions(usable, {
-    maxSupportedTransactionVersion: 0,
-  });
+  const targetPoints = options.targetPoints ?? TARGET_POINTS;
+  const maxPages = options.maxPages ?? MAX_PAGES;
+  const pageSize = options.pageSize ?? PAGE_SIZE;
 
   const points: PricePoint[] = [];
-  for (const tx of transactions) {
-    if (!tx || tx.meta?.err || tx.blockTime == null) continue;
-    for (const ix of tx.transaction.message.instructions) {
-      // A parsed instruction (system, SPL token) has `parsed` and no `data`.
-      // Ours is never parsed, because the cluster has no parser for it.
-      if (!("data" in ix)) continue;
-      if (!ix.programId.equals(programId)) continue;
+  let before: string | undefined;
 
-      let decoded: { name: string; data: unknown } | null = null;
-      try {
-        decoded = coder.instruction.decode(ix.data, "base58");
-      } catch {
-        // Another instruction of ours, or one from a version of the program
-        // this IDL predates. Neither is an error worth surfacing.
-        continue;
+  for (let page = 0; page < maxPages; page++) {
+    const signatures = await connection.getSignaturesForAddress(oracle, {
+      limit: pageSize,
+      before,
+    });
+    if (signatures.length === 0) break;
+    // Page from the oldest signature returned, error or not: skipping a failed
+    // one here would make the next page start in the wrong place and silently
+    // re-read ground already covered.
+    before = signatures[signatures.length - 1].signature;
+
+    const usable = signatures.filter((s) => !s.err).map((s) => s.signature);
+    if (usable.length > 0) {
+      const transactions = await connection.getParsedTransactions(usable, {
+        maxSupportedTransactionVersion: 0,
+      });
+      for (const tx of transactions) {
+        if (!tx || tx.meta?.err || tx.blockTime == null) continue;
+        for (const ix of tx.transaction.message.instructions) {
+          // A parsed instruction (system, SPL token) has `parsed` and no
+          // `data`. Ours is never parsed: the cluster has no parser for it.
+          if (!("data" in ix)) continue;
+          if (!ix.programId.equals(programId)) continue;
+
+          let decoded: { name: string; data: unknown } | null = null;
+          try {
+            decoded = coder.instruction.decode(ix.data, "base58");
+          } catch {
+            // Another instruction of ours, or one from a version of the
+            // program this IDL predates. Neither is worth surfacing.
+            continue;
+          }
+          if (!decoded || decoded.name !== PUBLISH_IX) continue;
+
+          const price = (decoded.data as { price?: { toString(): string } })
+            .price;
+          if (price == null) continue;
+          points.push({ t: tx.blockTime, price: BigInt(price.toString()) });
+        }
       }
-      if (!decoded || decoded.name !== PUBLISH_IX) continue;
-
-      const price = (decoded.data as { price?: { toString(): string } }).price;
-      if (price == null) continue;
-      points.push({ t: tx.blockTime, price: BigInt(price.toString()) });
     }
+
+    if (points.length >= targetPoints) break;
+    // A short page is the end of the account's history, not a quiet patch.
+    if (signatures.length < pageSize) break;
   }
 
   // Signatures come back newest first; a chart reads left to right.

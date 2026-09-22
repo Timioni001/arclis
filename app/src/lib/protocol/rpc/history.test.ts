@@ -21,10 +21,16 @@ import { describe, expect, it } from "vitest";
 // build fails with TS7016. Anchor re-exports the same class, is a real
 // dependency of this package, and hides the untyped import inside a `.d.ts`
 // that `skipLibCheck` skips.
-import { BN } from "@coral-xyz/anchor";
+import { BN, utils } from "@coral-xyz/anchor";
+import { PublicKey } from "@solana/web3.js";
 
 import { coder } from "./decode";
-import { appendPoint, candlesFrom, type PricePoint } from "./history";
+import {
+  appendPoint,
+  candlesFrom,
+  fetchPriceHistory,
+  type PricePoint,
+} from "./history";
 
 describe("the publish instruction", () => {
   it("round-trips through the coder under the name the reader looks for", () => {
@@ -134,5 +140,190 @@ describe("extending the series from live polls", () => {
     expect(points).toHaveLength(5);
     expect(points[0].t).toBe(7);
     expect(points[4].t).toBe(11);
+  });
+});
+
+/* -------------------------------------------------------------------------
+   Paging
+
+   The chart drew one flat horizontal line across the screen, and the data was
+   not wrong - it was just too recent. `getSignaturesForAddress` returns every
+   transaction that *mentions* the oracle, and `crank_funding` names it as a
+   read-only account once a minute per symbol. A single page of 200 is
+   therefore mostly funding cranks, covers about three hours, and overnight -
+   with the market closed and the keeper correctly publishing nothing new -
+   contains no price change at all. The move was three pages further back.
+   ------------------------------------------------------------------------- */
+
+const PROGRAM = new PublicKey("BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP");
+const ORACLE = new PublicKey("11111111111111111111111111111111");
+const OTHER_PROGRAM = new PublicKey(
+  "ComputeBudget111111111111111111111111111111",
+);
+
+/** A publish, encoded with the real coder and base58'd as an RPC returns it. */
+function publishIx(price: number) {
+  return {
+    programId: PROGRAM,
+    data: utils.bytes.bs58.encode(
+      coder.instruction.encode("update_price_oracle", {
+        price: new BN(price),
+        confidence: new BN(1_000_000),
+      }),
+    ),
+  };
+}
+
+/** A funding crank: our program, but not a publish. This is the noise. */
+function crankIx() {
+  return {
+    programId: PROGRAM,
+    data: utils.bytes.bs58.encode(
+      coder.instruction.encode("crank_funding", {}),
+    ),
+  };
+}
+
+let clock = 1_790_000_000;
+function tx(instructions: unknown[]) {
+  return {
+    blockTime: clock++,
+    meta: { err: null },
+    transaction: { message: { instructions } },
+  };
+}
+
+/**
+ * A connection whose pages are supplied in order. Records how many times it
+ * was asked, so "stops early" is an assertion rather than a hope.
+ */
+function fakeConnection(pages: unknown[][]) {
+  const calls = { signatures: 0, transactions: 0 };
+  const connection = {
+    async getSignaturesForAddress(_a: PublicKey, _opts: { limit: number }) {
+      const page = pages[calls.signatures] ?? [];
+      calls.signatures++;
+      return page.map((_, i) => ({
+        signature: `sig-${calls.signatures}-${i}`,
+        err: null,
+      }));
+    },
+    async getParsedTransactions(sigs: string[]) {
+      const page = pages[calls.transactions] ?? [];
+      calls.transactions++;
+      return page.slice(0, sigs.length);
+    },
+  };
+  return { connection, calls };
+}
+
+/** A page of pure noise: `size` funding cranks and nothing else. */
+const noisePage = (size: number) =>
+  Array.from({ length: size }, () => tx([crankIx()]));
+
+describe("reading the publish history", () => {
+  it("keeps paging past a page that holds no price change", async () => {
+    // Page one: the overnight window - cranks, plus publishes all at one
+    // price. Page two: the move.
+    const flat = [
+      ...noisePage(196),
+      ...[0, 0, 0, 0].map(() => tx([publishIx(338_980_000)])),
+    ];
+    const moved = [
+      tx([publishIx(228_500_000)]),
+      tx([publishIx(250_207_500)]),
+      tx([publishIx(273_977_212)]),
+      ...noisePage(197),
+    ];
+    const { connection, calls } = fakeConnection([flat, moved]);
+
+    const points = await fetchPriceHistory(
+      connection as never,
+      ORACLE,
+      PROGRAM,
+      { targetPoints: 6, pageSize: 200 },
+    );
+
+    expect(calls.signatures).toBe(2);
+    const prices = new Set(points.map((p) => p.price));
+    expect(prices.size).toBeGreaterThan(1);
+    expect(points.length).toBe(7);
+  });
+
+  it("stops as soon as it has enough to draw", async () => {
+    const rich = Array.from({ length: 200 }, (_, i) =>
+      tx([publishIx(100_000_000 + i)]),
+    );
+    const { connection, calls } = fakeConnection([rich, rich, rich]);
+
+    await fetchPriceHistory(connection as never, ORACLE, PROGRAM, {
+      targetPoints: 60,
+      pageSize: 200,
+    });
+
+    // One page already carries 200 points; asking for more would be waste.
+    expect(calls.signatures).toBe(1);
+  });
+
+  it("stops at the end of the account's history", async () => {
+    // A short page means there is nothing older, so there is no page four.
+    const { connection, calls } = fakeConnection([
+      noisePage(200),
+      noisePage(200),
+      noisePage(12),
+    ]);
+
+    await fetchPriceHistory(connection as never, ORACLE, PROGRAM, {
+      targetPoints: 60,
+      pageSize: 200,
+      maxPages: 9,
+    });
+
+    expect(calls.signatures).toBe(3);
+  });
+
+  it("gives up rather than crawling a busy oracle forever", async () => {
+    const { connection, calls } = fakeConnection(
+      Array.from({ length: 20 }, () => noisePage(200)),
+    );
+
+    await fetchPriceHistory(connection as never, ORACLE, PROGRAM, {
+      targetPoints: 60,
+      pageSize: 200,
+      maxPages: 5,
+    });
+
+    expect(calls.signatures).toBe(5);
+  });
+
+  it("ignores instructions belonging to another program", async () => {
+    const { connection } = fakeConnection([
+      [
+        tx([{ programId: OTHER_PROGRAM, data: "whatever" }]),
+        tx([publishIx(338_980_000)]),
+      ],
+    ]);
+
+    const points = await fetchPriceHistory(
+      connection as never,
+      ORACLE,
+      PROGRAM,
+      { pageSize: 200 },
+    );
+    expect(points).toHaveLength(1);
+  });
+
+  it("returns the series oldest first", async () => {
+    const { connection } = fakeConnection([
+      [tx([publishIx(300_000_000)]), tx([publishIx(200_000_000)])],
+    ]);
+    const points = await fetchPriceHistory(
+      connection as never,
+      ORACLE,
+      PROGRAM,
+      { pageSize: 200 },
+    );
+    const times = points.map((p) => p.t);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
   });
 });
