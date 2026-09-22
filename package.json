@@ -18,12 +18,13 @@
     "idl": "python3 scripts/build-idl.py",
     "assistant:typecheck": "tsc --noEmit",
     "keeper": "ts-node keeper/src/run.ts",
-    "keeper:test": "npm --prefix app exec -- vitest run --root .. keeper pipeline",
+    "keeper:test": "npm --prefix app exec -- vitest run --root .. keeper pipeline tools/clawpump",
     "registry:build": "ts-node pipeline/src/run.ts",
     "registry:prerender": "ts-node pipeline/src/prerender.ts",
     "assistant": "tsx server/dev.ts",
     "seed": "tsx scripts/seed-local.ts",
-    "seed:treasury": "tsx scripts/seed-treasury.ts"
+    "seed:treasury": "tsx scripts/seed-treasury.ts",
+    "clawpump": "tsx tools/clawpump/launch.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.127.0",
