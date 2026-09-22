@@ -21,6 +21,7 @@ import { Registry } from "./screens/Registry";
 import { Trade } from "./screens/Trade";
 import { Liquidity } from "./screens/Liquidity";
 import { Treasury } from "./screens/Treasury";
+import { Legal } from "./screens/Legal";
 import { Portfolio } from "./screens/Portfolio";
 import { AuthSheet } from "./components/auth/AuthSheet";
 import { Splash } from "./components/motion/Splash";
@@ -42,7 +43,16 @@ const TABS = [
   "Liquidity",
   "Treasuries",
 ] as const;
-type Tab = (typeof TABS)[number];
+
+/**
+ * Terms and Privacy are screens but not tabs.
+ *
+ * They belong in the footer, where a reader looks for them, and not in a
+ * six-item primary nav where they would push the product out of the way. So
+ * the nav renders `TABS` and the router accepts a wider set.
+ */
+const FOOTER_ONLY = ["Terms", "Privacy"] as const;
+type Tab = (typeof TABS)[number] | (typeof FOOTER_ONLY)[number];
 
 /** Screens that need a signature to be worth opening. Registry is not one. */
 const NEEDS_SESSION: Record<Tab, string | null> = {
@@ -52,6 +62,8 @@ const NEEDS_SESSION: Record<Tab, string | null> = {
   Portfolio: "Sign in to see the positions held by your account.",
   Liquidity: null,
   Treasuries: null,
+  Terms: null,
+  Privacy: null,
 };
 
 export function App({ source }: { source: DataSource }) {
@@ -149,6 +161,18 @@ export function App({ source }: { source: DataSource }) {
   const degraded =
     liveStatus.lastError !== null &&
     liveStatus.consecutiveErrors >= ERROR_AFTER_CONSECUTIVE;
+
+  /*
+   * The first read has not landed yet.
+   *
+   * Screens that do arithmetic over an empty array render confident zeroes,
+   * and screens with empty states assert that nothing exists. Both are claims
+   * about the protocol rather than about the fetch, and on a cold load against
+   * a shared endpoint they are on screen long enough to be the first thing
+   * anyone sees. The mock source is never in this state, which is why it went
+   * unnoticed.
+   */
+  const loadingFirstRead = liveStatus.live && liveStatus.loadedAt === null;
   const view = source.market(symbol) ?? markets[0];
 
   const openMarket = useCallback((s: string) => {
@@ -318,6 +342,8 @@ export function App({ source }: { source: DataSource }) {
           {tab === "Overview" && (
             <Markets
               markets={markets}
+              corporateActions={source.corporateActions().length}
+              loading={loadingFirstRead}
               onOpen={openMarket}
               onExplore={() => setTab("Registry")}
             />
@@ -344,6 +370,7 @@ export function App({ source }: { source: DataSource }) {
               activity={source.activity(7)}
               now={now}
               onOpen={openMarket}
+              loading={loadingFirstRead}
             />
           )}
 
@@ -352,7 +379,12 @@ export function App({ source }: { source: DataSource }) {
               markets={markets}
               lpPositions={(p) => source.lpPosition(p)}
               now={now}
+              loading={loadingFirstRead}
             />
+          )}
+
+          {(tab === "Terms" || tab === "Privacy") && (
+            <Legal doc={tab} onNavigate={(t) => selectTab(t as Tab)} />
           )}
 
           {tab === "Treasuries" && (
@@ -361,6 +393,7 @@ export function App({ source }: { source: DataSource }) {
               markets={markets}
               positionFor={(t) => source.treasuryPosition(t)}
               now={now}
+              loading={loadingFirstRead}
             />
           )}
         </main>

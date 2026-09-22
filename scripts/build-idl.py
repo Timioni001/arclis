@@ -211,6 +211,19 @@ def main() -> None:
         "// The address from `declare_id!`, split out so reading it does not\n"
         "// pull the whole IDL into the bundle.\n"
         f'export const PROGRAM_ADDRESS = "{idl["address"]}";\n'
+        "\n"
+        "// How many instructions the program exposes.\n"
+        "//\n"
+        "// The front page states this number as evidence, and it had drifted\n"
+        "// twice by the time it was generated: the page claimed 24 against 26,\n"
+        "// then 26 against 28. A figure a reader is invited to verify is worse\n"
+        "// than no figure when it is wrong, and hand-maintaining one on a\n"
+        "// program under active development does not work. Counted here, from\n"
+        "// the same IDL the client decodes with.\n"
+        f"export const INSTRUCTION_COUNT = {len(idl['instructions'])};\n"
+        "\n"
+        "// The account types it owns, counted the same way.\n"
+        f"export const ACCOUNT_COUNT = {len(idl['accounts'])};\n"
     )
 
     print(f"\n  {idl_path.relative_to(ROOT)}")

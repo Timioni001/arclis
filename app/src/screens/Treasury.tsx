@@ -18,6 +18,7 @@ import {
   Metric,
   Notice,
   Row,
+  SkeletonList,
   StatTile,
 } from "../components/ui";
 import { HedgeHealth } from "../components/protocol";
@@ -28,11 +29,14 @@ export function Treasury({
   markets,
   positionFor,
   now,
+  loading = false,
 }: {
   treasuries: TreasuryAccount[];
   markets: MarketView[];
   positionFor: (treasuryAddress: string) => Position | undefined;
   now: number;
+  /** True until the first read lands; see `App`. */
+  loading?: boolean;
 }) {
   return (
     <div className="page">
@@ -54,7 +58,18 @@ export function Treasury({
         owns on each scan, so an empty list is the chain's answer rather than a
         missing feature.
       */}
-      {treasuries.length === 0 && (
+      {/*
+        "None have been opened" is a claim about the chain, so it waits until
+        the chain has actually been asked. Saying it during the first read
+        would be asserting a scan result before the scan.
+      */}
+      {loading && treasuries.length === 0 && (
+        <Card large>
+          <SkeletonList rows={3} label="Scanning for agent treasuries" />
+        </Card>
+      )}
+
+      {!loading && treasuries.length === 0 && (
         <Empty title="No agent treasuries on this deployment yet">
           Every treasury the program holds is listed here, found by scanning
           the program&apos;s accounts. None have been opened on this

@@ -53,6 +53,22 @@ export function Footer({ onNavigate }: { onNavigate?: (tab: string) => void }) {
           </ul>
         </nav>
 
+        <nav className="site-footer-nav" aria-label="Legal">
+          <h4>Legal</h4>
+          <ul>
+            <li>
+              <button onClick={() => onNavigate?.("Terms")}>
+                Terms of service
+              </button>
+            </li>
+            <li>
+              <button onClick={() => onNavigate?.("Privacy")}>
+                Privacy policy
+              </button>
+            </li>
+          </ul>
+        </nav>
+
         <section className="site-footer-eco" aria-labelledby="eco-heading">
           <h4 id="eco-heading">Built on</h4>
           <ul>

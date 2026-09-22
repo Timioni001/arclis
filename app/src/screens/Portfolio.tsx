@@ -17,6 +17,7 @@ import {
   Chip,
   Delta,
   Empty,
+  SkeletonList,
   Icon,
   ListRow,
   Metric,
@@ -55,12 +56,15 @@ export function Portfolio({
   activity,
   now,
   onOpen,
+  loading = false,
 }: {
   positions: Position[];
   markets: MarketView[];
   activity: ActivityEvent[];
   now: number;
   onOpen: (symbol: string) => void;
+  /** True until the first read lands; see `App`. */
+  loading?: boolean;
 }) {
   const rows = useMemo(
     () =>
@@ -173,9 +177,13 @@ export function Portfolio({
       <div className="split-2">
         <Card title="Positions">
           {rows.length === 0 ? (
-            <Empty title="No open positions">
-              Your active positions will appear here.
-            </Empty>
+            loading ? (
+              <SkeletonList rows={3} label="Loading your positions" />
+            ) : (
+              <Empty title="No open positions">
+                Your active positions will appear here.
+              </Empty>
+            )
           ) : (
             <table className="table num">
               <thead>

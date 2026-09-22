@@ -608,3 +608,80 @@ export function Hero({
     </section>
   );
 }
+
+/* ---------------------------------------------------------------------------
+   Loading states
+
+   The interface used to show its empty states while it was still fetching.
+   That is a specific kind of wrong: "No markets to provide liquidity to" and
+   "no markets have loaded yet" are different facts, and the first one is a
+   claim about the protocol. On a cold load against a shared endpoint the
+   difference was on screen for a second or two, which is exactly long enough
+   for a first impression to form.
+
+   So a skeleton, which says "something is coming and it will be this shape",
+   and says it without asserting anything about what is there.
+   --------------------------------------------------------------------------- */
+
+/**
+ * A placeholder block, sized to the thing it stands in for.
+ *
+ * `width` takes any CSS length so a row of these can echo the real layout
+ * rather than being a uniform grey slab. Marked `aria-hidden`, with the
+ * announcement left to the `SkeletonList` wrapper: a screen reader should hear
+ * "loading" once, not once per block.
+ */
+export function Skeleton({
+  width = "100%",
+  height = 14,
+  radius = "var(--radius-xs)",
+  style,
+}: {
+  width?: number | string;
+  height?: number | string;
+  radius?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <span
+      className="skeleton"
+      aria-hidden="true"
+      style={{ width, height, borderRadius: radius, ...style }}
+    />
+  );
+}
+
+/**
+ * A stack of skeleton rows, announced once.
+ *
+ * `role="status"` rather than an `aria-live` region full of blocks: assistive
+ * technology gets one short sentence naming what is loading, and the visual
+ * placeholders stay out of the accessibility tree entirely.
+ */
+export function SkeletonList({
+  rows = 4,
+  label,
+  children,
+}: {
+  rows?: number;
+  label: string;
+  children?: (row: number) => ReactNode;
+}) {
+  return (
+    <div className="skeleton-list" role="status" aria-label={label}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div className="skeleton-row" key={i}>
+          {children ? (
+            children(i)
+          ) : (
+            <>
+              <Skeleton width="34%" />
+              <Skeleton width="18%" />
+              <Skeleton width="22%" />
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}

@@ -3,3 +3,16 @@
 // The address from `declare_id!`, split out so reading it does not
 // pull the whole IDL into the bundle.
 export const PROGRAM_ADDRESS = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP";
+
+// How many instructions the program exposes.
+//
+// The front page states this number as evidence, and it had drifted
+// twice by the time it was generated: the page claimed 24 against 26,
+// then 26 against 28. A figure a reader is invited to verify is worse
+// than no figure when it is wrong, and hand-maintaining one on a
+// program under active development does not work. Counted here, from
+// the same IDL the client decodes with.
+export const INSTRUCTION_COUNT = 28;
+
+// The account types it owns, counted the same way.
+export const ACCOUNT_COUNT = 7;

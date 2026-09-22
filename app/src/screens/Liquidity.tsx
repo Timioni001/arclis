@@ -26,6 +26,8 @@ import {
   Row,
   SegBar,
   Empty,
+  Skeleton,
+  SkeletonList,
   StatTile,
 } from "../components/ui";
 import { ExposureBreakdown } from "../components/protocol";
@@ -35,10 +37,13 @@ export function Liquidity({
   markets,
   lpPositions,
   now,
+  loading = false,
 }: {
   markets: MarketView[];
   lpPositions: (poolAddress: string) => LpPosition | undefined;
   now: number;
+  /** True until the first read lands; see `App`. */
+  loading?: boolean;
 }) {
   const [selected, setSelected] = useState(markets[0]?.oracle.symbol ?? "");
   const [amount, setAmount] = useState("5000");
@@ -56,10 +61,26 @@ export function Liquidity({
     markets.find((mv) => mv.oracle.symbol === selected) ?? markets[0];
 
   if (!view) {
+    // Two different facts, and the empty state used to state both at once
+    // because it could not tell them apart. Now it can.
+    if (loading) {
+      return (
+        <div className="page">
+          <Skeleton width={220} height={30} />
+          <Skeleton
+            width="60%"
+            height={14}
+            style={{ marginTop: "var(--space-3)" }}
+          />
+          <div style={{ marginTop: "var(--space-6)" }}>
+            <SkeletonList rows={4} label="Loading liquidity pools" />
+          </div>
+        </div>
+      );
+    }
     return (
       <Empty title="No markets to provide liquidity to">
-        Either none have been created yet, or the interface has not finished
-        its first read of the chain.
+        None have been created on this deployment yet.
       </Empty>
     );
   }

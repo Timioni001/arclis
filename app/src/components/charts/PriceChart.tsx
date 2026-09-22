@@ -62,6 +62,17 @@ const VOL_H = 40;
  * and a move starting mid-session opens the scale out naturally.
  */
 const MIN_SPAN_BPS = 40; // 0.4% of price, split either side
+/**
+ * The placeholder skyline, as percentages of the plot height.
+ *
+ * Fixed rather than random so the shape is stable across renders: a
+ * placeholder that reshuffles itself draws the eye to the wrong thing.
+ */
+const SKELETON_BARS = [
+  38, 52, 45, 61, 57, 70, 64, 49, 58, 72, 66, 80, 74, 62, 69, 55, 47, 60, 68,
+  76,
+];
+
 /** How far a marker may stretch the domain past the candles themselves. */
 const MARKER_ALLOWANCE = 0.45;
 /** Breathing room above and below, once the domain is settled. */
@@ -136,7 +147,35 @@ export function PriceChart({
     return { x, y, vy, min, max, plotH, plotW, bw };
   }, [candles, height, markers]);
 
-  if (!geom) return <div className="skeleton" style={{ height }} />;
+  /*
+   * Nothing to draw yet.
+   *
+   * This returned a bare `<div className="skeleton">` against a class that did
+   * not exist in any stylesheet, so it rendered as a zero-height nothing and
+   * the card collapsed. A chart's placeholder has to hold the chart's space,
+   * or the page reflows under the reader the moment data lands.
+   */
+  if (!geom) {
+    return (
+      <div
+        className="skeleton-chart"
+        style={{ height }}
+        role="status"
+        aria-label="Loading price history"
+      >
+        {/* A ragged skyline rather than a uniform block: it reads as a chart
+            arriving, and the heights are fixed so it does not shimmer into a
+            different shape on every render. */}
+        {SKELETON_BARS.map((h, i) => (
+          <span
+            key={i}
+            className="skeleton"
+            style={{ height: `${h}%`, borderRadius: 3 }}
+          />
+        ))}
+      </div>
+    );
+  }
 
   /*
    * Too little to chart: say so, rather than draw a dot.

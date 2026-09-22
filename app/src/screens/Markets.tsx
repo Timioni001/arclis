@@ -19,6 +19,7 @@ import {
   ListRow,
   Metric,
   SegBar,
+  Skeleton,
   StatTile,
 } from "../components/ui";
 import { SessionBadge } from "../components/protocol";
@@ -26,13 +27,49 @@ import { Sparkline } from "../components/charts/PriceChart";
 import { bpsToPct, confidencePct, pct, toPrice, usd } from "../lib/format";
 import { PriceTicker } from "../components/ui/data";
 import { BrandMark, brandById } from "../components/ui/Brand";
+import { INSTRUCTION_COUNT } from "../idl/program-id";
+
+/*
+ * Test counts, in one place.
+ *
+ * These are evidence on the front page, so they have to be true, and they had
+ * drifted twice. The instruction count above is generated from the IDL and
+ * cannot drift again; a test suite cannot count itself from inside, so these
+ * four stay by hand, gathered here so recounting is one edit rather than a
+ * hunt through JSX.
+ *
+ *   cargo test --lib          unit
+ *   npm run test:integration  against a validator
+ *   npm --prefix app test     interface
+ *   npm run test:dbc          DBC tooling
+ */
+const TESTS = {
+  unit: 129,
+  integration: 25,
+  interface: 196,
+  dbc: 37,
+};
 
 export function Markets({
   markets,
+  corporateActions = 0,
+  loading = false,
   onOpen,
   onExplore,
 }: {
   markets: MarketView[];
+  /** How many splits or dividends this deployment has actually applied. */
+  corporateActions?: number;
+  /**
+   * True until the first read of the chain lands.
+   *
+   * Without it this page renders its arithmetic over an empty array and shows
+   * "0 / 0 markets open" and "$0" liquidity, which reads as a dead protocol
+   * rather than as a page that has not loaded. On a cold load against a shared
+   * endpoint that is on screen for a second or two, which is long enough for a
+   * first impression.
+   */
+  loading?: boolean;
   onOpen: (symbol: string) => void;
   /** Hand the front page's primary call to action to the registry. */
   onExplore?: () => void;
@@ -73,6 +110,10 @@ export function Markets({
         }
       />
 
+      {loading ? (
+        <MarketsSkeleton />
+      ) : (
+        <>
       <div className="grid grid-4">
         <Card>
           <Metric
@@ -106,11 +147,20 @@ export function Markets({
           />
         </Card>
         <Card>
+          {/*
+            Counted, not asserted. This tile used to read "1 / AAPL 4:1 split,
+            handled" as a hardcoded string, which was true of a test fixture
+            and not of any running deployment.
+          */}
           <Metric
             label="Corporate actions"
-            value="1"
+            value={String(corporateActions)}
             size="lg"
-            sub="AAPL 4:1 split, handled"
+            sub={
+              corporateActions > 0
+                ? "splits and dividends applied on-chain"
+                : "none since this deployment opened"
+            }
           />
         </Card>
       </div>
@@ -307,32 +357,24 @@ export function Markets({
         })}
       </div>
 
-      {/*
-        Counted, not estimated. These had drifted - the page claimed 24
-        instructions against 26, and 34 interface tests against 130 - which is
-        a bad thing for a project whose whole argument is that it tells you
-        what is actually there. Recount before changing them:
+        </>
+      )}
 
-          grep -c 'pub fn ' programs/arclis/src/lib.rs   instructions
-          cargo test --lib                               unit
-          npm run test:integration                       against a validator
-          npm --prefix app test                          interface
-          npm run test:dbc                               DBC tooling
-      */}
+      {/* Counted, not estimated. See TESTS and INSTRUCTION_COUNT above. */}
       <div className="stat-tiles">
         <StatTile
           label="Program"
-          value="26 instructions"
+          value={`${INSTRUCTION_COUNT} instructions`}
           sub="sessions, splits, pool, treasuries"
         />
         <StatTile
           label="Program tests"
-          value="154 passing"
-          sub="129 unit, 25 against a validator"
+          value={`${TESTS.unit + TESTS.integration} passing`}
+          sub={`${TESTS.unit} unit, ${TESTS.integration} against a validator`}
         />
         <StatTile
           label="Interface tests"
-          value="130 passing"
+          value={`${TESTS.interface} passing`}
           sub="read model vs the program"
         />
         {/*
@@ -354,10 +396,72 @@ export function Markets({
               Meteora DBC tooling
             </span>
           }
-          value="37 passing"
+          value={`${TESTS.dbc} passing`}
           sub="against the real SDK"
         />
       </div>
     </div>
+  );
+}
+
+/**
+ * The front page's shape, while the first read is in flight.
+ *
+ * Everything between the hero and the proof tiles is arithmetic over the
+ * markets array, so an empty array renders a page of confident zeroes rather
+ * than a blank one. "0 / 0 markets open" and "$0 liquidity backing" are claims
+ * about the protocol, and they are false ones. This says the same layout is
+ * coming without saying anything about what is in it.
+ *
+ * The hero and the proof tiles are left alone on purpose: neither reads the
+ * chain, so both are true before the first byte arrives, and replacing them
+ * with grey boxes would make the page look less loaded than it is.
+ */
+function MarketsSkeleton() {
+  return (
+    <>
+      <div className="grid grid-4">
+        {Array.from({ length: 4 }, (_, i) => (
+          <Card key={i}>
+            <Skeleton width="45%" height={11} />
+            <Skeleton
+              width="65%"
+              height={28}
+              style={{ marginTop: "var(--space-3)" }}
+            />
+            <Skeleton
+              width="80%"
+              height={11}
+              style={{ marginTop: "var(--space-3)" }}
+            />
+          </Card>
+        ))}
+      </div>
+
+      <div
+        className="grid grid-markets"
+        role="status"
+        aria-label="Loading markets from the chain"
+      >
+        {Array.from({ length: 6 }, (_, i) => (
+          <Card key={i}>
+            <div className="card-head">
+              <Skeleton width={120} height={20} />
+              <Skeleton width={64} height={20} radius="var(--radius-pill)" />
+            </div>
+            <Skeleton
+              width="55%"
+              height={30}
+              style={{ marginTop: "var(--space-4)" }}
+            />
+            <div style={{ marginTop: "var(--space-4)" }}>
+              <Skeleton height={12} style={{ marginBottom: 10 }} />
+              <Skeleton width="85%" height={12} style={{ marginBottom: 10 }} />
+              <Skeleton width="70%" height={12} />
+            </div>
+          </Card>
+        ))}
+      </div>
+    </>
   );
 }

@@ -118,6 +118,10 @@ function marketView(symbol: string, open: boolean): MarketView {
  */
 function chainLikeSource() {
   let current: MarketView[] = [];
+  // Null until the first read lands, exactly as `rpcSource` does. The
+  // interface keys its loading states off this, so a fixture that leaves it
+  // null forever is a fixture stuck mid-load.
+  let loadedAt: number | null = null;
   const source = {
     kind: "rpc" as const,
     wallet: () => null,
@@ -130,11 +134,14 @@ function chainLikeSource() {
     treasuryPosition: () => undefined,
     corporateActions: () => [],
     activity: () => [],
-    loadedAt: null,
+    get loadedAt() {
+      return loadedAt;
+    },
     lastError: null,
     setOwner: () => {},
     refresh: async () => {
       current = [marketView("AAPL", true), marketView("NVDA", false)];
+      loadedAt = 1_790_000_000;
     },
   };
   return source as unknown as DataSource;
@@ -166,6 +173,21 @@ describe("a refresh that lands after the first render", () => {
 
     // Overview counts one open market out of two. Frozen, it would say 0 / 0.
     expect(await screen.findByText("1 / 2")).toBeTruthy();
+  });
+
+  it("shows a skeleton rather than zeroes before the first read lands", async () => {
+    // The other half of the same problem. An empty snapshot rendered through
+    // the real arithmetic says "0 / 0 markets open" and "$0 liquidity
+    // backing", which is not a loading state, it is a claim that the protocol
+    // is empty.
+    const source = chainLikeSource();
+
+    await act(async () => {
+      render(<App source={{ ...source, refresh: async () => {} } as DataSource} />);
+    });
+
+    expect(screen.getByLabelText("Loading markets from the chain")).toBeTruthy();
+    expect(screen.queryByText("0 / 0")).toBeNull();
   });
 
   it("does not leave the markets array frozen at its first value", async () => {
