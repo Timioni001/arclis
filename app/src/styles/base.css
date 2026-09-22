@@ -2117,3 +2117,60 @@ input[type="range"]::-moz-range-thumb {
   margin: var(--space-3) 0 0;
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   Chart furniture
+   ========================================================================== */
+
+/* The last price, pinned to the axis. Every trading chart has this, and it is
+   the fastest way to read where the market is without tracking a gridline
+   across the plot. */
+.chart-last rect {
+  fill: var(--positive);
+}
+.chart-last[data-dir="down"] rect {
+  fill: var(--negative);
+}
+.chart-last text {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  fill: #fff;
+}
+
+/* Too little history to chart.
+   
+   Deliberately not a skeleton: a skeleton promises something is loading, and
+   nothing is - the series is simply short, because the venue is shut and the
+   keeper will not republish a price that has not moved. Saying that is more
+   use to a reader than an animated placeholder that never resolves. */
+.chart-sparse {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-2);
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: var(--surface-sunken, var(--surface));
+  border: 1px dashed var(--border);
+}
+.chart-sparse-price {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+.chart-sparse p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 46ch;
+}
+.chart-sparse .chart-sparse-why {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}

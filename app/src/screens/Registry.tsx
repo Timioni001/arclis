@@ -175,14 +175,16 @@ export function Registry({
       {registry.kind === "modelled" ? (
         <Notice
           tone="warning"
-          title="This is a modelled dataset, not a live feed"
+          title="The rows below are modelled, and here is exactly what that means"
         >
-          Every row below is shaped from public issuer disclosures to build and
-          test the pipeline. Run <code>npx ts-node pipeline/src/run.ts</code> to
-          replace it with live data: mint authorities and supply from{" "}
-          <code>getAccountInfo</code>, depth from Jupiter quotes at several
-          sizes, and structure from the issuer disclosure linked on each row. Do
-          not trade on these numbers.
+          The scoring, the session logic and the exit-depth maths are the real
+          pipeline, running on this page as written. What is modelled is their
+          input: each row is shaped from the issuer's own public disclosure
+          rather than read live, because live rows need mint state from{" "}
+          <code>getAccountInfo</code> and routed depth from Jupiter on a
+          schedule, and this deployment does not run that crawl yet. Every
+          issuer is linked, so any row can be checked against its source. Do not
+          trade on these numbers.
         </Notice>
       ) : failures.length > 0 ? (
         <Notice

@@ -27,6 +27,19 @@ export interface EventMarker {
 }
 
 const PAD = { top: 12, right: 58, bottom: 20, left: 8 };
+
+/**
+ * Below this, there is no chart to draw and pretending otherwise is worse
+ * than saying so.
+ *
+ * One published price renders as a single dot at the far left with the oracle
+ * marker running across the plot beside it, which reads as a broken chart
+ * rather than as a market that has not traded. And a market that has not
+ * traded is the normal overnight state: the keeper refuses to republish an
+ * unchanged print - doing so would launder a stale price into a fresh one -
+ * so the series legitimately stops growing when the venue closes.
+ */
+const MIN_CANDLES = 3;
 const VOL_H = 40;
 
 /**
@@ -124,6 +137,35 @@ export function PriceChart({
   }, [candles, height, markers]);
 
   if (!geom) return <div className="skeleton" style={{ height }} />;
+
+  /*
+   * Too little to chart: say so, rather than draw a dot.
+   *
+   * The price and its context are on the screen already - the header carries
+   * the last price and the session banner explains why it is not moving - so
+   * this only has to be honest about the series, and get out of the way.
+   */
+  if (candles.length < MIN_CANDLES) {
+    const only = candles[candles.length - 1];
+    return (
+      <div className="chart-sparse" style={{ height }}>
+        <div className="chart-sparse-price">
+          {usd(only.c, { compact: false, dp: 2 })}
+        </div>
+        <p>
+          {candles.length === 1
+            ? "One price published so far"
+            : `${candles.length} prices published so far`}
+          . A chart needs a few more.
+        </p>
+        <p className="chart-sparse-why">
+          The series is built from the oracle's own publishes. While the venue
+          is closed the keeper refuses to republish an unchanged price, so it
+          stops growing until the next session opens.
+        </p>
+      </div>
+    );
+  }
   const { x, y, vy, min, max, bw } = geom;
   /** Clamp a marker into the plot, reporting whether it was off-scale. */
   const place = (v: number) => {
@@ -153,6 +195,23 @@ export function PriceChart({
 
   const active = hover !== null ? candles[hover] : null;
   const last = candles[candles.length - 1];
+
+  /** Up to four evenly spaced labels, in the reader's own timezone. */
+  const timeTicks = (() => {
+    if (candles.length < 2) return [];
+    const wanted = Math.min(4, candles.length);
+    const step = (candles.length - 1) / (wanted - 1);
+    const seen = new Set<number>();
+    return Array.from({ length: wanted }, (_, n) => Math.round(n * step))
+      .filter((i) => !seen.has(i) && seen.add(i) !== undefined)
+      .map((i) => ({
+        i,
+        label: new Date(candles[i].t * 1000).toLocaleTimeString(undefined, {
+          hour: "2-digit",
+          minute: "2-digit",
+        }),
+      }));
+  })();
   const up = (c: Candle) => c.c >= c.o;
 
   function onMove(e: React.MouseEvent<SVGSVGElement>) {
@@ -192,13 +251,18 @@ export function PriceChart({
               y1={y(v)}
               y2={y(v)}
             />
-            <text
-              className="chart-axis-label"
-              x={W - PAD.right + 6}
-              y={y(v) + 3}
-            >
-              {usd(BigInt(Math.round(v)), { compact: false, dp: 2 })}
-            </text>
+            {/* Suppressed where the last-price badge sits: two prices in
+                the same place, one printed over the other, reads as a
+                rendering fault rather than as two facts. */}
+            {Math.abs(y(v) - y(Number(last.c))) > 11 && (
+              <text
+                className="chart-axis-label"
+                x={W - PAD.right + 6}
+                y={y(v) + 3}
+              >
+                {usd(BigInt(Math.round(v)), { compact: false, dp: 2 })}
+              </text>
+            )}
           </g>
         ))}
 
@@ -259,6 +323,42 @@ export function PriceChart({
             );
           })
         )}
+
+        {/* The time axis. Four labels, evenly spaced, so the series reads as
+            a period rather than as an abstract line. */}
+        {timeTicks.map((tick) => (
+          <text
+            key={`t${tick.i}`}
+            className="chart-axis-label"
+            x={x(tick.i)}
+            y={height - 4}
+            textAnchor={
+              tick.i === 0
+                ? "start"
+                : tick.i === candles.length - 1
+                  ? "end"
+                  : "middle"
+            }
+          >
+            {tick.label}
+          </text>
+        ))}
+
+        {/* The last price, pinned to the axis it belongs on. The one piece of
+            furniture every trading chart has, and the fastest way to read
+            where the market is without hunting along a gridline. */}
+        <g className="chart-last" data-dir={up(last) ? "up" : "down"}>
+          <rect
+            x={W - PAD.right + 2}
+            y={y(Number(last.c)) - 9}
+            width={PAD.right - 4}
+            height={18}
+            rx={3}
+          />
+          <text x={W - PAD.right + 6} y={y(Number(last.c)) + 4}>
+            {usd(last.c, { compact: false, dp: 2 })}
+          </text>
+        </g>
 
         {/* Volume pane, same colour language, recessive opacity. */}
         {candles.map((c, i) => (
