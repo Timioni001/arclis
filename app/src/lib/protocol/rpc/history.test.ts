@@ -13,7 +13,15 @@
  * the name back, rather than trusting either spelling.
  */
 import { describe, expect, it } from "vitest";
-import BN from "bn.js";
+// `BN` from Anchor, not from "bn.js" directly. bn.js ships no types of its
+// own, so importing it here needs `@types/bn.js` - which this package does
+// not depend on. It builds locally anyway because the repository root does,
+// and TypeScript walks up out of `app/` to find it. Cloudflare's root
+// directory is `app`, so the repo root is never installed there and the same
+// build fails with TS7016. Anchor re-exports the same class, is a real
+// dependency of this package, and hides the untyped import inside a `.d.ts`
+// that `skipLibCheck` skips.
+import { BN } from "@coral-xyz/anchor";
 
 import { coder } from "./decode";
 import { appendPoint, candlesFrom, type PricePoint } from "./history";
