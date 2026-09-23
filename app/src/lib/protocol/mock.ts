@@ -13,6 +13,7 @@
  */
 
 import * as m from "./math";
+import { MARKETS as LISTED } from "../markets";
 import type {
   ActivityEvent,
   Candle,
@@ -107,6 +108,27 @@ const SEEDS: Seed[] = [
     oiLong: 14_000,
     oiShort: 21_500,
   },
+  /*
+   * Every other listed market, from the shared list.
+   *
+   * The six above are hand-tuned because each one demonstrates a session
+   * state. The rest only need to look like markets, so their open interest is
+   * derived from the price rather than invented one by one, and they trade in
+   * the regular session.
+   */
+  ...LISTED.filter(
+    (m) => !["AAPL", "NVDA", "TSLA", "MSFT", "AMZN", "GME"].includes(m.symbol),
+  ).map(
+    (m, i): Seed => ({
+      symbol: m.symbol,
+      name: m.name,
+      px: m.indicativePrice,
+      vol: m.vol,
+      session: "Open",
+      oiLong: Math.round(3_000_000 / m.indicativePrice) * (4 + (i % 5)),
+      oiShort: Math.round(3_000_000 / m.indicativePrice) * (3 + ((i * 3) % 5)),
+    }),
+  ),
 ];
 
 function buildCandles(px: number, vol: number, seed: number): Candle[] {

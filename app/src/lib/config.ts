@@ -9,6 +9,7 @@
  */
 
 import { PROGRAM_ADDRESS } from "../idl/program-id";
+import { MARKETS } from "./markets";
 
 export type Cluster = "localnet" | "devnet" | "mainnet-beta";
 
@@ -55,9 +56,15 @@ export const PROGRAM_ID: string =
 export const QUOTE_MINT: string =
   env.VITE_QUOTE_MINT?.trim() || "Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr";
 
-/** Markets the interface lists. Symbols; every address derives from them. */
+/**
+ * Markets the interface lists. Symbols; every address derives from them.
+ *
+ * Defaults to `markets.json`, the one list the seed script also reads, so a
+ * market that exists on chain and a market the interface shows cannot drift
+ * apart unless an environment variable says so on purpose.
+ */
 export const MARKET_SYMBOLS = (
-  env.VITE_MARKETS?.trim() || "AAPL,NVDA,MSFT,TSLA,GOOGL"
+  env.VITE_MARKETS?.trim() || MARKETS.map((m) => m.symbol).join(",")
 )
   .split(",")
   .map((s) => s.trim())

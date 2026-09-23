@@ -2335,3 +2335,125 @@ input[type="range"]::-moz-range-thumb {
     background: var(--surface-muted);
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Agent launch pairs (Treasuries)
+   --------------------------------------------------------------------------- */
+
+.agent-flow {
+  margin: 0 0 var(--space-5);
+  padding-left: 1.3em;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 78ch;
+}
+
+.agent-flow li {
+  margin-bottom: var(--space-2);
+}
+
+.agent-flow strong {
+  color: var(--text-primary);
+}
+
+.pair-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.pair-toolbar .legal-switch {
+  margin-bottom: 0;
+}
+
+.pair-search {
+  flex: 1 1 240px;
+  max-width: 360px;
+}
+
+.pair-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+  gap: var(--space-2);
+}
+
+.pair-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 10px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface-sunken);
+  min-width: 0;
+}
+
+.pair-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pair-symbol {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.pair-name {
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pair-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.pair-kind {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+.pair-mint {
+  color: var(--text-secondary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.pair-mint:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.pair-foot {
+  margin-top: var(--space-4);
+}
+
+.pair-foot code {
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .pair-toolbar .legal-switch {
+    width: 100%;
+  }
+
+  .pair-search {
+    max-width: none;
+  }
+}

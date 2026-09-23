@@ -32,7 +32,12 @@ kill_timeout = "30s"
   RPC_URL = "https://api.devnet.solana.com"
   PROGRAM_ID = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP"
   QUOTE_MINT = "8nMZjpyLpGGtnCkdCotT8jWUDUpSnJeVjeuazyYVvqGu"
-  MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL"
+  MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ"
+  # One Finnhub quote per market per pass, and the free tier allows sixty a
+  # minute. Fifteen markets every twenty seconds is forty-five, which leaves
+  # room; every ten seconds would be ninety and get the feed rate limited. The
+  # program's staleness bound is sixty seconds, so twenty is still well inside.
+  PRICE_INTERVAL_MS = "20000"
   HEALTH_PORT = "8080"
 
 [http_service]

@@ -7,13 +7,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { BASE_URL, client, isTokenizedStock, planLaunch, type PumpPairs } from "./launch";
 
-const AAPLX = { mint: "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp", symbol: "AAPLx", name: "Apple xStock", decimals: 8 };
+// As ClawPump actually lists it: plain ticker, company name, `Xs` mint.
+const AAPLX = { mint: "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp", symbol: "AAPL", name: "Apple", decimals: 8 };
 const MEME = { mint: "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", symbol: "BONK", name: "Bonk", decimals: 5 };
 const PAIRS: PumpPairs = { assets: [AAPLX, MEME], creatorFeeBps: { min: 100, max: 300, default: 100 } };
 const WALLET = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP";
 
 const good = {
-  agentId: "agent-1", stock: "AAPLx", symbol: "HELIO",
+  agentId: "agent-1", stock: "AAPL", symbol: "HELIO",
   description: "An agent whose treasury is denominated in Apple.",
   image: "https://example.com/helio.png", payout: WALLET,
 };
@@ -29,7 +30,7 @@ describe("planLaunch", () => {
   });
 
   it("refuses a mint ClawPump does not list", () => {
-    const r = planLaunch({ ...good, stock: "TSLAx" }, PAIRS);
+    const r = planLaunch({ ...good, stock: "TSLA" }, PAIRS);
     expect("errors" in r && r.errors.join()).toMatch(/not in ClawPump/);
   });
 
@@ -56,10 +57,14 @@ describe("planLaunch", () => {
     expect("errors" in r && r.errors.length).toBeGreaterThanOrEqual(5);
   });
 
-  it("recognises xStocks by symbol or by name", () => {
-    expect(isTokenizedStock({ symbol: "SPYx", name: "" })).toBe(true);
-    expect(isTokenizedStock({ symbol: "SPCX", name: "SpaceX tokenized equity" })).toBe(true);
+  it("recognises stocks by mint, as ClawPump really lists them", () => {
+    // The regression: plain tickers and company names, which the first
+    // filter missed for all but two of eighty listings.
+    expect(isTokenizedStock(AAPLX)).toBe(true);
+    expect(isTokenizedStock({ mint: "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb" })).toBe(true);
+    expect(isTokenizedStock({ mint: "MUxEsUKSMACyw5fZf68wxf5FLnZVhtU9CwH8uNNGay1" })).toBe(true);
     expect(isTokenizedStock(MEME)).toBe(false);
+    expect(isTokenizedStock({ mint: "So11111111111111111111111111111111111111112" })).toBe(false);
   });
 });
 

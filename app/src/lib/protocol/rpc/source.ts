@@ -144,7 +144,25 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
   let treasuryPositions: Record<string, Position> = {};
   let refreshes = 0;
 
+  /*
+   * Three at a time, not all at once.
+   *
+   * Each backfill is several paged `getSignaturesForAddress` calls plus a
+   * batched transaction fetch. With five markets firing them together was
+   * fine; with fifteen it is the burst a public endpoint answers with 429 on
+   * every visitor's first load. Chunking keeps the first paint's account read
+   * uncontended and lets the charts fill in over a few seconds instead.
+   */
+  const BACKFILL_CONCURRENCY = 3;
+
   async function backfill(oracles: { key: PublicKey; id: string }[]) {
+    const pending = oracles.filter((o) => !backfilled.has(o.id));
+    for (let i = 0; i < pending.length; i += BACKFILL_CONCURRENCY) {
+      await backfillSome(pending.slice(i, i + BACKFILL_CONCURRENCY));
+    }
+  }
+
+  async function backfillSome(oracles: { key: PublicKey; id: string }[]) {
     await Promise.all(
       oracles
         .filter((o) => !backfilled.has(o.id))
@@ -309,17 +327,18 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
         }
       }
 
-      // In parallel with the account read, and a no-op after the first call.
-      // Sequencing them would add the backfill's round trip to every first
-      // paint for no reason: neither read depends on the other.
       const dueForScan = refreshes % TREASURY_RESCAN_EVERY === 0;
       refreshes += 1;
 
+      // The backfill is started but not awaited: with fifteen markets it runs
+      // for seconds, and the account read must not wait for it. Its results
+      // land in `history` and appear on the next refresh.
+      void backfill(
+        derived.map((d) => ({ key: d.oracle, id: d.oracle.toBase58() })),
+      );
+
       const [infos] = await Promise.all([
         getMultiple(connection, keys),
-        backfill(
-          derived.map((d) => ({ key: d.oracle, id: d.oracle.toBase58() })),
-        ),
         // A failed scan keeps the treasuries already found. It is the same
         // judgement as the backfill's: a rate limit on the heaviest call in
         // the refresh must not empty a screen that was populated a moment ago.

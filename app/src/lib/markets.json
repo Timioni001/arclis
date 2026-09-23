@@ -1,0 +1,20 @@
+{
+  "_comment": "The markets Arclis lists. One list, read by the interface (names, mock data) and by scripts/seed-local.ts (what to create on chain). The keeper's list is its MARKETS env var in fly.toml; keep them equal. Every symbol here is also a ClawPump Pump.fun pair, so any market can back an agent launch. indicativePrice is only a seeding fallback: seed-local uses a live Finnhub quote when FINNHUB_API_KEY is set, and the keeper owns the price after that.",
+  "markets": [
+    { "symbol": "AAPL",  "name": "Apple Inc.",                 "indicativePrice": 228.5,  "vol": 0.28 },
+    { "symbol": "NVDA",  "name": "NVIDIA Corporation",         "indicativePrice": 178.2,  "vol": 0.52 },
+    { "symbol": "MSFT",  "name": "Microsoft Corporation",      "indicativePrice": 431.0,  "vol": 0.24 },
+    { "symbol": "TSLA",  "name": "Tesla, Inc.",                "indicativePrice": 412.75, "vol": 0.61 },
+    { "symbol": "GOOGL", "name": "Alphabet Inc. Class A",      "indicativePrice": 192.3,  "vol": 0.3 },
+    { "symbol": "AMZN",  "name": "Amazon.com, Inc.",           "indicativePrice": 186.9,  "vol": 0.33 },
+    { "symbol": "META",  "name": "Meta Platforms, Inc.",       "indicativePrice": 590.0,  "vol": 0.38 },
+    { "symbol": "AVGO",  "name": "Broadcom Inc.",              "indicativePrice": 230.0,  "vol": 0.45 },
+    { "symbol": "PLTR",  "name": "Palantir Technologies Inc.", "indicativePrice": 120.0,  "vol": 0.65 },
+    { "symbol": "AMD",   "name": "Advanced Micro Devices",     "indicativePrice": 140.0,  "vol": 0.5 },
+    { "symbol": "COIN",  "name": "Coinbase Global, Inc.",      "indicativePrice": 250.0,  "vol": 0.7 },
+    { "symbol": "HOOD",  "name": "Robinhood Markets, Inc.",    "indicativePrice": 60.0,   "vol": 0.75 },
+    { "symbol": "MSTR",  "name": "Strategy Inc.",              "indicativePrice": 380.0,  "vol": 0.85 },
+    { "symbol": "SPY",   "name": "SPDR S&P 500 ETF",           "indicativePrice": 580.0,  "vol": 0.15 },
+    { "symbol": "QQQ",   "name": "Invesco QQQ Trust",          "indicativePrice": 500.0,  "vol": 0.2 }
+  ]
+}

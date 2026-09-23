@@ -22,6 +22,7 @@ import {
   StatTile,
 } from "../components/ui";
 import { HedgeHealth } from "../components/protocol";
+import { AgentPairs } from "../components/clawpump/AgentPairs";
 import { ago, shares as fmtShares, usd, pctPlain } from "../lib/format";
 
 export function Treasury({
@@ -51,6 +52,8 @@ export function Treasury({
         </div>
       </header>
 
+      <AgentPairs />
+
       {/*
         An empty list rendered nothing at all, which reads as a broken screen
         rather than an empty one. It is neither, and the distinction is worth
@@ -73,8 +76,8 @@ export function Treasury({
         <Empty title="No agent treasuries on this deployment yet">
           Every treasury the program holds is listed here, found by scanning
           the program&apos;s accounts. None have been opened on this
-          deployment. Launch an agent against a tokenized stock and its
-          treasury appears on the next scan.
+          deployment. Launch an agent against one of the stocks above and
+          open its treasury, and it appears here on the next scan.
         </Empty>
       )}
 

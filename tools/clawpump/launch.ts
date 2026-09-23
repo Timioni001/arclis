@@ -52,7 +52,10 @@
  *         --payout <treasury authority> [--fee-bps 250] [--execute]
  */
 
+import { writeFileSync } from "node:fs";
+import path from "node:path";
 import { PublicKey } from "@solana/web3.js";
+import stockPairs from "../../app/src/lib/clawpump/stock-pairs.json";
 
 // The apex domain. agents.clawpump.tech 308-redirects here, and HTTP clients
 // drop the Authorization header across a cross-host redirect, so every call
@@ -63,19 +66,28 @@ export const BASE_URL = "https://clawpump.tech/api/v1";
 const TIMEOUT_MS = 120_000;
 
 /**
- * Whether a catalogue entry is a tokenized stock.
+ * The tokenized stocks and ETFs in ClawPump's catalogue, by mint.
  *
- * A filter rather than "anything /pump-pairs returns": the catalogue may carry
- * memecoins and stablecoins too, and an Arclis agent paired against one of
- * those is not the product. xStocks follow the `AAPLx` convention; anything
- * else is accepted when its own name says what it is. `--any-pair` overrides
- * this for a stock whose listing says neither.
+ * Checked by mint against a reviewed list rather than guessed from names. A
+ * first version matched `AAPLx`-style symbols and the words "stock" or
+ * "equity" in the name, and tagged exactly two of the catalogue's eighty-odd
+ * equities, because ClawPump lists xStocks under their plain tickers and
+ * most names are just the company's. The list is the same file the interface
+ * shows, so the CLI and the site agree on what counts.
  */
-export function isTokenizedStock(pair: { symbol: string; name: string }) {
-  return (
-    /^[A-Z.]{1,6}x$/.test(pair.symbol) ||
-    /xstock|tokeni[sz]ed|stock|equity/i.test(pair.name)
-  );
+export const STOCK_PAIRS: { symbol: string; mint: string; name: string; kind: string }[] =
+  stockPairs.pairs;
+
+const STOCK_MINTS = new Set(STOCK_PAIRS.map((p) => p.mint));
+
+/**
+ * Backed's xStocks all have vanity mints beginning `Xs`, which lets a refresh
+ * pick up newly listed ones without a human reviewing each entry.
+ */
+const XSTOCK_MINT = /^Xs[1-9A-HJ-NP-Za-km-z]{30,42}$/;
+
+export function isTokenizedStock(pair: { mint: string }) {
+  return STOCK_MINTS.has(pair.mint) || XSTOCK_MINT.test(pair.mint);
 }
 
 export interface PumpPair {
@@ -167,7 +179,7 @@ export function planLaunch(
     );
   } else if (!args.anyPair && !isTokenizedStock(pair)) {
     errors.push(
-      `${pair.symbol} (${pair.name}) does not look like a tokenized stock. ` +
+      `${pair.symbol} (${pair.name}) is not a tokenized stock. ` +
         "An Arclis agent pairs against an equity, not a memecoin or a " +
         "stablecoin. Pass --any-pair if it is one.",
     );
@@ -294,6 +306,38 @@ async function main() {
       console.log();
       return;
     }
+    case "snapshot": {
+      // Refresh the list the interface shows. Entries already reviewed stay;
+      // new xStocks are recognised by their mint. Anything else new is
+      // printed for a human to decide on, not added silently.
+      const p = await cp.pairs();
+      const keep = p.assets.filter(isTokenizedStock);
+      const unknown = p.assets.filter((a) => !isTokenizedStock(a));
+      const file = path.resolve(__dirname, "../../app/src/lib/clawpump/stock-pairs.json");
+      writeFileSync(
+        file,
+        JSON.stringify(
+          {
+            ...stockPairs,
+            snapshot: new Date().toISOString().slice(0, 10),
+            creatorFeeBps: p.creatorFeeBps,
+            pairs: keep.map((a) => ({
+              symbol: a.symbol,
+              mint: a.mint,
+              name: STOCK_PAIRS.find((s) => s.mint === a.mint)?.name ?? a.name,
+              kind:
+                STOCK_PAIRS.find((s) => s.mint === a.mint)?.kind ??
+                (/ETF|Fund/.test(a.name) ? "etf" : "equity"),
+            })),
+          },
+          null,
+          1,
+        ) + "\n",
+      );
+      console.log(`\n  wrote ${keep.length} stock pairs to ${file}`);
+      console.log(`  ${unknown.length} other assets left out; add any real stocks by hand\n`);
+      return;
+    }
     case "agents": {
       const { agents } = await cp.agents();
       for (const a of agents) {
@@ -359,7 +403,7 @@ async function main() {
       return;
     }
     default:
-      console.log("commands: pairs | agents | create-agent | launch");
+      console.log("commands: pairs | snapshot | agents | create-agent | launch");
   }
 }
 

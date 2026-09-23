@@ -1,0 +1,485 @@
+{
+ "_comment": "Tokenized stocks and ETFs ClawPump offers as Pump.fun quote assets, from GET https://clawpump.tech/api/v1/pump-pairs. Crypto assets and memecoins in that catalogue are left out on purpose. Refresh with `npm run clawpump -- snapshot`.",
+ "snapshot": "2026-09-23",
+ "creatorFeeBps": {
+  "min": 100,
+  "max": 300,
+  "default": 100
+ },
+ "pairs": [
+  {
+   "symbol": "MU",
+   "mint": "MUxEsUKSMACyw5fZf68wxf5FLnZVhtU9CwH8uNNGay1",
+   "name": "Micron Technology",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SPY",
+   "mint": "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W",
+   "name": "S&P 500 ETF",
+   "kind": "etf"
+  },
+  {
+   "symbol": "CRCL",
+   "mint": "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1",
+   "name": "Circle",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SKHY",
+   "mint": "SKHYhSjuRWHgikq8eRKbtBbpABgJSkd7ytQV14i9EQ3",
+   "name": "SK Hynix",
+   "kind": "equity"
+  },
+  {
+   "symbol": "TSLA",
+   "mint": "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB",
+   "name": "Tesla",
+   "kind": "equity"
+  },
+  {
+   "symbol": "QQQ",
+   "mint": "Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ",
+   "name": "Nasdaq 100 ETF",
+   "kind": "etf"
+  },
+  {
+   "symbol": "NVDA",
+   "mint": "Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh",
+   "name": "NVIDIA",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SPCX",
+   "mint": "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb",
+   "name": "SpaceX",
+   "kind": "equity"
+  },
+  {
+   "symbol": "MSTR",
+   "mint": "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ",
+   "name": "MicroStrategy",
+   "kind": "equity"
+  },
+  {
+   "symbol": "COIN",
+   "mint": "Xs7ZdzSHLU9ftNJsii5fCeJhoRWSC32SQGzGQtePxNu",
+   "name": "Coinbase",
+   "kind": "equity"
+  },
+  {
+   "symbol": "GLD",
+   "mint": "Xsv9hRk1z5ystj9MhnA7Lq4vjSsLwzL2nxrwmwtD3re",
+   "name": "Gold ETF",
+   "kind": "etf"
+  },
+  {
+   "symbol": "HOOD",
+   "mint": "XsvNBAYkrDRNhA7wPHQfX3ZUXZyZLdnCQDfHZ56bzpg",
+   "name": "Robinhood",
+   "kind": "equity"
+  },
+  {
+   "symbol": "VIDA",
+   "mint": "XsfCC9VL4DamVGNgdJpfLXB3sBVa158Gbx8sh7NzmTk",
+   "name": "Vida Global",
+   "kind": "equity"
+  },
+  {
+   "symbol": "AAPL",
+   "mint": "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
+   "name": "Apple",
+   "kind": "equity"
+  },
+  {
+   "symbol": "MCD",
+   "mint": "XsqE9cRRpzxcGKDXj1BJ7Xmg4GRhZoyY1KpmGSxAWT2",
+   "name": "McDonald's",
+   "kind": "equity"
+  },
+  {
+   "symbol": "NKE",
+   "mint": "NKEda5nHhNGgjrE9nDdMvaEmkmJ96qqxzBVZEcKmjSg",
+   "name": "Nike",
+   "kind": "equity"
+  },
+  {
+   "symbol": "DRAM",
+   "mint": "DRAMjSWR7HRfJKjRkvQWYL2bcaejaVhuxEcjf4pAY4Cw",
+   "name": "Roundhill Memory ETF",
+   "kind": "etf"
+  },
+  {
+   "symbol": "PLTR",
+   "mint": "XsoBhf2ufR8fTyNSjqfU71DYGaE6Z3SUGAidpzriAA4",
+   "name": "Palantir",
+   "kind": "equity"
+  },
+  {
+   "symbol": "MSFT",
+   "mint": "XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX",
+   "name": "Microsoft",
+   "kind": "equity"
+  },
+  {
+   "symbol": "GOOGL",
+   "mint": "XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN",
+   "name": "Alphabet",
+   "kind": "equity"
+  },
+  {
+   "symbol": "TTWO",
+   "mint": "TTWofwAge91oFhZs7kpQdyrVRkmevgM88xijGvQFbKo",
+   "name": "Take-Two Interactive",
+   "kind": "equity"
+  },
+  {
+   "symbol": "GPRO",
+   "mint": "GPRR2u6NS5yBQHWGauoJ9HXgjrTH8dDsrBfTV5zAYvDH",
+   "name": "GoPro",
+   "kind": "equity"
+  },
+  {
+   "symbol": "META",
+   "mint": "Xsa62P5mvPszXL1krVUnU5ar38bBSVcWAB6fmPCo5Zu",
+   "name": "Meta",
+   "kind": "equity"
+  },
+  {
+   "symbol": "AMZN",
+   "mint": "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg",
+   "name": "Amazon",
+   "kind": "equity"
+  },
+  {
+   "symbol": "KO",
+   "mint": "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ",
+   "name": "Coca-Cola",
+   "kind": "equity"
+  },
+  {
+   "symbol": "GME",
+   "mint": "Xsf9mBktVB9BSU5kf4nHxPq5hCBJ2j2ui3ecFGxPRGc",
+   "name": "GameStop",
+   "kind": "equity"
+  },
+  {
+   "symbol": "BRK.B",
+   "mint": "Xs6B6zawENwAbWVi7w92rjazLuAr5Az59qgWKcNb45x",
+   "name": "Berkshire Hathaway",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SNDK",
+   "mint": "SNDKbwMUQvZhnLnxLduradgLHG5KrPuKwpnrkkGRhfH",
+   "name": "Sandisk",
+   "kind": "equity"
+  },
+  {
+   "symbol": "AMC",
+   "mint": "AMC1qwR9KhiyrQBRPrxnfo4JfMeMZqEBvt5tgTytNNoc",
+   "name": "AMC Entertainment",
+   "kind": "equity"
+  },
+  {
+   "symbol": "MRNA",
+   "mint": "MRNAzXzhNcaEXJPibHEn8cd4vyekCDiivTyEwswLUCT",
+   "name": "Moderna",
+   "kind": "equity"
+  },
+  {
+   "symbol": "AVGO",
+   "mint": "XsgSaSvNSqLTtFuyWPBhK9196Xb9Bbdyjj4fH3cPJGo",
+   "name": "Broadcom",
+   "kind": "equity"
+  },
+  {
+   "symbol": "LLY",
+   "mint": "LLYuwZ33keFihgwoxXsBawy31AiRFLFSva32TYq5TvD",
+   "name": "Eli Lilly",
+   "kind": "equity"
+  },
+  {
+   "symbol": "INTC",
+   "mint": "iNTCy1qTsUEZQe3DSocLz1ZXXai34Gdw8THQh5rxFaF",
+   "name": "Intel",
+   "kind": "equity"
+  },
+  {
+   "symbol": "NBIS",
+   "mint": "NBiSF3UaVUFtRzHwAfxyHsBCAZWGEKnMpewAE4oh7BG",
+   "name": "Nebius",
+   "kind": "equity"
+  },
+  {
+   "symbol": "MRVL",
+   "mint": "MRVLSjkR2ceUBukujaD3xCyHP1H3B2SzpsNTZF546jo",
+   "name": "Marvell Technology",
+   "kind": "equity"
+  },
+  {
+   "symbol": "BA",
+   "mint": "BArimz1PcKZr8PcPh3tcZ2dg4S7FJLk3cw6R5F8GsHKg",
+   "name": "Boeing",
+   "kind": "equity"
+  },
+  {
+   "symbol": "DJT",
+   "mint": "DJTu7vi8norVzdVAffgvb39VP7wjKeTsgaMBJrzfxvoF",
+   "name": "Trump Media",
+   "kind": "equity"
+  },
+  {
+   "symbol": "HIMS",
+   "mint": "HiMSSzzwkZkrXJ4PGVJRdtfLaANeAztjjcgk5Dxe7Lwx",
+   "name": "Hims & Hers Health",
+   "kind": "equity"
+  },
+  {
+   "symbol": "IBM",
+   "mint": "BMKdM4yUxX12moFqVk195k7coMbaybd4RUKCUdm7D1Sk",
+   "name": "IBM",
+   "kind": "equity"
+  },
+  {
+   "symbol": "JNJ",
+   "mint": "JNJg1znKdF712Phe7L7z52AATAvEjEytBdN2w8Lnh1Y",
+   "name": "Johnson & Johnson",
+   "kind": "equity"
+  },
+  {
+   "symbol": "LULU",
+   "mint": "LULUmT9VMttkfAJE236LXJcYJ2tTP7nunrSWR5G1BdS",
+   "name": "Lululemon",
+   "kind": "equity"
+  },
+  {
+   "symbol": "MGM",
+   "mint": "MGMuubtUEirmkhfEQdmGUh4pr7HuUdMWcZXFtpPbVJD",
+   "name": "MGM Resorts",
+   "kind": "equity"
+  },
+  {
+   "symbol": "PFE",
+   "mint": "PFER6ENqP8r8NF3CqVt4mFowxsin3V5MLidBNQFCC3x",
+   "name": "Pfizer",
+   "kind": "equity"
+  },
+  {
+   "symbol": "QUBT",
+   "mint": "QUBTAD8C9bMU9LvmMNgKPhrmBGbHvxpu6vfWQtThxxw",
+   "name": "Quantum Computing",
+   "kind": "equity"
+  },
+  {
+   "symbol": "RDDT",
+   "mint": "RDDTGbhHwVXfyCvQMXzzowKjf5qrYBZAnehoXW83ooh",
+   "name": "Reddit",
+   "kind": "equity"
+  },
+  {
+   "symbol": "RIVN",
+   "mint": "RcZmt84VMJv9bDhKqmw1uWDahYrUT468VwAChTnfD8p",
+   "name": "Rivian Automotive",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SHOP",
+   "mint": "SH55hfaipFAbwT42nQYhRoM5o5t61QpkmJ6p62vXB3m",
+   "name": "Shopify",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SNAP",
+   "mint": "SNAPcESrvnH8yUdgeMF6xm1hym9b6hW6s8YeqeHdZFz",
+   "name": "Snap",
+   "kind": "equity"
+  },
+  {
+   "symbol": "UPS",
+   "mint": "UPSqUeMHcWbkdg784XuBUEF9DtySSnW9ur5LAVdcuB9",
+   "name": "UPS",
+   "kind": "equity"
+  },
+  {
+   "symbol": "BULL",
+   "mint": "BULL151gUXcFV5wXEUqu9Am2L7Qt4bTJRLRuAUjkcspC",
+   "name": "Webull",
+   "kind": "equity"
+  },
+  {
+   "symbol": "COST",
+   "mint": "CZEB3WNZuF2Yz1z2H81RcCk8T7fsw82KB33zqamASVsg",
+   "name": "Costco",
+   "kind": "equity"
+  },
+  {
+   "symbol": "DELL",
+   "mint": "DELL2aRKQz7DMq5DrKLtkn47ZCnbxXPZXrSGbkmd13wy",
+   "name": "Dell Technologies",
+   "kind": "equity"
+  },
+  {
+   "symbol": "DKNG",
+   "mint": "DKNGQFNGQmoBdXSRGKJ8tTu7uPDasw5JDcfMmWniNfow",
+   "name": "DraftKings",
+   "kind": "equity"
+  },
+  {
+   "symbol": "GRND",
+   "mint": "GRNDYDpqwpCm6jVxpbh4xT5AM4r3p391qYsKTHqgaET2",
+   "name": "Grindr",
+   "kind": "equity"
+  },
+  {
+   "symbol": "DNUT",
+   "mint": "DNUTsCvKbKwu2RM72cUuW3TD9YpzArzACcqYQssjPLSk",
+   "name": "Krispy Kreme",
+   "kind": "equity"
+  },
+  {
+   "symbol": "WEN",
+   "mint": "WENAZ2WyPbmgvUcKfQ8hyMDfBQP9bZ65hsZ5KTFrRGZ",
+   "name": "Wendy's",
+   "kind": "equity"
+  },
+  {
+   "symbol": "HTZ",
+   "mint": "HTZsLG4zqaNvWMwXSLHH3GG5KyJpKwpBRsKVdMG6hvzP",
+   "name": "Hertz",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SPHR",
+   "mint": "SPHRp8cZaSQBTp1KMNP4V1X821SXhXWt4Q2yLdyHzju",
+   "name": "Sphere Entertainment",
+   "kind": "equity"
+  },
+  {
+   "symbol": "DFDV",
+   "mint": "Xs2yquAgsHByNzx68WJC55WHjHBvG9JsMB7CWjTLyPy",
+   "name": "DeFi Development",
+   "kind": "equity"
+  },
+  {
+   "symbol": "FLWS",
+   "mint": "FLWSojG1gB5VStYR3Sb4nQFRt43UBYkqih1j2CpVLqgd",
+   "name": "1-800-Flowers",
+   "kind": "equity"
+  },
+  {
+   "symbol": "SCHH",
+   "mint": "SCHHJ3jRdSjeFEVAaLrnYdx3Brphn92Ys7z1qkiCtPX",
+   "name": "Schwab U.S. REIT ETF",
+   "kind": "etf"
+  },
+  {
+   "symbol": "PTN",
+   "mint": "PTNzAfFAB4LvoUQEUUGrFMyUoRLExMYjH6CcfyQfsVP",
+   "name": "Palatin Technologies",
+   "kind": "equity"
+  },
+  {
+   "symbol": "FLY",
+   "mint": "FLYRq3en8r2Z69gN3KyAnDrvnitEJNkwPYY7favinHeD",
+   "name": "Firefly Aerospace",
+   "kind": "equity"
+  },
+  {
+   "symbol": "BROS",
+   "mint": "BRVaZKg6J9iF2BEsdpsxJ9NyvN9PPxPZuoQUX2v8qqkk",
+   "name": "Dutch Bros",
+   "kind": "equity"
+  },
+  {
+   "symbol": "AMD",
+   "mint": "AMD8XwJXgQ9WV45Wyj9yFLejxzf2J6VM1PJY8bJEjeES",
+   "name": "Advanced Micro Devices",
+   "kind": "equity"
+  },
+  {
+   "symbol": "LUV",
+   "mint": "LUV9GB51PNZNRyzzyYK3rtqFfvDvWtRiXZ34wVq2HrX",
+   "name": "Southwest Airlines",
+   "kind": "equity"
+  },
+  {
+   "symbol": "WULF",
+   "mint": "WULFeyfrj1VJKD9HhRTcW8R4g5HefUA11HDEdBv2WxD",
+   "name": "TeraWulf",
+   "kind": "equity"
+  },
+  {
+   "symbol": "RUM",
+   "mint": "RUMsPfFZFnN1ZmGANwP7FNMJMjKH4m9RiMePrtVtLe7",
+   "name": "Rumble",
+   "kind": "equity"
+  },
+  {
+   "symbol": "USO",
+   "mint": "USNv3NkKA27Dh4nsHJDPhW4VoEcTQmjoZyJt2dqdwFu",
+   "name": "United States Oil Fund",
+   "kind": "etf"
+  },
+  {
+   "symbol": "BB",
+   "mint": "BBosJLw8ZzoATiEyywiifx7AgmrD2Cm3XjFWbhbRhChy",
+   "name": "BlackBerry",
+   "kind": "equity"
+  },
+  {
+   "symbol": "FWDI",
+   "mint": "FWDtiB5fXHdVAewPqvHPL2dh4aBC1C6GacQbePoQXKjz",
+   "name": "Forward Industries",
+   "kind": "equity"
+  },
+  {
+   "symbol": "BABA",
+   "mint": "BABANGA4JE7Kkam4nTrALAwAVgsNJUuFJnnkF7S16BZp",
+   "name": "Alibaba",
+   "kind": "equity"
+  },
+  {
+   "symbol": "CYPH",
+   "mint": "CYPHuMmCL1GxJWa2tsPhLKykC7GrHJTCHwbXD4g5uawK",
+   "name": "Cypherpunk Technologies",
+   "kind": "equity"
+  },
+  {
+   "symbol": "LMT",
+   "mint": "LMT3i1BHgixFqPUgcyteJhnEz2dpy9i3cYy4pi9BoeV",
+   "name": "Lockheed Martin",
+   "kind": "equity"
+  },
+  {
+   "symbol": "RBLX",
+   "mint": "RBLXDGRD64AtRamHMFVcjqne3Ar7NLWtFtYNtsrf1cE",
+   "name": "Roblox",
+   "kind": "equity"
+  },
+  {
+   "symbol": "URA",
+   "mint": "URARfsinxCRw4JpvQhuT4CxavdZXZEMjv9ZwWmWpwag",
+   "name": "Global X Uranium ETF",
+   "kind": "etf"
+  },
+  {
+   "symbol": "COPX",
+   "mint": "CzLTZppPdZtTjyq3WGpHLstoc3GLhu7zH5Zg6xUa6Gv5",
+   "name": "Global X Copper Miners ETF",
+   "kind": "etf"
+  },
+  {
+   "symbol": "IONQ",
+   "mint": "NQ5hSuXQZrbnrwcDVk2qN73njjd3E3v3badYHnj5thF",
+   "name": "IonQ",
+   "kind": "equity"
+  },
+  {
+   "symbol": "ARM",
+   "mint": "ARMbSB1MBRQrY6PNMao1HdQ431VafC6JRJCsGZ2Yv3iJ",
+   "name": "Arm Holdings",
+   "kind": "equity"
+  }
+ ]
+}

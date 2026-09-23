@@ -21,6 +21,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { startQualityWatch } from "./lib/perf/quality";
 import { mockSource, type DataSource } from "./lib/protocol/mock";
 import { DATA_SOURCE, MARKET_SYMBOLS, PROGRAM_ID, RPC_URL } from "./lib/config";
+import { MARKET_NAMES } from "./lib/markets";
 import "./styles/base.css";
 
 /**
@@ -34,15 +35,7 @@ import "./styles/base.css";
  * and putting a display string in an account would be paying rent forever for
  * something a lookup table answers.
  */
-const NAMES: Record<string, string> = {
-  AAPL: "Apple Inc.",
-  NVDA: "NVIDIA Corporation",
-  MSFT: "Microsoft Corporation",
-  TSLA: "Tesla, Inc.",
-  GOOGL: "Alphabet Inc. Class A",
-  AMZN: "Amazon.com, Inc.",
-  META: "Meta Platforms, Inc.",
-};
+const NAMES: Record<string, string> = MARKET_NAMES;
 
 // An error boundary only sees errors thrown during render. Anything that
 // throws in a promise, a timer or an event handler goes past it and is lost

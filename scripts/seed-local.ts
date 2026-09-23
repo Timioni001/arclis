@@ -49,14 +49,47 @@ import {
 const ROOT = path.resolve(__dirname, "..");
 const SCALE = 1_000_000; // price, quote and base all share 1e6
 
-/** What gets listed. Prices are indicative, not live - the keeper owns live. */
-const LISTINGS = [
-  { symbol: "AAPL", price: 228.5, long: 50 },
-  { symbol: "NVDA", price: 178.2, long: 0 },
-  { symbol: "MSFT", price: 431.0, long: 0 },
-  { symbol: "TSLA", price: 412.75, long: -20 },
-  { symbol: "GOOGL", price: 192.3, long: 0 },
-];
+/**
+ * What gets listed: `app/src/lib/markets.json`, the same list the interface
+ * reads, so the markets created here and the markets shown there are one list.
+ *
+ * `price` starts as the file's indicative figure and is replaced by a live
+ * quote in `main` when FINNHUB_API_KEY is set. That is not cosmetic. The
+ * program caps each oracle update at a 10% move, so a market seeded at a stale
+ * price leaves the keeper unable to publish until someone walks it across with
+ * ORACLE_CATCHUP. Seeding at the live price avoids the walk entirely.
+ *
+ * Two markets carry an open position so the interface has something to show
+ * under a connected wallet: a long on AAPL and a short on TSLA.
+ */
+const MARKET_FILE = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "app", "src", "lib", "markets.json"), "utf8"),
+) as { markets: { symbol: string; indicativePrice: number }[] };
+
+const OPEN_POSITIONS: Record<string, number> = { AAPL: 50, TSLA: -20 };
+
+const LISTINGS = MARKET_FILE.markets.map((m) => ({
+  symbol: m.symbol,
+  price: m.indicativePrice,
+  long: OPEN_POSITIONS[m.symbol] ?? 0,
+}));
+
+/** Replace indicative prices with live quotes, where Finnhub has one. */
+async function useLivePrices(apiKey: string) {
+  for (const listing of LISTINGS) {
+    try {
+      const res = await fetch(
+        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(listing.symbol)}&token=${apiKey}`,
+      );
+      const q = (await res.json()) as { c?: number };
+      if (q.c && q.c > 0) listing.price = Math.round(q.c * 100) / 100;
+    } catch {
+      /* keep the indicative price; the keeper's catch-up can walk it */
+    }
+    // Finnhub's free tier allows sixty calls a minute.
+    await new Promise((r) => setTimeout(r, 1_100));
+  }
+}
 
 const LP_DEPOSIT = 500_000;
 const TRADER_COLLATERAL = 25_000;
@@ -332,7 +365,8 @@ async function main() {
   // the whole run rather than funding anything. Ask for what that faucet will
   // actually give, and when it refuses, say so and check whether there is
   // enough already rather than dying on a request that was optional.
-  const MIN_SOL = 0.5;
+  // Roughly six hundredths of a SOL of rent per market, with headroom.
+  const MIN_SOL = Math.max(0.5, 0.06 * LISTINGS.length);
   const balance = await conn.getBalance(walletKp.publicKey);
   if (balance < 5 * LAMPORTS_PER_SOL) {
     const ask = cluster === "localnet" ? 50 : 2;
@@ -355,6 +389,17 @@ async function main() {
         `seeding ${LISTINGS.length} markets needs about ${MIN_SOL}.\n` +
         "  Top it up with `solana airdrop 2` (repeat if rate limited) or\n" +
         "  https://faucet.solana.com, then run this again. It resumes.",
+    );
+  }
+
+  // --- prices ------------------------------------------------------------
+  if (process.env.FINNHUB_API_KEY) {
+    say(`fetching live prices for ${LISTINGS.length} markets`);
+    await useLivePrices(process.env.FINNHUB_API_KEY);
+  } else {
+    console.log(
+      "      note: FINNHUB_API_KEY unset, seeding at indicative prices.\n" +
+        "      A market more than 10% off live needs ORACLE_CATCHUP on the keeper.",
     );
   }
 

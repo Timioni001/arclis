@@ -45,7 +45,7 @@ import { newHealth, startHealthServer } from "./health";
 const env = process.env;
 
 const RPC_URL = env.RPC_URL ?? "http://127.0.0.1:8899";
-const SYMBOLS = (env.MARKETS ?? "AAPL,NVDA,MSFT,TSLA,GOOGL")
+const SYMBOLS = (env.MARKETS ?? "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ")
   .split(",")
   .map((s) => s.trim().toUpperCase())
   .filter(Boolean);
