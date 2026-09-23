@@ -125,8 +125,8 @@ describe("redactRpc", () => {
   it("never shows an API key carried in the query string", () => {
     // The first Helius key configured went straight onto the public /health
     // page, because the keeper reported its RPC URL verbatim.
-    const shown = redactRpc("https://devnet.helius-rpc.com/?api-key=49844c21-secret");
-    expect(shown).not.toContain("49844c21");
+    const shown = redactRpc("https://devnet.helius-rpc.com/?api-key=00000000-example-key");
+    expect(shown).not.toContain("00000000-example-key");
     expect(shown).not.toContain("api-key");
     expect(shown).toBe("https://devnet.helius-rpc.com/…");
   });

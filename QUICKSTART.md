@@ -12,10 +12,7 @@ You are on Ubuntu. Open a terminal with **Ctrl+Alt+T**.
 ```bash
 git clone https://github.com/Timioni001/arclis.git
 cd arclis
-git checkout claude/quirky-faraday-tls27g
 ```
-
-That last line matters, the work lives on that branch, not on `main`.
 
 ---
 

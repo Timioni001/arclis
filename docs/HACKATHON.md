@@ -9,8 +9,7 @@ what still needs a mainnet transaction.
 > **Start with [`PITCH.md`](PITCH.md)** for the thesis and the one-command demo.
 >
 > Project renamed to **Arclis**: *On-chain access to public markets.* The
-> program crate is `arclis`; PDA seeds and the program ID are unchanged. See
-> [`NAMING.md`](NAMING.md).
+> program crate is `arclis`; PDA seeds and the program ID are unchanged.
 
 ## The product in one paragraph
 
