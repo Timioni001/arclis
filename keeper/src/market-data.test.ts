@@ -125,3 +125,35 @@ describe("MarketData", () => {
     expect(md.summary(["AAPL"], new Map()).symbols.AAPL.closes).toEqual([10, 11, 12]);
   });
 });
+
+import { fetchYahoo, looksDaily } from "./market-data";
+
+describe("daily granularity", () => {
+  it("asks Yahoo by explicit dates, because range=max returns quarterly bars", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(yahoo([101]))));
+    await fetchYahoo("AAPL", "1d", fetchImpl as unknown as typeof fetch);
+    const url = (fetchImpl.mock.calls[0] as unknown[])[0] as string;
+    expect(url).toContain("period1=0");
+    expect(url).not.toContain("range=max");
+  });
+
+  it("tells daily bars from coarsened ones", () => {
+    const at = (step: number) => Array.from({ length: 30 }, (_, i) => ({ t: i * step, o: 1, h: 1, l: 1, c: 1, v: 0 }));
+    expect(looksDaily(at(86_400))).toBe(true);
+    expect(looksDaily(at(7 * 86_400))).toBe(false);
+    expect(looksDaily(at(91 * 86_400))).toBe(false);
+  });
+
+  it("replaces coarsened Yahoo bars with Stooq's daily series", async () => {
+    const quarterly = yahoo(Array.from({ length: 30 }, (_, i) => 100 + i), 1_000_000_000, 91 * 86_400);
+    const csv = ["Date,Open,High,Low,Close,Volume", ...Array.from({ length: 30 }, (_, i) =>
+      `2026-08-${String(i + 1).padStart(2, "0")},100,101,99,100.5,10`)].join("\n");
+    const md = new MarketData(
+      vi.fn(async (url: string) =>
+        url.includes("yahoo") ? new Response(JSON.stringify(quarterly)) : new Response(csv),
+      ) as unknown as typeof fetch,
+    );
+    await md.refresh(["AAPL"], "1d", 0);
+    expect(md.candles("AAPL", "1d").source).toBe("stooq");
+  });
+});

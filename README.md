@@ -192,8 +192,8 @@ interface.
 |---|---|---|
 | Program unit tests | `cargo test --lib` | 129 passing |
 | Integration (local validator) | `npm run test:integration` | 25 passing |
-| Interface | `npm run app:test` | 223 passing |
-| Keeper, pipeline, ClawPump | `npm run keeper:test` | 177 passing |
+| Interface | `npm run app:test` | 226 passing |
+| Keeper, pipeline, ClawPump | `npm run keeper:test` | 183 passing |
 | Meteora DBC tooling | `npm run test:dbc` | 37 passing |
 
 CI runs formatting, Clippy, unit tests, the DBC suite, a lockfile audit

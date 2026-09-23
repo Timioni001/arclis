@@ -127,12 +127,19 @@ export async function fetchYahoo(
   interval: Interval,
   fetchImpl: typeof fetch = fetch,
 ): Promise<{ bars: Bar[]; previousClose: number | null }> {
+  // Daily bars by explicit dates, not `range=max`. Yahoo quietly coarsens
+  // `range=max` to quarterly bars whatever interval is asked for, which drew a
+  // five-year chart as twenty candles. `period1`/`period2` returns every day.
+  //
   // 15-minute bars are available for the last 60 days; a month is plenty for
   // the 1D, 1W and 1M views and keeps the payload small.
-  const range = interval === "1d" ? "max" : "1mo";
+  const window =
+    interval === "1d"
+      ? `period1=0&period2=${Math.floor(Date.now() / 1000)}`
+      : "range=1mo";
   const url =
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}` +
-    `?range=${range}&interval=${interval}&includePrePost=false&events=split`;
+    `?${window}&interval=${interval}&includePrePost=false&events=split`;
   const json = await (await get(url, fetchImpl)).json();
   return { bars: parseYahooChart(json), previousClose: yahooPreviousClose(json) };
 }
@@ -144,6 +151,14 @@ export async function fetchStooqDaily(
   const s = `${symbol.toLowerCase().replace(".", "-")}.us`;
   const text = await (await get(`https://stooq.com/q/d/l/?s=${s}&i=d`, fetchImpl)).text();
   return parseStooqCsv(text);
+}
+
+/** Whether the most recent bars are a day apart, give or take a weekend. */
+export function looksDaily(bars: Bar[]): boolean {
+  const recent = bars.slice(-30);
+  if (recent.length < 10) return false;
+  const gaps = recent.slice(1).map((b, i) => b.t - recent[i].t).sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)] <= 2 * 86_400;
 }
 
 // ---------------------------------------------------------------------------
@@ -203,9 +218,15 @@ export class MarketData {
         message: String((e as Error)?.message ?? e).slice(0, 160),
       });
     }
-    if (bars.length === 0) {
-      bars = await fetchStooqDaily(symbol, this.fetchImpl);
-      source = "stooq";
+    // Yahoo coarsens some long requests to weekly or quarterly bars. Daily
+    // bars are at most a few days apart (weekends, holidays); if the recent
+    // gaps are wider, the series is not daily, so fall back to Stooq.
+    if (bars.length === 0 || !looksDaily(bars)) {
+      const stooq = await fetchStooqDaily(symbol, this.fetchImpl).catch(() => []);
+      if (stooq.length) {
+        bars = stooq;
+        source = "stooq";
+      }
     }
     if (bars.length) this.daily.set(symbol, { bars, source, fetchedAt: Date.now() });
   }

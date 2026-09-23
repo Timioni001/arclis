@@ -28,6 +28,7 @@ import {
   CrosshairMode,
   HistogramSeries,
   LineStyle,
+  TickMarkType,
   createChart,
   createSeriesMarkers,
   type IChartApi,
@@ -131,11 +132,49 @@ function palette() {
   };
 }
 
-const timeLabel = (t: Time) =>
-  new Date((t as number) * 1000).toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+/**
+ * An axis label for a tick, at the granularity the library says it marks.
+ *
+ * The library passes the kind of boundary each tick sits on: a new year, a
+ * new month, a new day, or a time within a day. Formatting every tick as a
+ * time of day, as this first did, labelled a five-year chart of daily bars
+ * "06:00 AM" at every tick, because every daily bar opens at the same hour.
+ */
+export function tickLabel(t: Time, kind: TickMarkType): string {
+  const d = new Date((t as number) * 1000);
+  switch (kind) {
+    case TickMarkType.Year:
+      return String(d.getFullYear());
+    case TickMarkType.Month:
+      return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+    case TickMarkType.DayOfMonth:
+      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    default:
+      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+}
+
+/**
+ * The crosshair's date label: a date for bars a day wide or wider, a date and
+ * time for intraday bars. A daily bar's open time is an artefact of the data
+ * source, not something a reader should be shown.
+ */
+function crosshairLabel(t: Time, intraday: boolean): string {
+  const d = new Date((t as number) * 1000);
+  return intraday
+    ? d.toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : d.toLocaleDateString(undefined, {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+}
 
 export function PriceChart({
   candles,
@@ -167,6 +206,13 @@ export function PriceChart({
   domainRef.current = domain;
 
   const hasVolume = candles.some((c) => c.v > 0n);
+  // Bars narrower than about a day are intraday; read by the crosshair
+  // formatter, which the library calls on its own schedule.
+  const intraday =
+    candles.length < 2 ||
+    candles[candles.length - 1].t - candles[candles.length - 2].t < 20 * 3_600;
+  const intradayRef = useRef(intraday);
+  intradayRef.current = intraday;
   const drawable = candles.length >= MIN_CANDLES;
 
   // The chart itself: created once, themed, and torn down with the component.
@@ -193,17 +239,11 @@ export function PriceChart({
           timeVisible: true,
           secondsVisible: false,
           rightOffset: 4,
-          tickMarkFormatter: timeLabel,
+          tickMarkFormatter: tickLabel,
         },
         crosshair: { mode: CrosshairMode.Normal },
         localization: {
-          timeFormatter: (t: Time) =>
-            new Date((t as number) * 1000).toLocaleString(undefined, {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
+          timeFormatter: (t: Time) => crosshairLabel(t, intradayRef.current),
           priceFormatter: (p: number) => usd(BigInt(Math.round(p * 1e6)), { compact: false }),
         },
         // Vertical drags scroll the page on a phone rather than the chart,
@@ -293,6 +333,8 @@ export function PriceChart({
             });
     }
 
+    api.timeScale().applyOptions({ timeVisible: intraday });
+
     const s = series.current;
     s.setData(
       candles.map((c) =>
@@ -375,7 +417,7 @@ export function PriceChart({
         /* chart already disposed */
       }
     };
-  }, [candles, markers, events, mode, drawable, hasVolume]);
+  }, [candles, markers, events, mode, drawable, hasVolume, intraday]);
 
   if (!candles.length) {
     return (

@@ -106,3 +106,25 @@ describe("a market that has moved", () => {
     expect(far.min).toBeGreaterThan(90_000_000);
   });
 });
+
+import { TickMarkType } from "lightweight-charts";
+import { tickLabel } from "./PriceChart";
+
+describe("tickLabel", () => {
+  // 2021-03-15, 14:30 UTC: a daily bar's open time.
+  const t = Date.UTC(2021, 2, 15, 14, 30) / 1000;
+
+  it("labels year ticks with the year, not the bar's open time", () => {
+    // The bug: every tick on a five-year chart read "06:00 AM".
+    expect(tickLabel(t as never, TickMarkType.Year)).toBe("2021");
+  });
+
+  it("labels day ticks with a date", () => {
+    expect(tickLabel(t as never, TickMarkType.DayOfMonth)).toMatch(/15/);
+    expect(tickLabel(t as never, TickMarkType.DayOfMonth)).not.toMatch(/:/);
+  });
+
+  it("labels time ticks with a time", () => {
+    expect(tickLabel(t as never, TickMarkType.Time)).toMatch(/:/);
+  });
+});
