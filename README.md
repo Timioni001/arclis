@@ -176,6 +176,7 @@ markets start at the live price.
 | `KEEPER_KEYPAIR` | secret | Oracle authority and fee payer. |
 | `MARKETS` | env | Symbols to operate; must match `markets.json`. |
 | `PRICE_INTERVAL_MS` | env | Publish interval; 20 s keeps fifteen markets within Finnhub's free tier. |
+| `INDEXER_INTERVAL_MS` | env | Event indexer poll interval, default 60 s. Serves `/events` for the activity feed and corporate-action log. |
 | `FAUCET_ENABLED` | env | `yes` serves test USDC at `POST /faucet?address=`. Limited per wallet, per client IP and per day; SOL is given only while the keeper holds more than 2 SOL. Starts only if the keeper key is the quote mint's authority. |
 
 The health endpoint reports each loop's liveness and redacts the RPC URL.
@@ -194,8 +195,8 @@ interface.
 |---|---|---|
 | Program unit tests | `cargo test --lib` | 129 passing |
 | Integration (local validator) | `npm run test:integration` | 25 passing |
-| Interface | `npm run app:test` | 233 passing |
-| Keeper, pipeline, ClawPump | `npm run keeper:test` | 191 passing |
+| Interface | `npm run app:test` | 237 passing |
+| Keeper, pipeline, ClawPump | `npm run keeper:test` | 195 passing |
 | Meteora DBC tooling | `npm run test:dbc` | 37 passing |
 
 CI runs formatting, Clippy, unit tests, the DBC suite, a lockfile audit
@@ -227,8 +228,8 @@ integration suite.
   keeper's faucet.
 - **Two clusters.** ClawPump launches run on mainnet and the treasury program
   on devnet, so a launched agent cannot yet be hedged end to end.
-- **Indexing.** Corporate actions and the activity feed are emitted events and
-  require an indexer, which this deployment does not run.
+- **Indexing.** The keeper's event indexer keeps recent history in memory and
+  rebuilds it from chain on restart; a production deployment would persist it.
 - **Unsupported corporate actions.** Mergers and delistings are not handled.
 - **DBC graduation** cannot be gated on market hours; the monitor warns but
   cannot enforce.
@@ -236,7 +237,7 @@ integration suite.
 ## Roadmap
 
 1. Pyth price feeds in place of the keeper oracle authority.
-2. An event indexer for corporate actions, activity and volume.
+2. A persistent event store behind the indexer, with volume and P&L history.
 3. Mainnet deployment of the treasury program, so ClawPump-launched agents can
    be hedged end to end.
 4. Third-party security audit.

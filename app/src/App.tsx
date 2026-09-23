@@ -27,10 +27,12 @@ import { Splash } from "./components/motion/Splash";
 import { AmbientShader } from "./components/motion/AmbientShader";
 import { AddressDisplay } from "./components/ui/data";
 import { useLiveSource } from "./lib/protocol/useLiveSource";
+import { useMarketSummary, withSummary } from "./lib/protocol/keeperHistory";
 import {
-  useMarketSummary,
-  withSummary,
-} from "./lib/protocol/keeperHistory";
+  toActivity,
+  toCorporateAction,
+  useKeeperEvents,
+} from "./lib/protocol/keeperEvents";
 import { explorerAddress, REFRESH_INTERVAL_MS } from "./lib/config";
 import { ago } from "./lib/format";
 import { Icon } from "./components/ui";
@@ -162,6 +164,22 @@ export function App({ source }: { source: DataSource }) {
   // sparkline. Without it the oracle's own history is too short to say how a
   // market has moved today, and every market read 0.00%.
   const summary = useMarketSummary();
+  // The chain-backed source cannot read emitted events; the keeper indexes
+  // them. Off-chain, the modelled source supplies its own.
+  const indexed = useKeeperEvents();
+  const activity = indexed.length
+    ? indexed
+        .map(toActivity)
+        .filter((a) => a !== null)
+        .slice(0, 7)
+    : source.activity(7);
+  const indexedActions = indexed
+    .map(toCorporateAction)
+    .filter((a) => a !== null);
+  const corporateActions = (symbol?: string) =>
+    indexedActions.length
+      ? indexedActions.filter((a) => !symbol || a.symbol === symbol)
+      : source.corporateActions(symbol);
   const markets = source
     .markets()
     .map((mv) => withSummary(mv, summary[mv.oracle.symbol]));
@@ -192,8 +210,7 @@ export function App({ source }: { source: DataSource }) {
    * unnoticed.
    */
   const loadingFirstRead = liveStatus.live && liveStatus.loadedAt === null;
-  const view =
-    markets.find((mv) => mv.oracle.symbol === symbol) ?? markets[0];
+  const view = markets.find((mv) => mv.oracle.symbol === symbol) ?? markets[0];
 
   const openMarket = useCallback((s: string) => {
     setSymbol(s);
@@ -362,7 +379,7 @@ export function App({ source }: { source: DataSource }) {
           {tab === "Overview" && (
             <Markets
               markets={markets}
-              corporateActions={source.corporateActions().length}
+              corporateActions={corporateActions().length}
               loading={loadingFirstRead}
               onOpen={openMarket}
               onExplore={() => setTab("Registry")}
@@ -387,7 +404,7 @@ export function App({ source }: { source: DataSource }) {
               <Trade
                 view={view}
                 position={source.positionFor(view.market.address)}
-                corporateActions={source.corporateActions(view.oracle.symbol)}
+                corporateActions={corporateActions(view.oracle.symbol)}
                 now={now}
                 onBack={() => setTab("Overview")}
                 session={session}
@@ -403,7 +420,7 @@ export function App({ source }: { source: DataSource }) {
             <Portfolio
               positions={source.positions()}
               markets={markets}
-              activity={source.activity(7)}
+              activity={activity}
               now={now}
               onOpen={openMarket}
               loading={loadingFirstRead}

@@ -25,6 +25,7 @@ import { createServer } from "node:http";
 import type { PriceHistory } from "./price-history";
 import type { MarketData } from "./market-data";
 import type { FaucetHandler } from "./faucet";
+import type { EventIndexer } from "./indexer";
 
 /** Consecutive failures tolerated before a task is called broken. */
 const FAILURE_BUDGET = 5;
@@ -164,6 +165,7 @@ export function startHealthServer(
   },
   /** The test-token faucet, once it is ready; null while off. */
   faucet?: () => FaucetHandler | null,
+  events?: EventIndexer,
 ): void {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://keeper");
@@ -200,6 +202,16 @@ export function startHealthServer(
           log("error", "faucet failed", { message: String((e as Error)?.message ?? e) });
           json(500, { error: "The faucet failed. Try again later." }, 0);
         });
+      return;
+    }
+
+    // Indexed program events, newest first: the activity feed and the
+    // corporate-action log. `kinds` is a comma-separated filter.
+    if (url.pathname === "/events" && events) {
+      const symbol = url.searchParams.get("symbol")?.toUpperCase() || null;
+      const kinds = url.searchParams.get("kinds")?.split(",").filter(Boolean);
+      const limit = Number(url.searchParams.get("limit") ?? 50) || 50;
+      json(200, { events: events.list({ symbol, kinds, limit }) }, 15);
       return;
     }
 

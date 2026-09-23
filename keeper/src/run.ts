@@ -49,6 +49,7 @@ import type { PriceFeed } from "./prices/types";
 import { isCovered, KNOWN_THROUGH } from "./calendar";
 import { newHealth, startHealthServer, redactRpc } from "./health";
 import { createFaucet, type FaucetHandler } from "./faucet";
+import { EventIndexer } from "./indexer";
 
 const env = process.env;
 
@@ -223,6 +224,10 @@ async function main() {
       );
   }
 
+  // Trades, liquidations, LP flows and corporate actions, for the interface's
+  // activity feed. See indexer.ts for why it polls markets, not the program.
+  const indexer = new EventIndexer(config.connection, config.programId, SYMBOLS);
+
   const healthPort = Number(env.HEALTH_PORT ?? 0);
   if (healthPort > 0) {
     startHealthServer(
@@ -233,6 +238,7 @@ async function main() {
       history,
       { data: marketData, symbols: SYMBOLS, previousClose: state.previousClose },
       () => faucet,
+      indexer,
     );
   }
 
@@ -356,6 +362,19 @@ async function main() {
             of: result.scanned,
           });
         }
+      },
+      abort.signal,
+    ),
+  );
+
+  tasks.push(
+    loop(
+      config,
+      "indexer",
+      Number(env.INDEXER_INTERVAL_MS ?? 60_000),
+      async () => {
+        const added = await indexer.poll();
+        if (added) log("info", "indexed events", { added });
       },
       abort.signal,
     ),

@@ -491,9 +491,9 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
       snapshot.treasuryPositions[treasuryAddress],
 
     // Corporate actions and the activity feed are emitted events that leave no
-    // account behind, so unlike treasuries above they cannot be scanned for
-    // and do need an indexer. Returning empty is what the screens' empty
-    // states are for.
+    // account behind, so they cannot be scanned for. The keeper indexes them
+    // (`keeper/src/indexer.ts`) and `App` reads them through `keeperEvents`;
+    // this source reports none of its own.
     corporateActions: () => [] as CorporateAction[],
     activity: () => [] as ActivityEvent[],
   };
