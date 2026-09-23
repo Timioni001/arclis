@@ -22,6 +22,7 @@
  */
 
 import { createServer } from "node:http";
+import type { PriceHistory } from "./price-history";
 
 /** Consecutive failures tolerated before a task is called broken. */
 const FAILURE_BUDGET = 5;
@@ -152,12 +153,38 @@ export function startHealthServer(
   port: number,
   signal: AbortSignal,
   log: (level: "info" | "error", message: string, extra?: unknown) => void,
+  history?: PriceHistory,
 ): void {
-  const server = createServer((_req, res) => {
+  const server = createServer((req, res) => {
+    const url = new URL(req.url ?? "/", "http://keeper");
+
+    // Price history for the interface's charts. Public data, read from a
+    // browser on another origin, so it carries CORS headers; short-cached,
+    // because every visitor on a market asks for the same document.
+    if (url.pathname === "/history" && history) {
+      const symbol = (url.searchParams.get("symbol") ?? "").toUpperCase();
+      const limit = Number(url.searchParams.get("limit") ?? 0) || undefined;
+      // Any well-formed ticker gets a 200, empty until its backfill lands: a
+      // 404 there would read as "no such market" to the interface.
+      const known = /^[A-Z.]{1,12}$/.test(symbol);
+      res.writeHead(known ? 200 : 404, {
+        "content-type": "application/json",
+        "access-control-allow-origin": "*",
+        "cache-control": "public, max-age=15",
+      });
+      res.end(
+        JSON.stringify(
+          known ? history.toJson(symbol, limit) : { error: "unknown symbol" },
+        ),
+      );
+      return;
+    }
+
     const body = health.report();
     res.writeHead(body.ok ? 200 : 503, {
       "content-type": "application/json",
       "cache-control": "no-store",
+      "access-control-allow-origin": "*",
     });
     res.end(JSON.stringify(body, null, 2));
   });

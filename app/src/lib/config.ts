@@ -106,3 +106,16 @@ export function explorerTx(signature: string): string {
 export function explorerAddress(address: string): string {
   return `${EXPLORER_BASE}/address/${address}${explorerSuffix()}`;
 }
+
+/**
+ * Where the keeper serves price history, or empty for none.
+ *
+ * The keeper records every price it publishes and serves the series at
+ * `/history?symbol=`. Charts read it for depth and merge the live on-chain
+ * prices on top. Unset, charts fall back to what the browser can reconstruct
+ * from recent oracle transactions, which is minutes rather than a session.
+ */
+export const KEEPER_URL: string = (env.VITE_KEEPER_URL?.trim() ?? "").replace(
+  /\/$/,
+  "",
+);

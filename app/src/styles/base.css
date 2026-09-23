@@ -2497,3 +2497,23 @@ input[type="range"]::-moz-range-thumb {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
+
+.auth-open-in {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.auth-open-in .btn {
+  justify-content: center;
+  text-decoration: none;
+}
+
+/* The live chart's canvas. `overflow: hidden` and `min-width: 0` keep it
+   inside its card at any width; the library sizes itself to this box. */
+.chart-live {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}

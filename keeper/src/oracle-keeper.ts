@@ -159,6 +159,8 @@ export interface KeeperOptions {
  */
 export async function keeperTick(options: KeeperOptions): Promise<{
   published: string[];
+  /** The price each published symbol now carries, for the history store. */
+  prints: { symbol: string; price: bigint }[];
   sessionsChanged: string[];
   skipped: string[];
 }> {
@@ -166,6 +168,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
   const now = (options.now ?? (() => Math.floor(Date.now() / 1000)))();
 
   const published: string[] = [];
+  const prints: { symbol: string; price: bigint }[] = [];
   const sessionsChanged: string[] = [];
   const skipped: string[] = [];
 
@@ -180,7 +183,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
         hint: "update HOLIDAYS/HALF_DAYS and KNOWN_THROUGH in keeper/src/calendar.ts",
       },
     );
-    return { published, sessionsChanged, skipped: [...symbols] };
+    return { published, prints, sessionsChanged, skipped: [...symbols] };
   }
 
   const clockSession = sessionAt(now);
@@ -196,7 +199,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
       feed: feed.name,
       message: String((err as Error)?.message ?? err),
     });
-    return { published, sessionsChanged, skipped: [...symbols] };
+    return { published, prints, sessionsChanged, skipped: [...symbols] };
   }
 
   const bySymbol = new Map(quotes.map((q) => [q.symbol.toUpperCase(), q]));
@@ -277,6 +280,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
       if (outcome.ok) {
         state.printedAt.set(symbol, quote.printedAt);
         published.push(symbol);
+        prints.push({ symbol, price: quote.price });
       } else if (outcome.error === "OracleDeviationTooLarge") {
         // The program's own circuit breaker fired. This is the correct
         // outcome for a bad tick and the wrong one for an oracle that has
@@ -344,6 +348,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
             if (stepped.ok && step === quote.price) {
               state.printedAt.set(symbol, quote.printedAt);
               published.push(symbol);
+              prints.push({ symbol, price: quote.price });
             } else {
               skipped.push(symbol);
             }
@@ -359,5 +364,5 @@ export async function keeperTick(options: KeeperOptions): Promise<{
     if (!opening) await writeSession();
   }
 
-  return { published, sessionsChanged, skipped };
+  return { published, prints, sessionsChanged, skipped };
 }

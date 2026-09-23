@@ -45,6 +45,10 @@ import {
 import type { CorporateAction } from "../lib/protocol/types";
 import type { Session } from "../lib/auth/session";
 import { OrderTicket } from "../components/protocol/OrderTicket";
+import {
+  mergePoints,
+  useKeeperHistory,
+} from "../lib/protocol/keeperHistory";
 import { candlesFrom } from "../lib/protocol/rpc/history";
 import type { Candle } from "../lib/protocol/types";
 
@@ -85,8 +89,11 @@ export function candlesForTimeframe(
     const last = bars[bars.length - 1].t;
     const from = window === null ? -Infinity : last - window;
     const inWindow = bars.filter((c) => c.t >= from);
+    // Ready-made bars have a fixed width, so a window narrower than a few of
+    // them (an hour of hourly bars) would hold one bar and no chart. Show the
+    // last few bars instead of a single one.
     return {
-      candles: inWindow.length >= 2 ? inWindow : bars.slice(-2),
+      candles: inWindow.length >= 3 ? inWindow : bars.slice(-12),
       coverage: null,
     };
   }
@@ -292,9 +299,17 @@ export function Trade({
    * A source that does not carry its prints falls back to the old slice, so
    * this degrades to what it did before rather than to an empty chart.
    */
+  // A full session from the keeper, with the live on-chain prints on top.
+  const keeperPoints = useKeeperHistory(oracle.symbol);
   const { candles, coverage } = useMemo(
-    () => candlesForTimeframe(view, tf),
-    [view, tf],
+    () =>
+      candlesForTimeframe(
+        keeperPoints.length
+          ? { ...view, points: mergePoints(keeperPoints, view.points ?? []) }
+          : view,
+        tf,
+      ),
+    [view, tf, keeperPoints],
   );
   const blockedReason = !canIncrease.allowed ? canIncrease.reason : null;
 

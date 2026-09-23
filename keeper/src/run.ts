@@ -25,7 +25,13 @@ import {
   type ChainConfig,
 } from "./chain";
 import { keeperTick, newKeeperState } from "./oracle-keeper";
-import { crankFunding, liquidatePass, rebalancePass } from "./cranks";
+import {
+  addressesFor,
+  crankFunding,
+  liquidatePass,
+  rebalancePass,
+} from "./cranks";
+import { PriceHistory, backfillSymbol } from "./price-history";
 import {
   corporateTick,
   ephemeralAppliedLog,
@@ -144,9 +150,39 @@ async function main() {
     symbols: SYMBOLS,
     feed: feed.name,
   });
+  /*
+   * Price history for the interface's charts. Recorded as the keeper
+   * publishes, and backfilled from the chain once at startup so a restart does
+   * not leave every chart empty. The backfill runs one market at a time in the
+   * background: it is a few thousand transaction reads, and firing them all at
+   * once is how a keeper gets rate limited off its own endpoint.
+   */
+  const history = new PriceHistory(Number(env.HISTORY_POINTS ?? 3000));
+  void (async () => {
+    for (const symbol of SYMBOLS) {
+      if (abort.signal.aborted) return;
+      try {
+        const prints = await backfillSymbol(
+          config.connection,
+          config.programId,
+          addressesFor(config.programId, symbol).oracle,
+          { target: history.capacity },
+        );
+        history.merge(symbol, prints);
+        log("info", "history backfilled", { symbol, points: prints.length });
+      } catch (e) {
+        // A failed backfill is a shorter chart, not a broken keeper.
+        log("warn", "history backfill failed", {
+          symbol,
+          message: String((e as Error)?.message ?? e).slice(0, 200),
+        });
+      }
+    }
+  })();
+
   const healthPort = Number(env.HEALTH_PORT ?? 0);
   if (healthPort > 0) {
-    startHealthServer(health, healthPort, abort.signal, log);
+    startHealthServer(health, healthPort, abort.signal, log, history);
   }
 
   const PRICE_INTERVAL_MS = Number(env.PRICE_INTERVAL_MS ?? 10_000);
@@ -194,6 +230,9 @@ async function main() {
           catchUp: env.ORACLE_CATCHUP === "yes",
         });
         health.published(result.published);
+        for (const { symbol, price } of result.prints) {
+          history.record(symbol, price);
+        }
         if (result.published.length || result.sessionsChanged.length) {
           log("info", "published", {
             prices: result.published,

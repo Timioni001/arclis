@@ -12,6 +12,7 @@
  * malicious injected wallet has very little to work with.
  */
 
+import { getWallets } from "@wallet-standard/app";
 import { CLUSTER } from "../config";
 
 export interface DetectedWallet {
@@ -61,8 +62,6 @@ interface SignTransactionFeature {
   ) => Promise<Array<{ signedTransaction: Uint8Array }>>;
 }
 
-const registry = new Map<string, StandardWallet>();
-
 /**
  * The wallet and account this session connected with.
  *
@@ -79,51 +78,103 @@ let active: {
 /**
  * Start listening for wallets.
  *
- * The handshake is deliberately two-way: wallets that loaded before this page
- * did are waiting for the `app-ready` event, and wallets that load afterwards
- * fire `register` at us. Listening for only one of the two is the classic
- * "works on refresh, not on first load" bug.
+ * Through `@wallet-standard/app`, the reference implementation of the
+ * discovery handshake, rather than the thirty hand-written lines that used to
+ * be here. Those had the protocol backwards on both sides: the
+ * `register-wallet` event carries a *callback* that must be called with the
+ * app's API, and was treated as an object with a `register` method; and
+ * `app-ready` must carry that API as its detail, and was dispatched empty.
+ * Neither half ever completed, so no wallet was ever detected, on any device,
+ * whether or not one was installed.
+ *
+ * Only wallets that can connect and speak Solana are listed. Some extensions
+ * announce themselves for Ethereum or Bitcoin too, and offering one of those
+ * here would be a button that fails.
  */
 export function startWalletDiscovery(
   onChange: (wallets: DetectedWallet[]) => void,
 ): () => void {
+  const api = getWallets();
+
   const emit = () =>
     onChange(
-      [...registry.values()].map((w) => ({
-        name: w.name,
-        icon: w.icon,
-        handle: w,
-      })),
+      (api.get() as unknown as StandardWallet[])
+        .filter(isSolanaWallet)
+        .map((w) => ({ name: w.name, icon: w.icon, handle: w })),
     );
 
-  const onRegister = (event: Event) => {
-    const detail = (event as CustomEvent<{ register: (api: unknown) => void }>)
-      .detail;
-    detail?.register?.({
-      register: (...wallets: StandardWallet[]) => {
-        for (const w of wallets) registry.set(w.name, w);
-        emit();
-      },
-    });
-  };
-
-  const onAnnounce = (event: Event) => {
-    const wallet = (event as CustomEvent<StandardWallet>).detail;
-    if (wallet?.name) {
-      registry.set(wallet.name, wallet);
-      emit();
-    }
-  };
-
-  window.addEventListener("wallet-standard:register-wallet", onRegister);
-  window.addEventListener("wallet-standard:wallet-announced", onAnnounce);
-  window.dispatchEvent(new Event("wallet-standard:app-ready"));
+  const offRegister = api.on("register", emit);
+  const offUnregister = api.on("unregister", emit);
   emit();
 
+  // Android Chrome has no wallet extensions. The Mobile Wallet Adapter
+  // registers a Wallet Standard wallet that hands signing to the installed
+  // Phantom or Solflare app, which is the only way a mobile browser tab can
+  // reach one. Loaded only on Android, where it can work, so every other
+  // visitor does not download it.
+  if (/android/i.test(navigator.userAgent)) {
+    void registerMobileWalletAdapter();
+  }
+
   return () => {
-    window.removeEventListener("wallet-standard:register-wallet", onRegister);
-    window.removeEventListener("wallet-standard:wallet-announced", onAnnounce);
+    offRegister();
+    offUnregister();
   };
+}
+
+function isSolanaWallet(w: StandardWallet): boolean {
+  const chains = (w as unknown as { chains?: readonly string[] }).chains ?? [];
+  return (
+    Boolean(w.features?.["standard:connect"]) &&
+    chains.some((c) => c.startsWith("solana:"))
+  );
+}
+
+let mwaRegistered = false;
+
+async function registerMobileWalletAdapter() {
+  if (mwaRegistered) return;
+  mwaRegistered = true;
+  try {
+    const mwa = await import("@solana-mobile/wallet-standard-mobile");
+    mwa.registerMwa({
+      appIdentity: {
+        name: "Arclis",
+        uri: window.location.origin,
+        icon: "/favicon-180.png",
+      },
+      authorizationCache: mwa.createDefaultAuthorizationCache(),
+      chains: [chainId() as `solana:${string}`],
+      chainSelector: mwa.createDefaultChainSelector(),
+      onWalletNotFound: mwa.createDefaultWalletNotFoundHandler(),
+    });
+  } catch (e) {
+    // Discovery of every other wallet is unaffected; this only means the
+    // Android app hand-off is unavailable on this device.
+    console.warn("Mobile Wallet Adapter unavailable", e);
+  }
+}
+
+/**
+ * Links that reopen this page inside a wallet app's own browser.
+ *
+ * On iOS, and in any mobile browser where the adapter above cannot run, the
+ * page cannot reach a wallet app at all. Every major Solana wallet ships an
+ * in-app browser that injects itself into the page it opens, so the practical
+ * route is to send the visitor there, on this exact URL.
+ */
+export function openInWalletLinks(): { name: string; href: string }[] {
+  const url = encodeURIComponent(window.location.href);
+  const ref = encodeURIComponent(window.location.origin);
+  return [
+    { name: "Phantom", href: `https://phantom.app/ul/browse/${url}?ref=${ref}` },
+    { name: "Solflare", href: `https://solflare.com/ul/v1/browse/${url}?ref=${ref}` },
+  ];
+}
+
+/** A phone or tablet, where an installed extension is not an option. */
+export function isMobileBrowser(): boolean {
+  return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent);
 }
 
 /**

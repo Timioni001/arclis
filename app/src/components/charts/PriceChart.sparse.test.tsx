@@ -80,9 +80,11 @@ describe("with enough history", () => {
     );
     const { container } = render(<PriceChart candles={candles} />);
 
-    expect(container.querySelector("svg.chart")).toBeTruthy();
+    // The canvas chart mounts into this box; jsdom has no canvas, so the
+    // library itself is exercised in the browser pass, not here.
+    const chart = container.querySelector(".chart-live");
+    expect(chart).toBeTruthy();
+    expect(chart!.getAttribute("aria-label")).toMatch(/12 bars, last \$338\.11/);
     expect(screen.queryByText(/published so far/)).toBeNull();
-    // The last price sits on the axis, as a terminal draws it.
-    expect(container.querySelector(".chart-last")).toBeTruthy();
   });
 });

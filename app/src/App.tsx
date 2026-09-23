@@ -10,7 +10,7 @@
  * does not receive it at all, which is what makes "this page never asks for a
  * wallet" a property of the code rather than a promise in a comment.
  */
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import type { DataSource } from "./lib/protocol/mock";
 import { modelledRegistry } from "./lib/registry/data";
 import { loadRegistry, type LiveRegistry } from "./lib/registry/live";
@@ -18,7 +18,6 @@ import { restoreSession, type Session } from "./lib/auth/session";
 import { forgetAccount } from "./lib/auth/passkey";
 import { Markets } from "./screens/Markets";
 import { Registry } from "./screens/Registry";
-import { Trade } from "./screens/Trade";
 import { Liquidity } from "./screens/Liquidity";
 import { Treasury } from "./screens/Treasury";
 import { Legal } from "./screens/Legal";
@@ -34,6 +33,15 @@ import { Icon } from "./components/ui";
 import { Footer } from "./components/ui/Footer";
 import { Wordmark } from "./components/ui/Brand";
 import { GlassPanel } from "./components/ui/Glass";
+
+/*
+ * The Trade screen loads on demand. It carries the charting library, which is
+ * a sixth of the bundle, and a visitor reading the Overview or looking a stock
+ * up in the Registry never needs it.
+ */
+const Trade = lazy(() =>
+  import("./screens/Trade").then((m) => ({ default: m.Trade })),
+);
 
 const TABS = [
   "Overview",
@@ -354,16 +362,29 @@ export function App({ source }: { source: DataSource }) {
           )}
 
           {tab === "Trade" && view && (
-            <Trade
-              view={view}
-              position={source.positionFor(view.market.address)}
-              corporateActions={source.corporateActions(view.oracle.symbol)}
-              now={now}
-              onBack={() => setTab("Overview")}
-              session={session}
-              onSignIn={() => requestSignIn("Sign in with a wallet to trade.")}
-              onFilled={liveStatus.refresh}
-            />
+            <Suspense
+              fallback={
+                <div
+                  className="skeleton-chart"
+                  role="status"
+                  aria-label="Loading the market"
+                  style={{ height: 320 }}
+                />
+              }
+            >
+              <Trade
+                view={view}
+                position={source.positionFor(view.market.address)}
+                corporateActions={source.corporateActions(view.oracle.symbol)}
+                now={now}
+                onBack={() => setTab("Overview")}
+                session={session}
+                onSignIn={() =>
+                  requestSignIn("Sign in with a wallet to trade.")
+                }
+                onFilled={liveStatus.refresh}
+              />
+            </Suspense>
           )}
 
           {tab === "Portfolio" && (

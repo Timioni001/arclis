@@ -23,6 +23,8 @@ import {
   connectWallet,
   startWalletDiscovery,
   type DetectedWallet,
+  isMobileBrowser,
+  openInWalletLinks,
 } from "../../lib/auth/wallet";
 import {
   passkeySession,
@@ -179,11 +181,26 @@ export function AuthSheet({
               </button>
 
               {wallets.length === 0 ? (
-                <p className="auth-note">
-                  No wallet detected in this browser. Install Phantom, Solflare
-                  or Backpack, then reopen this panel. Detection is live, so
-                  there is no need to reload the page.
-                </p>
+                isMobileBrowser() ? (
+                  <div className="auth-open-in">
+                    <p className="auth-note">
+                      Mobile browsers cannot reach a wallet app directly. Open
+                      this page inside your wallet&apos;s own browser, where it
+                      connects in one tap.
+                    </p>
+                    {openInWalletLinks().map((l) => (
+                      <a key={l.name} className="btn btn-block" href={l.href}>
+                        Open in {l.name}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="auth-note">
+                    No Solana wallet found in this browser. Install Phantom,
+                    Solflare or Backpack; it appears here as soon as it loads,
+                    without a page reload.
+                  </p>
+                )
               ) : (
                 <ul className="auth-wallets">
                   {wallets.map((w) => (

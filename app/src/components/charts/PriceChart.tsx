@@ -1,16 +1,41 @@
 /**
- * The market chart: candles, volume, crosshair, and position markers.
+ * The market chart: candles or area, live, over the oracle's own prices.
  *
- * Inline SVG rather than a charting library, for three reasons that matter
- * here: the marks have to carry protocol meaning (entry, liquidation, a split),
- * the colours have to come from the design tokens so light and dark are each
- * validated rather than flipped, and a hackathon reviewer should be able to
- * read the whole chart in one file.
+ * # Why Lightweight Charts
  *
- * Interaction follows the standard: crosshair snaps to a candle, one tooltip,
- * hit targets wider than the marks.
+ * This was a hand-drawn SVG, and it hit the limits a hand-drawn chart always
+ * does: a candle centred on the first bar was half outside the plot and past
+ * the card's edge, the time axis was four labels, the crosshair was bespoke,
+ * and none of it followed a pointer or a pinch the way a trader expects.
+ * TradingView's Lightweight Charts (Apache-2.0, about 45 KB) is the charting
+ * layer most crypto venues use for exactly this: canvas-rendered and clipped
+ * to its container, with a real time scale, crosshair, price axis, pan and
+ * zoom, and incremental updates for a live series.
+ *
+ * What is still ours is the part a library cannot know: the price scale's
+ * floor. A market that has not moved would otherwise autoscale a one-cent
+ * range across the whole plot and draw noise as drama, so `priceDomain` is fed
+ * in as the autoscale provider.
+ *
+ * Times are shown in the viewer's own timezone. The library works in UTC
+ * seconds; the formatters below convert for display only.
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import {
+  AreaSeries,
+  CandlestickSeries,
+  ColorType,
+  CrosshairMode,
+  HistogramSeries,
+  LineStyle,
+  createChart,
+  createSeriesMarkers,
+  type IChartApi,
+  type ISeriesApi,
+  type SeriesType,
+  type Time,
+  type UTCTimestamp,
+} from "lightweight-charts";
 import type { Candle } from "../../lib/protocol/types";
 import { usd } from "../../lib/format";
 
@@ -26,42 +51,12 @@ export interface EventMarker {
   detail: string;
 }
 
-const PAD = { top: 12, right: 58, bottom: 20, left: 8 };
-
-/**
- * Below this, there is no chart to draw and pretending otherwise is worse
- * than saying so.
- *
- * One published price renders as a single dot at the far left with the oracle
- * marker running across the plot beside it, which reads as a broken chart
- * rather than as a market that has not traded. And a market that has not
- * traded is the normal overnight state: the keeper refuses to republish an
- * unchanged print - doing so would launder a stale price into a fresh one -
- * so the series legitimately stops growing when the venue closes.
- */
+/** Fewer bars than this is a list of prices, not a chart. */
 const MIN_CANDLES = 3;
-const VOL_H = 40;
 
-/**
- * The vertical domain the chart is drawn against.
- *
- * Extracted from the component because the interesting case has no pixels in
- * it: a market that has not moved. Overnight, at a weekend, or in the minutes
- * after the keeper first catches up, every candle carries the same price, and
- * the naive domain is then zero wide.
- *
- * `priceMax - priceMin || 1` used to be the guard, which is worse than no
- * guard at all: prices are integers at 1e6 scale, so it produced a domain one
- * *millionth of a dollar* tall. Every axis label formatted to the same number,
- * the whole series sat on one line, and the chart read as broken rather than
- * as still.
- *
- * So a still market gets a floor: the domain is never narrower than
- * `MIN_SPAN_BPS` of the price itself, centred on it. The line still sits flat
- * in the middle - it should, nothing moved - but the axis around it is real,
- * and a move starting mid-session opens the scale out naturally.
- */
+/** The smallest range the price axis will span, in bps of price. */
 const MIN_SPAN_BPS = 40; // 0.4% of price, split either side
+
 /**
  * The placeholder skyline, as percentages of the plot height.
  *
@@ -114,48 +109,275 @@ export function priceDomain(
   return { min: min - span * PADDING, max: max + span * PADDING };
 }
 
+/** Protocol price scale (1e6) to dollars, for the chart. */
+const px = (v: bigint) => Number(v) / 1_000_000;
+
+/** A CSS custom property, resolved against the current theme. */
+function token(name: string, fallback: string): string {
+  const v = getComputedStyle(document.documentElement)
+    .getPropertyValue(name)
+    .trim();
+  return v || fallback;
+}
+
+function palette() {
+  return {
+    text: token("--text-muted", "#6a7368"),
+    grid: token("--border-soft", "#f0f2ef"),
+    up: token("--positive", "#16a34a"),
+    down: token("--negative", "#dc2626"),
+    line: token("--chart-1", "#65a30d"),
+    entry: token("--chart-2", "#6366f1"),
+  };
+}
+
+const timeLabel = (t: Time) =>
+  new Date((t as number) * 1000).toLocaleTimeString(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
 export function PriceChart({
   candles,
-  height = 340,
   markers = [],
   events = [],
   mode = "candles",
+  height = 320,
 }: {
   candles: Candle[];
-  height?: number;
   markers?: PriceMarker[];
   events?: EventMarker[];
   mode?: "candles" | "area";
+  height?: number;
 }) {
-  const wrap = useRef<HTMLDivElement>(null);
-  const [hover, setHover] = useState<number | null>(null);
-  const W = 1000; // viewBox width; SVG scales to the container
+  const box = useRef<HTMLDivElement>(null);
+  const chart = useRef<IChartApi | null>(null);
+  const series = useRef<ISeriesApi<SeriesType> | null>(null);
+  const volume = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const firstT = useRef<number | null>(null);
+  const seriesMode = useRef<"candles" | "area" | null>(null);
 
-  const geom = useMemo(() => {
-    if (!candles.length) return null;
-    const plotH = height - PAD.top - PAD.bottom - VOL_H;
-    const { min, max } = priceDomain(candles, markers);
+  const domain = useMemo(
+    () => (candles.length ? priceDomain(candles, markers) : null),
+    [candles, markers],
+  );
+  // Read inside the autoscale callback, which the library calls on its own
+  // schedule, so it always sees the current series rather than the first.
+  const domainRef = useRef(domain);
+  domainRef.current = domain;
 
-    const plotW = W - PAD.left - PAD.right;
-    const x = (i: number) =>
-      PAD.left + (i / Math.max(1, candles.length - 1)) * plotW;
-    const y = (v: number) => PAD.top + (1 - (v - min) / (max - min)) * plotH;
-    const maxVol = Math.max(...candles.map((c) => Number(c.v))) || 1;
-    const vy = (v: number) => height - PAD.bottom - (v / maxVol) * VOL_H;
+  const hasVolume = candles.some((c) => c.v > 0n);
+  const drawable = candles.length >= MIN_CANDLES;
 
-    const bw = Math.max(1.5, (plotW / candles.length) * 0.58);
-    return { x, y, vy, min, max, plotH, plotW, bw };
-  }, [candles, height, markers]);
+  // The chart itself: created once, themed, and torn down with the component.
+  useEffect(() => {
+    if (!drawable || !box.current) return;
+    const colors = palette();
+    let api: IChartApi;
+    try {
+      api = createChart(box.current, {
+        autoSize: true,
+        layout: {
+          background: { type: ColorType.Solid, color: "transparent" },
+          textColor: colors.text,
+          fontFamily: "inherit",
+          attributionLogo: false,
+        },
+        grid: {
+          vertLines: { color: colors.grid },
+          horzLines: { color: colors.grid },
+        },
+        rightPriceScale: { borderVisible: false },
+        timeScale: {
+          borderVisible: false,
+          timeVisible: true,
+          secondsVisible: false,
+          rightOffset: 4,
+          tickMarkFormatter: timeLabel,
+        },
+        crosshair: { mode: CrosshairMode.Normal },
+        localization: {
+          timeFormatter: (t: Time) =>
+            new Date((t as number) * 1000).toLocaleString(undefined, {
+              month: "short",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          priceFormatter: (p: number) => usd(BigInt(Math.round(p * 1e6)), { compact: false }),
+        },
+        // Vertical drags scroll the page on a phone rather than the chart,
+        // which is what a reader scrolling past it expects.
+        handleScroll: { vertTouchDrag: false },
+      });
+    } catch {
+      // No canvas (a test environment, or a browser with it disabled): the
+      // container stays, empty, rather than taking the page down.
+      return;
+    }
+    chart.current = api;
 
-  /*
-   * Nothing to draw yet.
-   *
-   * This returned a bare `<div className="skeleton">` against a class that did
-   * not exist in any stylesheet, so it rendered as a zero-height nothing and
-   * the card collapsed. A chart's placeholder has to hold the chart's space,
-   * or the page reflows under the reader the moment data lands.
-   */
-  if (!geom) {
+    // Re-theme when the reader switches light and dark.
+    const observer = new MutationObserver(() => {
+      const c = palette();
+      api.applyOptions({
+        layout: { textColor: c.text },
+        grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      });
+      series.current?.applyOptions(
+        seriesMode.current === "area"
+          ? { lineColor: c.line, topColor: `${c.line}55`, bottomColor: `${c.line}05` }
+          : { upColor: c.up, downColor: c.down, wickUpColor: c.up, wickDownColor: c.down },
+      );
+    });
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme"],
+    });
+
+    return () => {
+      observer.disconnect();
+      // Detach the resize observer before disposing. Otherwise the container
+      // leaving the page triggers one last resize into a chart that no longer
+      // exists, and the library throws "Object is disposed".
+      api.applyOptions({ autoSize: false });
+      api.remove();
+      chart.current = null;
+      series.current = null;
+      seriesMode.current = null;
+      volume.current = null;
+      firstT.current = null;
+    };
+    // Only `drawable`: switching candles and area swaps the series below and
+    // keeps this chart. Recreating the chart on a mode switch left the
+    // library's resize observer firing into a disposed instance.
+  }, [drawable]);
+
+  // The series, its data, and everything drawn on it.
+  useEffect(() => {
+    const api = chart.current;
+    if (!api || !drawable) return;
+    const colors = palette();
+
+    // A mode switch replaces the series on the same chart.
+    if (series.current && seriesMode.current !== mode) {
+      api.removeSeries(series.current);
+      series.current = null;
+      firstT.current = null;
+    }
+
+    if (!series.current) {
+      seriesMode.current = mode;
+      const autoscaleInfoProvider = () => {
+        const d = domainRef.current;
+        return d
+          ? { priceRange: { minValue: d.min / 1e6, maxValue: d.max / 1e6 } }
+          : null;
+      };
+      series.current =
+        mode === "area"
+          ? api.addSeries(AreaSeries, {
+              lineColor: colors.line,
+              lineWidth: 2,
+              topColor: `${colors.line}55`,
+              bottomColor: `${colors.line}05`,
+              autoscaleInfoProvider,
+            })
+          : api.addSeries(CandlestickSeries, {
+              upColor: colors.up,
+              downColor: colors.down,
+              borderVisible: false,
+              wickUpColor: colors.up,
+              wickDownColor: colors.down,
+              autoscaleInfoProvider,
+            });
+    }
+
+    const s = series.current;
+    s.setData(
+      candles.map((c) =>
+        mode === "area"
+          ? { time: c.t as UTCTimestamp, value: px(c.c) }
+          : {
+              time: c.t as UTCTimestamp,
+              open: px(c.o),
+              high: px(c.h),
+              low: px(c.l),
+              close: px(c.c),
+            },
+      ),
+    );
+
+    if (hasVolume) {
+      volume.current ??= api.addSeries(HistogramSeries, {
+        priceScaleId: "volume",
+        priceFormat: { type: "volume" },
+        lastValueVisible: false,
+        priceLineVisible: false,
+      });
+      api.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      volume.current.setData(
+        candles.map((c) => ({
+          time: c.t as UTCTimestamp,
+          value: Number(c.v) / 1e6,
+          color: `${c.c >= c.o ? colors.up : colors.down}40`,
+        })),
+      );
+    }
+
+    // Entry and liquidation as price lines on the axis, the way every venue
+    // draws them.
+    const lines = markers.map((m) =>
+      s.createPriceLine({
+        price: px(m.price),
+        color: m.tone === "liquidation" ? colors.down : colors.entry,
+        lineWidth: 1,
+        lineStyle: LineStyle.Dashed,
+        axisLabelVisible: true,
+        title: m.label,
+      }),
+    );
+
+    // Corporate actions, pinned to the bar they happened in.
+    const eventMarkers = createSeriesMarkers(
+      s,
+      events
+        .map((e) => {
+          const bar = [...candles].reverse().find((c) => c.t <= e.t);
+          return bar
+            ? {
+                time: bar.t as UTCTimestamp,
+                position: "aboveBar" as const,
+                shape: "circle" as const,
+                color: colors.entry,
+                text: e.label,
+              }
+            : null;
+        })
+        .filter((m): m is NonNullable<typeof m> => m !== null),
+    );
+
+    // Fit on first draw and when the window changes (a new first bar); leave
+    // the reader's pan and zoom alone on a live update.
+    const first = candles[0]?.t ?? null;
+    if (firstT.current !== first) {
+      api.timeScale().fitContent();
+      firstT.current = first;
+    }
+
+    return () => {
+      // On unmount the chart effect's cleanup has already removed the chart,
+      // and with it everything drawn on it; there is nothing left to detach.
+      try {
+        for (const l of lines) s.removePriceLine(l);
+        eventMarkers.detach();
+      } catch {
+        /* chart already disposed */
+      }
+    };
+  }, [candles, markers, events, mode, drawable, hasVolume]);
+
+  if (!candles.length) {
     return (
       <div
         className="skeleton-chart"
@@ -163,9 +385,6 @@ export function PriceChart({
         role="status"
         aria-label="Loading price history"
       >
-        {/* A ragged skyline rather than a uniform block: it reads as a chart
-            arriving, and the heights are fixed so it does not shimmer into a
-            different shape on every render. */}
         {SKELETON_BARS.map((h, i) => (
           <span
             key={i}
@@ -184,7 +403,7 @@ export function PriceChart({
    * the last price and the session banner explains why it is not moving - so
    * this only has to be honest about the series, and get out of the way.
    */
-  if (candles.length < MIN_CANDLES) {
+  if (!drawable) {
     const only = candles[candles.length - 1];
     return (
       <div className="chart-sparse" style={{ height }}>
@@ -205,391 +424,19 @@ export function PriceChart({
       </div>
     );
   }
-  const { x, y, vy, min, max, bw } = geom;
-  /** Clamp a marker into the plot, reporting whether it was off-scale. */
-  const place = (v: number) => {
-    const clamped = Math.max(min, Math.min(max, v));
-    return { y: y(clamped), off: v < min ? "below" : v > max ? "above" : null };
-  };
 
-  const ticks = 4;
-  const gridValues = Array.from(
-    { length: ticks + 1 },
-    (_, i) => min + ((max - min) * i) / ticks,
-  );
-
-  const areaPath =
-    "M " +
-    candles
-      .map((c, i) => `${x(i).toFixed(2)} ${y(Number(c.c)).toFixed(2)}`)
-      .join(" L ") +
-    ` L ${x(candles.length - 1).toFixed(2)} ${height - PAD.bottom - VOL_H} L ${PAD.left} ${
-      height - PAD.bottom - VOL_H
-    } Z`;
-  const linePath =
-    "M " +
-    candles
-      .map((c, i) => `${x(i).toFixed(2)} ${y(Number(c.c)).toFixed(2)}`)
-      .join(" L ");
-
-  /** Every bar is a single print: no bodies, no wicks, nothing to connect. */
-  const allDojis = candles.every(
-    (c) => c.o === c.h && c.h === c.l && c.l === c.c,
-  );
-
-  const active = hover !== null ? candles[hover] : null;
   const last = candles[candles.length - 1];
-
-  /** Up to four evenly spaced labels, in the reader's own timezone. */
-  const timeTicks = (() => {
-    if (candles.length < 2) return [];
-    const wanted = Math.min(4, candles.length);
-    const step = (candles.length - 1) / (wanted - 1);
-    const seen = new Set<number>();
-    return Array.from({ length: wanted }, (_, n) => Math.round(n * step))
-      .filter((i) => !seen.has(i) && seen.add(i) !== undefined)
-      .map((i) => ({
-        i,
-        label: new Date(candles[i].t * 1000).toLocaleTimeString(undefined, {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      }));
-  })();
-  const up = (c: Candle) => c.c >= c.o;
-
-  function onMove(e: React.MouseEvent<SVGSVGElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const rel = ((e.clientX - rect.left) / rect.width) * W;
-    const i = Math.round(
-      ((rel - PAD.left) / (W - PAD.left - PAD.right)) * (candles.length - 1),
-    );
-    setHover(Math.max(0, Math.min(candles.length - 1, i)));
-  }
-
-  const markerColor = (tone: PriceMarker["tone"]) =>
-    tone === "entry"
-      ? "var(--chart-1)"
-      : tone === "liquidation"
-        ? "var(--negative)"
-        : "var(--chart-2)";
-
   return (
-    <div ref={wrap} style={{ position: "relative" }}>
-      <svg
-        className="chart"
-        viewBox={`0 0 ${W} ${height}`}
-        height={height}
-        preserveAspectRatio="none"
-        onMouseMove={onMove}
-        onMouseLeave={() => setHover(null)}
-        role="img"
-        aria-label={`Price chart, ${candles.length} periods, last ${usd(last.c)}`}
-      >
-        {gridValues.map((v, i) => (
-          <g key={i}>
-            <line
-              className="chart-grid-line"
-              x1={PAD.left}
-              x2={W - PAD.right}
-              y1={y(v)}
-              y2={y(v)}
-            />
-            {/* Suppressed where the last-price badge sits: two prices in
-                the same place, one printed over the other, reads as a
-                rendering fault rather than as two facts. */}
-            {Math.abs(y(v) - y(Number(last.c))) > 11 && (
-              <text
-                className="chart-axis-label"
-                x={W - PAD.right + 6}
-                y={y(v) + 3}
-              >
-                {usd(BigInt(Math.round(v)), { compact: false, dp: 2 })}
-              </text>
-            )}
-          </g>
-        ))}
-
-        {mode === "area" ? (
-          <>
-            <defs>
-              <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-                <stop
-                  offset="0%"
-                  stopColor="var(--chart-1)"
-                  stopOpacity="0.28"
-                />
-                <stop
-                  offset="100%"
-                  stopColor="var(--chart-1)"
-                  stopOpacity="0"
-                />
-              </linearGradient>
-            </defs>
-            <path d={areaPath} fill="url(#areaFill)" />
-            <path
-              d={linePath}
-              fill="none"
-              stroke="var(--chart-1)"
-              strokeWidth={2}
-            />
-          </>
-        ) : (
-          <>
-            {/*
-              A guide line through the closes, drawn only when every bar is a
-              doji.
-
-              A bucket holding one print has open, high, low and close all
-              equal, so the bar is a flat two-pixel dash with no wick. A row of
-              those at different heights is a correct drawing of the data and
-              an unreadable one: it looks like a broken renderer rather than a
-              price that moved. `candlesFrom` now buckets wide enough that this
-              is rare, but "rare" is not "never" on a series with irregular
-              gaps, and a chart must never look broken.
-
-              Only when *every* bar is a doji. One flat bar inside a normal
-              series is information, and drawing a line through those would be
-              adding a second series nobody asked for.
-            */}
-            {allDojis && (
-              <path
-                d={linePath}
-                fill="none"
-                stroke="var(--chart-1)"
-                strokeWidth={1}
-                opacity={0.45}
-              />
-            )}
-            {candles.map((c, i) => {
-            const col = up(c) ? "var(--positive)" : "var(--negative)";
-            const oy = y(Number(c.o));
-            const cy = y(Number(c.c));
-            const top = Math.min(oy, cy);
-            // Two pixels, not one. A candle whose open and close match has a
-            // zero-height body, and at one pixel against a narrow bar it
-            // renders as a speck rather than as the flat bar a still period
-            // actually is.
-            const bodyH = Math.max(2, Math.abs(cy - oy));
-            return (
-              <g key={i}>
-                <line
-                  x1={x(i)}
-                  x2={x(i)}
-                  y1={y(Number(c.h))}
-                  y2={y(Number(c.l))}
-                  stroke={col}
-                  strokeWidth={1}
-                />
-                <rect
-                  x={x(i) - bw / 2}
-                  y={top}
-                  width={bw}
-                  height={bodyH}
-                  fill={col}
-                  rx={1}
-                />
-              </g>
-            );
-            })}
-          </>
-        )}
-
-        {/* The time axis. Four labels, evenly spaced, so the series reads as
-            a period rather than as an abstract line. */}
-        {timeTicks.map((tick) => (
-          <text
-            key={`t${tick.i}`}
-            className="chart-axis-label"
-            x={x(tick.i)}
-            y={height - 4}
-            textAnchor={
-              tick.i === 0
-                ? "start"
-                : tick.i === candles.length - 1
-                  ? "end"
-                  : "middle"
-            }
-          >
-            {tick.label}
-          </text>
-        ))}
-
-        {/* The last price, pinned to the axis it belongs on. The one piece of
-            furniture every trading chart has, and the fastest way to read
-            where the market is without hunting along a gridline. */}
-        <g className="chart-last" data-dir={up(last) ? "up" : "down"}>
-          <rect
-            x={W - PAD.right + 2}
-            y={y(Number(last.c)) - 9}
-            width={PAD.right - 4}
-            height={18}
-            rx={3}
-          />
-          <text x={W - PAD.right + 6} y={y(Number(last.c)) + 4}>
-            {usd(last.c, { compact: false, dp: 2 })}
-          </text>
-        </g>
-
-        {/* Volume pane, same colour language, recessive opacity. */}
-        {candles.map((c, i) => (
-          <rect
-            key={`v${i}`}
-            x={x(i) - bw / 2}
-            y={vy(Number(c.v))}
-            width={bw}
-            height={height - PAD.bottom - vy(Number(c.v))}
-            fill={up(c) ? "var(--positive)" : "var(--negative)"}
-            opacity={0.22}
-            rx={1}
-          />
-        ))}
-
-        {markers.map((mk, mi) => {
-          const at = place(Number(mk.price));
-          return (
-            <g key={mk.label}>
-              <line
-                x1={PAD.left}
-                x2={W - PAD.right}
-                y1={at.y}
-                y2={at.y}
-                stroke={markerColor(mk.tone)}
-                strokeWidth={1.5}
-                strokeDasharray={at.off ? "2 5" : "5 4"}
-                opacity={at.off ? 0.55 : 0.85}
-              />
-              {/* Anchored to the price axis, where a reader already looks for a
-                  price, and staggered so two nearby markers never overprint.
-                  The left edge is reserved for event markers. */}
-              <text
-                className="chart-axis-label"
-                x={W - PAD.right - 6}
-                y={at.y + (mi % 2 === 0 ? -5 : 11)}
-                textAnchor="end"
-                fill={markerColor(mk.tone)}
-                style={{ fontWeight: 600 }}
-              >
-                {mk.label}
-                {at.off === "below"
-                  ? " ↓ off-scale"
-                  : at.off === "above"
-                    ? " ↑ off-scale"
-                    : ""}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* A corporate action is annotated, never rendered as a price move. */}
-        {events.map((ev) => {
-          const idx = candles.findIndex((c) => c.t >= ev.t);
-          if (idx < 0) return null;
-          return (
-            <g key={ev.label}>
-              <line
-                x1={x(idx)}
-                x2={x(idx)}
-                y1={PAD.top}
-                y2={height - PAD.bottom - VOL_H}
-                stroke="var(--chart-4)"
-                strokeWidth={1.5}
-                strokeDasharray="2 3"
-              />
-              <circle
-                cx={x(idx)}
-                cy={PAD.top + 5}
-                r={5}
-                fill="var(--chart-4)"
-                stroke="var(--surface)"
-                strokeWidth={2}
-              />
-              <text
-                className="chart-axis-label"
-                x={x(idx) + 9}
-                y={PAD.top + 9}
-                fill="var(--chart-4)"
-                style={{ fontWeight: 600 }}
-              >
-                {ev.label}
-              </text>
-            </g>
-          );
-        })}
-
-        {/* Last price marker */}
-        <circle
-          cx={x(candles.length - 1)}
-          cy={y(Number(last.c))}
-          r={4}
-          fill="var(--chart-1)"
-          stroke="var(--surface)"
-          strokeWidth={2}
-        />
-
-        {hover !== null && (
-          <>
-            <line
-              className="chart-crosshair"
-              x1={x(hover)}
-              x2={x(hover)}
-              y1={PAD.top}
-              y2={height - PAD.bottom}
-            />
-            <circle
-              cx={x(hover)}
-              cy={y(Number(candles[hover].c))}
-              r={4.5}
-              fill="var(--chart-1)"
-              stroke="var(--surface)"
-              strokeWidth={2}
-            />
-          </>
-        )}
-      </svg>
-
-      {active && hover !== null && (
-        <div
-          className="tooltip"
-          style={{
-            left: `clamp(0px, ${((x(hover) / W) * 100).toFixed(2)}% - 70px, calc(100% - 150px))`,
-            top: 6,
-          }}
-        >
-          <div className="tooltip-time">
-            {new Date(active.t * 1000).toLocaleString("en-US", {
-              month: "short",
-              day: "numeric",
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
-          </div>
-          <dl style={{ margin: 0 }}>
-            {(
-              [
-                ["O", active.o],
-                ["H", active.h],
-                ["L", active.l],
-                ["C", active.c],
-              ] as const
-            ).map(([k, v]) => (
-              <div className="tooltip-row" key={k}>
-                <dt>{k}</dt>
-                <dd style={{ margin: 0 }}>{usd(v, { compact: false })}</dd>
-              </div>
-            ))}
-            <div className="tooltip-row">
-              <dt>Vol</dt>
-              <dd style={{ margin: 0 }}>{usd(active.v)}</dd>
-            </div>
-          </dl>
-        </div>
-      )}
-    </div>
+    <div
+      ref={box}
+      className="chart-live"
+      style={{ height }}
+      role="img"
+      aria-label={`Price chart, ${candles.length} bars, last ${usd(last.c, { compact: false })}`}
+    />
   );
 }
 
-/** A bare trend line for market cards. No axes, no interaction. */
 export function Sparkline({
   candles,
   width = 108,
