@@ -44,7 +44,12 @@ import { newHealth, startHealthServer } from "./health";
 
 const env = process.env;
 
-const RPC_URL = env.RPC_URL ?? "http://127.0.0.1:8899";
+// Unset in fly.toml so a dedicated endpoint can be supplied as a secret
+// (its URL carries an API key). In a container with no RPC_URL there is no
+// local validator to talk to, so the fallback there is public devnet.
+const RPC_URL =
+  env.RPC_URL ??
+  (env.FLY_APP_NAME ? "https://api.devnet.solana.com" : "http://127.0.0.1:8899");
 const SYMBOLS = (env.MARKETS ?? "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ")
   .split(",")
   .map((s) => s.trim().toUpperCase())
@@ -295,6 +300,29 @@ async function main() {
 
   await Promise.all(tasks);
 }
+
+/*
+ * A rejected promise nobody is awaiting must not take the keeper down.
+ *
+ * Every loop catches its own errors, and the crash that prompted this was
+ * none of them: under a burst of 429s, web3.js's websocket subscription for
+ * transaction confirmation failed inside the library and rejected a promise
+ * with no handler. Node's default for that is to exit, so one rate limit from
+ * a shared endpoint restarted the process, which re-ran the startup burst,
+ * which drew more 429s, and after ten restarts Fly stopped the machine and
+ * every oracle went stale.
+ *
+ * Logging and carrying on is right here because liveness is already watched
+ * where it can be judged properly: `/health` fails when a loop stops turning,
+ * and Fly restarts on that. What it no longer does is restart on noise.
+ */
+process.on("unhandledRejection", (reason) => {
+  console.error(
+    `${new Date().toISOString()} [keeper] WARN unhandled rejection ${String(
+      (reason as Error)?.message ?? reason,
+    ).slice(0, 300)}`,
+  );
+});
 
 main().catch((err) => {
   console.error(

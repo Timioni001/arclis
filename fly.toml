@@ -29,7 +29,9 @@ kill_timeout = "30s"
 # bundle already. The keypair and the price-feed key are secrets, set with
 # `fly secrets set` - see keeper/README.md.
 [env]
-  RPC_URL = "https://api.devnet.solana.com"
+  # RPC_URL is not set here on purpose: set it as a secret, since a dedicated
+  # endpoint's URL carries its API key. Unset, the keeper falls back to the
+  # public devnet endpoint (see keeper/src/run.ts).
   PROGRAM_ID = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP"
   QUOTE_MINT = "8nMZjpyLpGGtnCkdCotT8jWUDUpSnJeVjeuazyYVvqGu"
   MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ"
@@ -38,6 +40,14 @@ kill_timeout = "30s"
   # room; every ten seconds would be ninety and get the feed rate limited. The
   # program's staleness bound is sixty seconds, so twenty is still well inside.
   PRICE_INTERVAL_MS = "20000"
+  # The public devnet endpoint rate limits per IP, and with fifteen markets the
+  # defaults (liquidation scan every 5s, funding crank every 60s) were enough
+  # on their own to draw a solid wall of 429s. Funding accrues hourly on chain,
+  # so cranking every five minutes loses nothing; a thirty-second liquidation
+  # scan is ample for devnet positions. A dedicated RPC (RPC_URL as a secret)
+  # is the real fix, and these can come back down once one is set.
+  LIQUIDATOR_INTERVAL_MS = "30000"
+  FUNDING_INTERVAL_MS = "300000"
   HEALTH_PORT = "8080"
 
 [http_service]
