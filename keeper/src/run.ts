@@ -40,7 +40,7 @@ import {
 } from "./prices/providers";
 import type { PriceFeed } from "./prices/types";
 import { isCovered, KNOWN_THROUGH } from "./calendar";
-import { newHealth, startHealthServer } from "./health";
+import { newHealth, startHealthServer, redactRpc } from "./health";
 
 const env = process.env;
 
@@ -83,7 +83,7 @@ function pickFeed(log: ChainConfig["log"]): PriceFeed {
   }
 
   log("warn", "no price provider configured; publishing SIMULATED prices", {
-    rpc: RPC_URL,
+    rpc: redactRpc(RPC_URL),
     hint: "these are a random walk, not market data",
   });
   return simulatedFeed(SIMULATED_SEEDS, { seed: Number(env.SIM_SEED ?? 42) });
@@ -118,7 +118,7 @@ async function main() {
   };
 
   log("info", "starting", {
-    rpc: RPC_URL,
+    rpc: redactRpc(RPC_URL),
     programId: config.programId.toBase58(),
     keeper: config.payer.publicKey.toBase58(),
     symbols: SYMBOLS,
@@ -138,7 +138,7 @@ async function main() {
    * told.
    */
   const health = newHealth({
-    rpc: RPC_URL,
+    rpc: redactRpc(RPC_URL),
     programId: config.programId.toBase58(),
     keeper: config.payer.publicKey.toBase58(),
     symbols: SYMBOLS,

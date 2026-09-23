@@ -173,3 +173,22 @@ export function startHealthServer(
   );
   signal.addEventListener("abort", () => server.close(), { once: true });
 }
+
+/**
+ * The RPC endpoint as it is safe to show: host only.
+ *
+ * A dedicated endpoint's URL carries its API key in the query string, and the
+ * keeper printed the whole thing both to its logs and to the public `/health`
+ * page, which put a Helius key on the open internet the first time one was
+ * configured. Everything the keeper reports now goes through this, and the
+ * full URL is used only to open the connection.
+ */
+export function redactRpc(url: string): string {
+  try {
+    const u = new URL(url);
+    const hidden = u.search !== "" || u.pathname.length > 1;
+    return `${u.protocol}//${u.host}${hidden ? "/…" : ""}`;
+  } catch {
+    return "(unparseable RPC URL)";
+  }
+}

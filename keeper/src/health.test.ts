@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { newHealth } from "./health";
+import { newHealth, redactRpc } from "./health";
 
 const META = {
   rpc: "https://api.devnet.solana.com",
@@ -118,5 +118,24 @@ describe("the report", () => {
     const h = healthy();
     expect(() => h.reporter("ghost")({ ok: false })).not.toThrow();
     expect(h.report().ok).toBe(true);
+  });
+});
+
+describe("redactRpc", () => {
+  it("never shows an API key carried in the query string", () => {
+    // The first Helius key configured went straight onto the public /health
+    // page, because the keeper reported its RPC URL verbatim.
+    const shown = redactRpc("https://devnet.helius-rpc.com/?api-key=49844c21-secret");
+    expect(shown).not.toContain("49844c21");
+    expect(shown).not.toContain("api-key");
+    expect(shown).toBe("https://devnet.helius-rpc.com/…");
+  });
+
+  it("hides keys carried in the path too", () => {
+    expect(redactRpc("https://rpc.example.com/v2/abc123key")).toBe("https://rpc.example.com/…");
+  });
+
+  it("leaves a plain public endpoint readable", () => {
+    expect(redactRpc("https://api.devnet.solana.com")).toBe("https://api.devnet.solana.com");
   });
 });
