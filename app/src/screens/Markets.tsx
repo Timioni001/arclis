@@ -46,7 +46,7 @@ import { INSTRUCTION_COUNT } from "../idl/program-id";
 const TESTS = {
   unit: 129,
   integration: 25,
-  interface: 210,
+  interface: 223,
   dbc: 37,
 };
 
@@ -323,7 +323,7 @@ export function Markets({
                     </Delta>
                   }
                 />
-                <Sparkline candles={mv.candles.slice(-40)} />
+                <Sparkline candles={mv.spark ?? mv.candles.slice(-40)} />
               </div>
 
               <div className="rows" style={{ marginTop: "var(--space-4)" }}>

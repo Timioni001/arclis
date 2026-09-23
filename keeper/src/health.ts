@@ -23,6 +23,7 @@
 
 import { createServer } from "node:http";
 import type { PriceHistory } from "./price-history";
+import type { MarketData } from "./market-data";
 
 /** Consecutive failures tolerated before a task is called broken. */
 const FAILURE_BUDGET = 5;
@@ -154,9 +155,43 @@ export function startHealthServer(
   signal: AbortSignal,
   log: (level: "info" | "error", message: string, extra?: unknown) => void,
   history?: PriceHistory,
+  market?: {
+    data: MarketData;
+    symbols: string[];
+    /** Previous close per symbol from the live price feed. */
+    previousClose: Map<string, number>;
+  },
 ): void {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://keeper");
+    const json = (status: number, body: unknown, maxAge: number) => {
+      res.writeHead(status, {
+        "content-type": "application/json",
+        "access-control-allow-origin": "*",
+        "cache-control": `public, max-age=${maxAge}`,
+      });
+      res.end(JSON.stringify(body));
+    };
+
+    // Daily bars over the full listing history, or 15-minute bars over the
+    // last month. Refreshed on a slow schedule, so long-cached.
+    if (url.pathname === "/candles" && market) {
+      const symbol = (url.searchParams.get("symbol") ?? "").toUpperCase();
+      const interval = url.searchParams.get("interval") === "15m" ? "15m" : "1d";
+      if (!market.symbols.includes(symbol)) {
+        json(404, { error: "unknown symbol" }, 60);
+        return;
+      }
+      json(200, market.data.candles(symbol, interval), interval === "1d" ? 3600 : 300);
+      return;
+    }
+
+    // Previous close and a month of closes for every market, in one document,
+    // for the overview's daily change and sparklines.
+    if (url.pathname === "/summary" && market) {
+      json(200, market.data.summary(market.symbols, market.previousClose), 60);
+      return;
+    }
 
     // Price history for the interface's charts. Public data, read from a
     // browser on another origin, so it carries CORS headers; short-cached,

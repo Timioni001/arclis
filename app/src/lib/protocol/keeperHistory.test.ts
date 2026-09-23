@@ -45,3 +45,29 @@ describe("mergePoints", () => {
     ]);
   });
 });
+
+import { withSummary } from "./keeperHistory";
+
+describe("withSummary", () => {
+  const view = {
+    oracle: { symbol: "AAPL", price: 231_000_000n, lastUpdateTs: 1 },
+    changePct24h: 0,
+    candles: [],
+  };
+
+  it("measures today's change against the previous session's close", () => {
+    // $231 against a $220 close is +5%. It read 0.00% before, because the
+    // oracle had not yet been running for a day.
+    const out = withSummary(view, { previousClose: 220_000_000n, closes: [] });
+    expect(out.changePct24h).toBeCloseTo(5, 6);
+  });
+
+  it("builds a sparkline from the month's closes and ends it on the live price", () => {
+    const out = withSummary(view, { previousClose: null, closes: [200_000_000n, 210_000_000n] });
+    expect(out.spark?.map((c) => c.c)).toEqual([200_000_000n, 210_000_000n, 231_000_000n]);
+  });
+
+  it("leaves the view alone when the keeper has no summary for it", () => {
+    expect(withSummary(view, undefined)).toBe(view);
+  });
+});

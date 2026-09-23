@@ -28,6 +28,11 @@ export interface Quote {
   printedAt: number;
   /** The exchange has halted this symbol. Distinct from "no data". */
   halted: boolean;
+  /**
+   * The previous session's official close, in dollars, when the provider
+   * reports one. The basis for a day's percentage change.
+   */
+  previousClose?: number;
 }
 
 export interface PriceFeed {

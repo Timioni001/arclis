@@ -32,7 +32,7 @@ deployment's test USDC, which the operator provides with
 |---|---|
 | `programs/arclis/` | Anchor program: markets, positions, liquidity pools, oracles, agent treasuries. 28 instructions. |
 | `app/` | React and TypeScript interface. Reads the program directly; builds and signs transactions in the browser. |
-| `keeper/` | Operational daemons: price and session publisher, funding crank, liquidator, treasury rebalancer, corporate actions, price-history service. |
+| `keeper/` | Operational daemons: price and session publisher, funding crank, liquidator, treasury rebalancer, corporate actions, and the market-data service behind the charts. |
 | `pipeline/` | Builds the registry's live dataset: mint authorities, token extensions, and exit depth from Jupiter quotes. |
 | `src/dbc/` | Meteora Dynamic Bonding Curve configuration and monitoring for pools quoted in a tokenized stock. |
 | `tools/clawpump/` | Agent token launches through the ClawPump partner API, paired against a tokenized stock. |
@@ -114,12 +114,22 @@ support.
 
 ### Price data and charts
 
-The keeper records each price it publishes and backfills from the chain at
-startup. It serves the most recent 3,000 prints per market at
-`GET /history?symbol=<ticker>`. The interface merges this with live on-chain
-reads and renders it with TradingView Lightweight Charts. Because history is
-retained by count rather than by time, a closed market still shows its most
-recent session.
+Charts combine three series, each covering a different span:
+
+| Series | Source | Span |
+|---|---|---|
+| Oracle prints | Every price the keeper publishes, recorded by the keeper and read live from the chain | About one trading day |
+| Intraday bars | 15-minute bars for the underlying stock, from Yahoo Finance | Last month |
+| Daily bars | Daily bars for the underlying stock, from Yahoo Finance with Stooq as fallback | Full listing history |
+
+Each timeframe (1H, 4H, 1D, 1W, 1M, 1Y, 5Y, ALL) draws from the finest series
+that covers it, resampled to a readable bar width, and the newest bar always
+carries the live oracle price. Daily change on every market is measured
+against the previous session's close, taken from the price feed.
+
+The keeper fetches and caches market data server-side (the providers do not
+permit browser requests) and serves it at `/history`, `/candles` and
+`/summary`. Charts are rendered with TradingView Lightweight Charts.
 
 ## Getting started
 
@@ -182,8 +192,8 @@ interface.
 |---|---|---|
 | Program unit tests | `cargo test --lib` | 129 passing |
 | Integration (local validator) | `npm run test:integration` | 25 passing |
-| Interface | `npm run app:test` | 210 passing |
-| Keeper, pipeline, ClawPump | `npm run keeper:test` | 168 passing |
+| Interface | `npm run app:test` | 223 passing |
+| Keeper, pipeline, ClawPump | `npm run keeper:test` | 177 passing |
 | Meteora DBC tooling | `npm run test:dbc` | 37 passing |
 
 CI runs formatting, Clippy, unit tests, the DBC suite, a lockfile audit

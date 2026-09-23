@@ -112,6 +112,8 @@ export function finnhubFeed(apiKey: string): PriceFeed {
             confidence: confidenceFromPct(price, 0.05),
             printedAt: Number(q.t) || Math.floor(Date.now() / 1000),
             halted: false, // Finnhub's free quote endpoint does not report it.
+            // `pc`: the previous session's close, on the free tier.
+            previousClose: Number(q.pc) > 0 ? Number(q.pc) : undefined,
           } satisfies Quote;
         }),
       );

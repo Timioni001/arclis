@@ -188,7 +188,10 @@ export interface MarketView {
   points?: PricePoint[];
   /** 24h stats, derived off-chain from the event stream. */
   volume24h: bigint;
+  /** Change since the previous session's close, in percent. */
   changePct24h: number;
+  /** Recent daily closes plus the live price, for a sparkline. */
+  spark?: Candle[];
 }
 
 /** One published price, as the oracle stamped it. */

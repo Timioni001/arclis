@@ -27,6 +27,10 @@ import { Splash } from "./components/motion/Splash";
 import { AmbientShader } from "./components/motion/AmbientShader";
 import { AddressDisplay } from "./components/ui/data";
 import { useLiveSource } from "./lib/protocol/useLiveSource";
+import {
+  useMarketSummary,
+  withSummary,
+} from "./lib/protocol/keeperHistory";
 import { explorerAddress, REFRESH_INTERVAL_MS } from "./lib/config";
 import { ago } from "./lib/format";
 import { Icon } from "./components/ui";
@@ -147,13 +151,20 @@ export function App({ source }: { source: DataSource }) {
    * Overview, Portfolio, Liquidity and Treasuries all take `markets`, so all
    * four rendered their "nothing here" state permanently while the chain had
    * five markets on it. Trade was the only screen that worked, purely because
-   * it reads `source.market(symbol)` on the line below instead.
+   * it read `source.market(symbol)` directly instead.
    *
    * `markets()` hands back the snapshot's own array, so this is a property
    * read, and its identity changes only when a refresh replaces the snapshot -
    * which is exactly when these screens should re-render anyway.
    */
-  const markets = source.markets();
+  // Each market's daily change is measured against the previous session's
+  // close, which the keeper serves with a month of daily closes for the
+  // sparkline. Without it the oracle's own history is too short to say how a
+  // market has moved today, and every market read 0.00%.
+  const summary = useMarketSummary();
+  const markets = source
+    .markets()
+    .map((mv) => withSummary(mv, summary[mv.oracle.symbol]));
 
   /*
    * One failed poll is not an outage.
@@ -181,7 +192,8 @@ export function App({ source }: { source: DataSource }) {
    * unnoticed.
    */
   const loadingFirstRead = liveStatus.live && liveStatus.loadedAt === null;
-  const view = source.market(symbol) ?? markets[0];
+  const view =
+    markets.find((mv) => mv.oracle.symbol === symbol) ?? markets[0];
 
   const openMarket = useCallback((s: string) => {
     setSymbol(s);

@@ -32,6 +32,7 @@ import {
   rebalancePass,
 } from "./cranks";
 import { PriceHistory, backfillSymbol } from "./price-history";
+import { MarketData } from "./market-data";
 import {
   corporateTick,
   ephemeralAppliedLog,
@@ -180,9 +181,36 @@ async function main() {
     }
   })();
 
+  /*
+   * Market data for the charts' long history and the overview's daily change.
+   * Daily bars refresh every six hours and 15-minute bars every twenty
+   * minutes: neither changes faster in a way the chart can use, because the
+   * live end of every chart comes from the oracle.
+   */
+  const marketData = new MarketData(fetch, (level, message, extra) =>
+    log(level, message, extra),
+  );
+  const refreshMarketData = async (which: "1d" | "15m") => {
+    if (!abort.signal.aborted) await marketData.refresh(SYMBOLS, which);
+  };
+  void (async () => {
+    await refreshMarketData("1d");
+    await refreshMarketData("15m");
+  })();
+  const dailyTimer = setInterval(() => void refreshMarketData("1d"), 6 * 3_600_000);
+  const intradayTimer = setInterval(() => void refreshMarketData("15m"), 20 * 60_000);
+  abort.signal.addEventListener("abort", () => {
+    clearInterval(dailyTimer);
+    clearInterval(intradayTimer);
+  });
+
   const healthPort = Number(env.HEALTH_PORT ?? 0);
   if (healthPort > 0) {
-    startHealthServer(health, healthPort, abort.signal, log, history);
+    startHealthServer(health, healthPort, abort.signal, log, history, {
+      data: marketData,
+      symbols: SYMBOLS,
+      previousClose: state.previousClose,
+    });
   }
 
   const PRICE_INTERVAL_MS = Number(env.PRICE_INTERVAL_MS ?? 10_000);

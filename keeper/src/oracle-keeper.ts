@@ -128,10 +128,12 @@ export interface KeeperState {
   sessions: Map<string, MarketSession>;
   /** Last print timestamp published, so the same trade is not republished. */
   printedAt: Map<string, number>;
+  /** Previous session close per symbol, in dollars, as the feed reports it. */
+  previousClose: Map<string, number>;
 }
 
 export function newKeeperState(): KeeperState {
-  return { sessions: new Map(), printedAt: new Map() };
+  return { sessions: new Map(), printedAt: new Map(), previousClose: new Map() };
 }
 
 export interface KeeperOptions {
@@ -203,6 +205,11 @@ export async function keeperTick(options: KeeperOptions): Promise<{
   }
 
   const bySymbol = new Map(quotes.map((q) => [q.symbol.toUpperCase(), q]));
+  for (const q of quotes) {
+    if (q.previousClose) {
+      state.previousClose.set(q.symbol.toUpperCase(), q.previousClose);
+    }
+  }
 
   for (const symbol of symbols) {
     const oracle = oraclePda(config.programId, symbol);

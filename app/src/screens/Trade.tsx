@@ -48,70 +48,35 @@ import { OrderTicket } from "../components/protocol/OrderTicket";
 import {
   mergePoints,
   useKeeperHistory,
+  useMarketCandles,
 } from "../lib/protocol/keeperHistory";
-import { candlesFrom } from "../lib/protocol/rpc/history";
+import {
+  TIMEFRAMES,
+  buildTimeframe,
+  type Timeframe,
+  type TimeframeView,
+} from "../lib/protocol/timeframes";
 import type { Candle } from "../lib/protocol/types";
 
-export interface TimeframeView {
-  candles: Candle[];
-  /**
-   * What fraction of the requested window the prints actually span, or null
-   * when the question does not apply (the ALL tab, or too little data).
-   */
-  coverage: number | null;
-}
-
 /**
- * The candles for one timeframe tab, re-bucketed rather than sliced.
+ * The candles for one timeframe, from a market view's own data alone.
  *
- * Re-bucketing is what makes the tabs mean anything. `candlesFrom` picks a bar
- * width from the span and publish cadence of whatever it is given, so an hour
- * of prints and a week of prints get different bars. Slicing the tail of a
- * series bucketed once for the whole history gives every tab the same bar
- * width and only a different bar count, which is not what any of the labels
- * claim.
- *
- * A source with no prints falls back to the tail of its candles, so this
- * degrades to the old behaviour rather than to an empty chart.
+ * Kept for callers and tests that have only the view. The Trade screen itself
+ * calls `buildTimeframe` with the keeper's market data as well, which is what
+ * gives the longer tabs their years of history.
  */
 export function candlesForTimeframe(
   view: MarketView,
   tf: Timeframe,
 ): TimeframeView {
-  const window = TF_SECONDS[tf];
-  const points = view.points;
-  if (!points || points.length === 0) {
-    // A source whose candles are already real OHLC bars (the modelled one)
-    // gets them filtered by the same window. Re-bucketing their closes would
-    // throw away the highs and lows it already has.
-    const bars = view.candles;
-    if (bars.length === 0) return { candles: [], coverage: null };
-    const last = bars[bars.length - 1].t;
-    const from = window === null ? -Infinity : last - window;
-    const inWindow = bars.filter((c) => c.t >= from);
-    // Ready-made bars have a fixed width, so a window narrower than a few of
-    // them (an hour of hourly bars) would hold one bar and no chart. Show the
-    // last few bars instead of a single one.
-    return {
-      candles: inWindow.length >= 3 ? inWindow : bars.slice(-12),
-      coverage: null,
-    };
-  }
-
-  // Measured from the newest print, not from the wall clock. A market that
-  // closed on Friday should still draw its last hour of trading on Sunday,
-  // rather than an empty window with the prints just outside it.
-  const newest = points[points.length - 1].t;
-  const cutoff = window === null ? -Infinity : newest - window;
-  const inWindow = points.filter((p) => p.t >= cutoff);
-
-  return {
-    candles: candlesFrom(inWindow),
-    coverage:
-      window === null || inWindow.length < 2
-        ? null
-        : (inWindow[inWindow.length - 1].t - inWindow[0].t) / window,
-  };
+  const points = view.points ?? [];
+  return buildTimeframe(tf, {
+    points,
+    intraday: [],
+    daily: [],
+    fallback: points.length ? [] : view.candles,
+    live: null,
+  });
 }
 
 /** How much time a set of candles actually covers, in words. */
@@ -124,25 +89,6 @@ function spanLabel(candles: Candle[]): string {
   return `${Math.round(hours / 24)} days`;
 }
 
-const TIMEFRAMES = ["1H", "4H", "1D", "1W", "1M", "ALL"] as const;
-type Timeframe = (typeof TIMEFRAMES)[number];
-
-/**
- * How far back each tab looks, in seconds.
- *
- * These used to be bar counts: "1H" meant the last twelve bars, whatever those
- * bars were. Bar width is chosen once for the whole series, so the same twelve
- * bars could span ten minutes or ten hours and the tab would call it an hour
- * either way. A tab that names a duration has to filter by that duration.
- */
-const TF_SECONDS: Record<Timeframe, number | null> = {
-  "1H": 3_600,
-  "4H": 4 * 3_600,
-  "1D": 24 * 3_600,
-  "1W": 7 * 24 * 3_600,
-  "1M": 30 * 24 * 3_600,
-  ALL: null,
-};
 
 export function Trade({
   view,
@@ -299,18 +245,26 @@ export function Trade({
    * A source that does not carry its prints falls back to the old slice, so
    * this degrades to what it did before rather than to an empty chart.
    */
-  // A full session from the keeper, with the live on-chain prints on top.
+  // Oracle prints (keeper history plus live chain reads), a month of
+  // 15-minute bars and the full daily history, combined per timeframe with
+  // the live oracle price on the newest bar.
   const keeperPoints = useKeeperHistory(oracle.symbol);
-  const { candles, coverage } = useMemo(
-    () =>
-      candlesForTimeframe(
-        keeperPoints.length
-          ? { ...view, points: mergePoints(keeperPoints, view.points ?? []) }
-          : view,
-        tf,
-      ),
-    [view, tf, keeperPoints],
-  );
+  const bars = useMarketCandles(oracle.symbol);
+  const { candles, coverage, source } = useMemo(() => {
+    const points = keeperPoints.length
+      ? mergePoints(keeperPoints, view.points ?? [])
+      : (view.points ?? []);
+    return buildTimeframe(tf, {
+      points,
+      intraday: bars.intraday,
+      daily: bars.daily,
+      fallback: points.length ? [] : view.candles,
+      live:
+        oracle.price > 0n
+          ? { price: oracle.price, t: oracle.lastUpdateTs }
+          : null,
+    });
+  }, [view, tf, keeperPoints, bars, oracle.price, oracle.lastUpdateTs]);
   const blockedReason = !canIncrease.allowed ? canIncrease.reason : null;
 
   return (
@@ -445,6 +399,12 @@ export function Trade({
             <div className="card-note" style={{ marginTop: "var(--space-3)" }}>
               Showing {spanLabel(candles)} of history. The oracle has not been
               publishing for a full {tf.toLowerCase()} yet.
+            </div>
+          )}
+          {(source === "daily" || source === "intraday") && (
+            <div className="card-note" style={{ marginTop: "var(--space-3)" }}>
+              History: {oracle.symbol} {source === "daily" ? "daily" : "intraday"}{" "}
+              bars from Yahoo Finance. Latest bar: the Arclis oracle, live.
             </div>
           )}
         </Card>
