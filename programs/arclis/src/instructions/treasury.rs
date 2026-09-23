@@ -32,14 +32,14 @@ use anchor_lang::prelude::*;
 use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
 
 use crate::errors::ArclisError;
-use crate::events::{PoolSettled, SettlementReason};
 use crate::events::{CollateralDeposited, CollateralWithdrawn};
+use crate::events::{PoolSettled, SettlementReason};
 use crate::events::{TreasuryHedgeRebalanced, TreasuryInitialized, TreasuryStockMoved};
 use crate::instructions::deposit_collateral::credit_collateral;
-use crate::instructions::withdraw_collateral::debit_collateral;
 use crate::instructions::guards::{
     require_protocol_live, require_tradable, settle_with_pool, sync_and_settle,
 };
+use crate::instructions::withdraw_collateral::debit_collateral;
 use crate::math::session::PriceUse;
 use crate::state::{AgentTreasury, GlobalConfig, LiquidityPool, Market, Position, PriceOracle};
 
@@ -251,10 +251,7 @@ pub struct MoveTreasuryHedgeMargin<'info> {
 /// splits and liquidation are concerned, and the moment it stops being one is
 /// the moment an agent's hedge starts behaving differently from the book it is
 /// hedging against.
-pub fn fund_treasury_hedge(
-    ctx: Context<MoveTreasuryHedgeMargin>,
-    amount: u64,
-) -> Result<()> {
+pub fn fund_treasury_hedge(ctx: Context<MoveTreasuryHedgeMargin>, amount: u64) -> Result<()> {
     require_tradable(&ctx.accounts.config, &ctx.accounts.market)?;
     require!(amount > 0, ArclisError::InsufficientCollateral);
 
@@ -304,10 +301,7 @@ pub fn fund_treasury_hedge(
 /// initial-margin check inside `debit_collateral` is what stops this being a
 /// way to strip a live short down to the liquidation boundary, and the payout
 /// goes to the treasury's authority rather than to whoever cranked it.
-pub fn defund_treasury_hedge(
-    ctx: Context<MoveTreasuryHedgeMargin>,
-    amount: u64,
-) -> Result<()> {
+pub fn defund_treasury_hedge(ctx: Context<MoveTreasuryHedgeMargin>, amount: u64) -> Result<()> {
     require_tradable(&ctx.accounts.config, &ctx.accounts.market)?;
     require!(amount > 0, ArclisError::InsufficientCollateral);
 

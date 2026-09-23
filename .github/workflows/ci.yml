@@ -104,5 +104,9 @@ jobs:
           solana-keygen new --no-bip39-passphrase -s -o ~/.config/solana/id.json
 
       - run: npm ci
-      - run: anchor build
-      - run: anchor test
+      # Not `anchor build` / `anchor test` directly: Anchor 0.30.1's IDL step
+      # calls a proc-macro2 API that current Rust no longer has, and fails
+      # before the program is built. The script builds with --no-idl, takes
+      # the IDL from scripts/build-idl.py, and runs the suite with
+      # --skip-build. See the header of scripts/anchor-test.sh.
+      - run: bash scripts/anchor-test.sh

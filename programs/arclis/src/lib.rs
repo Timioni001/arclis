@@ -252,19 +252,13 @@ pub mod arclis {
     /// path seeds a position by a `Signer`'s key, and a treasury's position is
     /// owned by the treasury PDA. Without this instruction the hedge could
     /// never be opened at all.
-    pub fn fund_treasury_hedge(
-        ctx: Context<MoveTreasuryHedgeMargin>,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn fund_treasury_hedge(ctx: Context<MoveTreasuryHedgeMargin>, amount: u64) -> Result<()> {
         instructions::treasury::fund_treasury_hedge(ctx, amount)
     }
 
     /// Return hedge margin to the agent, subject to the same initial-margin
     /// floor a trader's withdrawal is held to.
-    pub fn defund_treasury_hedge(
-        ctx: Context<MoveTreasuryHedgeMargin>,
-        amount: u64,
-    ) -> Result<()> {
+    pub fn defund_treasury_hedge(ctx: Context<MoveTreasuryHedgeMargin>, amount: u64) -> Result<()> {
         instructions::treasury::defund_treasury_hedge(ctx, amount)
     }
 
