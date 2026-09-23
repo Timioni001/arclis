@@ -2457,3 +2457,28 @@ input[type="range"]::-moz-range-thumb {
     max-width: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   Order ticket
+   --------------------------------------------------------------------------- */
+
+.ticket-note {
+  margin-top: var(--space-2);
+}
+
+.ticket-review dl {
+  margin: 0 0 var(--space-2);
+}
+
+.ticket-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.ticket-result {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}

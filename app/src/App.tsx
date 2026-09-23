@@ -360,6 +360,9 @@ export function App({ source }: { source: DataSource }) {
               corporateActions={source.corporateActions(view.oracle.symbol)}
               now={now}
               onBack={() => setTab("Overview")}
+              session={session}
+              onSignIn={() => requestSignIn("Sign in with a wallet to trade.")}
+              onFilled={liveStatus.refresh}
             />
           )}
 

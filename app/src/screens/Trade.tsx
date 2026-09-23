@@ -43,6 +43,8 @@ import {
   usdSigned,
 } from "../lib/format";
 import type { CorporateAction } from "../lib/protocol/types";
+import type { Session } from "../lib/auth/session";
+import { OrderTicket } from "../components/protocol/OrderTicket";
 import { candlesFrom } from "../lib/protocol/rpc/history";
 import type { Candle } from "../lib/protocol/types";
 
@@ -141,12 +143,18 @@ export function Trade({
   corporateActions,
   now,
   onBack,
+  session,
+  onSignIn,
+  onFilled,
 }: {
   view: MarketView;
   position?: Position;
   corporateActions: CorporateAction[];
   now: number;
   onBack: () => void;
+  session: Session;
+  onSignIn: () => void;
+  onFilled?: () => void;
 }) {
   const { market, oracle, pool } = view;
   const [side, setSide] = useState<"long" | "short">("long");
@@ -512,9 +520,15 @@ export function Trade({
                 </div>
               </>
             ) : (
-              <Button block variant="primary">
-                Review trade
-              </Button>
+              <OrderTicket
+                symbol={oracle.symbol}
+                side={side}
+                preview={preview}
+                poolLiquidity={pool.vaultBalance}
+                session={session}
+                onSignIn={onSignIn}
+                onFilled={onFilled}
+              />
             )}
           </div>
         </Card>

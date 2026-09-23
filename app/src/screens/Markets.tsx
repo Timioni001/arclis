@@ -46,7 +46,7 @@ import { INSTRUCTION_COUNT } from "../idl/program-id";
 const TESTS = {
   unit: 129,
   integration: 25,
-  interface: 196,
+  interface: 202,
   dbc: 37,
 };
 
