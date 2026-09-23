@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Arclis motion intro</title>
+<!--
+  A 32-second motion piece for the pitch video: open it in a browser at
+  1920x1080, press F11 for full screen, and screen-record. Reload to replay.
+  A pre-rendered copy is in arclis-intro.webm.
+-->
+<style>
+@font-face{font-family:PJS;src:url(../../app/public/fonts/pjs-latin-400.woff2);font-weight:400}
+@font-face{font-family:PJS;src:url(../../app/public/fonts/pjs-latin-700.woff2);font-weight:700}
+@font-face{font-family:JBM;src:url(../../app/public/fonts/jbm-latin-600.woff2);font-weight:600}
+:root{--bg:#0b0d0a;--surface:#14170f;--border:#272c20;--text:#f3f6ef;--muted:#a8b0a2;--lime:#c6f03f;--red:#ff6b5e}
+*{box-sizing:border-box;margin:0}
+html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:PJS,sans-serif;overflow:hidden}
+.stage{position:absolute;inset:0;display:grid;place-items:center}
+.stage::before{content:"";position:absolute;inset:0;background:radial-gradient(60vw 40vw at 80% 0%,rgba(198,240,63,.13),transparent 70%)}
+.scene{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3vw;opacity:0;animation:scene var(--len) ease var(--at) both;text-align:center;padding:0 8vw}
+@keyframes scene{0%{opacity:0}8%{opacity:1}90%{opacity:1}100%{opacity:0;visibility:hidden}}
+.last{animation-name:sceneStay}
+@keyframes sceneStay{0%{opacity:0}8%,100%{opacity:1}}
+.rise{opacity:0;animation:rise .9s cubic-bezier(.2,.8,.2,1) calc(var(--at) + var(--d,0s)) both}
+@keyframes rise{from{opacity:0;transform:translateY(2.2vw)}to{opacity:1;transform:none}}
+h1{font-weight:700;font-size:6.2vw;letter-spacing:-.035em;line-height:1.02}
+h2{font-weight:700;font-size:4.6vw;letter-spacing:-.03em;line-height:1.06}
+.muted{color:var(--muted)}
+.lime{color:var(--lime)}
+.eyebrow{font-family:JBM,monospace;font-weight:600;font-size:1.3vw;letter-spacing:.16em;text-transform:uppercase;color:var(--lime)}
+/* scene 1: the mark draws itself */
+.mark{width:11vw;height:11vw}
+.mark rect{transform-origin:16px 16px;animation:pop .8s cubic-bezier(.2,.9,.3,1.2) .2s both}
+.mark path{stroke-dasharray:24;stroke-dashoffset:24;animation:draw 1s ease .8s forwards}
+.mark circle{transform-origin:23.4px 5.9px;animation:pop .5s cubic-bezier(.2,.9,.3,1.4) 1.7s both}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+@keyframes draw{to{stroke-dashoffset:0}}
+/* scene 2: two tokens */
+.tokens{display:flex;gap:3vw}
+.tok{background:var(--surface);border:1px solid var(--border);border-radius:1.4vw;padding:2vw 2.6vw;text-align:left;min-width:26vw}
+.tok .sym{font-family:JBM,monospace;font-weight:600;font-size:2.6vw}
+.tok .what{font-size:1.5vw;color:var(--muted);margin-top:.8vw}
+.tok .tag{display:inline-block;margin-top:1.2vw;font-family:JBM,monospace;font-size:1.1vw;padding:.4vw .8vw;border-radius:99px}
+.ok{background:rgba(198,240,63,.15);color:var(--lime)}
+.bad{background:rgba(255,107,94,.15);color:var(--red)}
+/* scene 3: three facts */
+.facts{display:flex;flex-direction:column;gap:1vw}
+.facts div{font-weight:700;font-size:5vw;letter-spacing:-.03em}
+.strike{position:relative}
+/* scene 4: chart */
+.chart{width:62vw;border:1px solid var(--border);border-radius:1.4vw;overflow:hidden;box-shadow:0 3vw 8vw rgba(0,0,0,.6)}
+.chart img{display:block;width:100%}
+.pill{display:inline-flex;align-items:center;gap:.7vw;font-family:JBM,monospace;font-weight:600;font-size:1.3vw;padding:.7vw 1.3vw;border-radius:99px;border:1px solid var(--border);background:var(--surface)}
+.pill i{width:.8vw;height:.8vw;border-radius:50%;background:var(--red);display:inline-block}
+/* scene 5: flow */
+.flow{display:flex;align-items:center;gap:1.6vw}
+.node{background:var(--surface);border:1px solid var(--border);border-radius:1.2vw;padding:1.6vw 2vw;min-width:17vw}
+.node b{display:block;font-size:1.9vw}
+.node span{display:block;font-size:1.2vw;color:var(--muted);margin-top:.5vw}
+.arrow{font-size:2.6vw;color:var(--lime)}
+/* scene 6: end card */
+.stats{display:flex;gap:4vw}
+.stat .n{font-weight:700;font-size:5.4vw;color:var(--lime);letter-spacing:-.04em;line-height:1}
+.stat .l{font-size:1.3vw;color:var(--muted);margin-top:.6vw}
+.url{font-family:JBM,monospace;font-weight:600;font-size:1.6vw}
+.brand{display:flex;align-items:center;gap:1.2vw;font-weight:700;font-size:3vw}
+.brand svg{width:4.4vw;height:4.4vw}
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <section class="scene" style="--at:0s;--len:4.5s">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#d4f86a"/><stop offset="1" stop-color="#aadd1f"/></linearGradient></defs>
+      <rect width="32" height="32" rx="8.5" fill="url(#g)"/>
+      <path d="M7 23.8C13.5 23.2 18.2 19.2 21.4 11.2" fill="none" stroke="#16210c" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="23.4" cy="5.9" r="2.15" fill="#16210c"/>
+    </svg>
+    <h1 class="rise" style="--d:1.9s">Arclis</h1>
+    <div class="eyebrow rise" style="--d:2.4s">Tokenized equities on Solana</div>
+  </section>
+
+  <section class="scene" style="--at:4.5s;--len:6s">
+    <h2 class="rise" style="--d:.2s">Two tokens named AAPL.</h2>
+    <div class="tokens">
+      <div class="tok rise" style="--d:.9s"><div class="sym">AAPLx</div><div class="what">Backed 1:1 by shares in custody</div><span class="tag ok">Claim on shares</span></div>
+      <div class="tok rise" style="--d:1.3s"><div class="sym">AAPL</div><div class="what">Tracks the price. Holds nothing.</div><span class="tag bad">No claim</span></div>
+    </div>
+    <h2 class="rise muted" style="--d:2.4s">The Arclis Registry tells them apart.</h2>
+    <div class="eyebrow rise" style="--d:2.8s;color:var(--muted);font-size:1vw">Illustrative example</div>
+  </section>
+
+  <section class="scene" style="--at:10.5s;--len:5.5s">
+    <div class="facts">
+      <div class="rise" style="--d:.2s">Markets close.</div>
+      <div class="rise" style="--d:.8s">Stocks split.</div>
+      <div class="rise" style="--d:1.4s">Trading halts.</div>
+    </div>
+    <h2 class="rise lime" style="--d:2.3s">Arclis enforces all three on chain.</h2>
+  </section>
+
+  <section class="scene" style="--at:16s;--len:6s">
+    <div class="eyebrow rise" style="--d:.1s">Perpetuals · 15 equity and ETF markets</div>
+    <div class="chart rise" style="--d:.4s"><img src="../chart-desktop-dark.png" alt=""></div>
+    <div class="pill rise" style="--d:1.6s"><i></i>MARKET CLOSED · new risk refused, exits allowed</div>
+  </section>
+
+  <section class="scene" style="--at:22s;--len:5.5s">
+    <h2 class="rise" style="--d:.1s">AI agents, paid in stocks, hedged.</h2>
+    <div class="flow">
+      <div class="node rise" style="--d:.8s"><b>ClawPump</b><span>Token launch quoted in a stock</span></div>
+      <div class="arrow rise" style="--d:1.2s">→</div>
+      <div class="node rise" style="--d:1.5s"><b>Treasury</b><span>Holds the stock fees</span></div>
+      <div class="arrow rise" style="--d:1.9s">→</div>
+      <div class="node rise" style="--d:2.2s"><b>Short perp</b><span>Keeps the dollar value</span></div>
+    </div>
+  </section>
+
+  <section class="scene last" style="--at:27.5s;--len:4.5s">
+    <div class="stats">
+      <div class="stat rise" style="--d:.1s"><div class="n">15</div><div class="l">markets</div></div>
+      <div class="stat rise" style="--d:.3s"><div class="n">28</div><div class="l">on-chain instructions</div></div>
+      <div class="stat rise" style="--d:.5s"><div class="n">600+</div><div class="l">automated tests</div></div>
+    </div>
+    <div class="brand rise" style="--d:1s">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8.5" fill="url(#g)"/><path d="M7 23.8C13.5 23.2 18.2 19.2 21.4 11.2" fill="none" stroke="#16210c" stroke-width="3" stroke-linecap="round"/><circle cx="23.4" cy="5.9" r="2.15" fill="#16210c"/></svg>
+      Arclis
+    </div>
+    <div class="url rise muted" style="--d:1.3s">arclis.timioni1490.workers.dev · Live on Solana devnet</div>
+  </section>
+
+</div>
+</body>
+</html>

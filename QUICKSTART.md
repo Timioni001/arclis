@@ -10,8 +10,8 @@ You are on Ubuntu. Open a terminal with **Ctrl+Alt+T**.
 ## Get the code
 
 ```bash
-git clone https://github.com/Timioni001/stocklana-perp-engine.git
-cd stocklana-perp-engine
+git clone https://github.com/Timioni001/arclis.git
+cd arclis
 git checkout claude/quirky-faraday-tls27g
 ```
 
@@ -41,7 +41,7 @@ only on the menu for terminals opened afterwards.
 ## Check everything works
 
 ```bash
-cd stocklana-perp-engine
+cd arclis
 npm install
 bash scripts/verify.sh
 ```

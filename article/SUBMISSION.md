@@ -61,7 +61,7 @@ Open the demo, browse the Registry without a wallet, then open any market to see
 
 | Field | Value |
 |---|---|
-| GitHub Repository | https://github.com/Timioni001/stocklana-perp-engine |
+| GitHub Repository | https://github.com/Timioni001/arclis |
 | Demo URL | https://arclis.timioni1490.workers.dev |
 | Pitch Video URL | your YouTube or Loom link (the product walkthrough) |
 | Technical Video URL | your YouTube or Loom link (the code and architecture walkthrough) |
