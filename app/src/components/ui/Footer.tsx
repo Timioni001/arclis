@@ -9,7 +9,7 @@
  *   Solana   - the program in `programs/arclis` is an Anchor program. Markets,
  *              positions, the liquidity pool and the oracle are all on-chain
  *              accounts.
- *   Meteora  - `tools/dbc` builds and monitors Dynamic Bonding Curve configs
+ *   Meteora  - `src/dbc` builds and monitors Dynamic Bonding Curve configs
  *              for stock-quoted pools, and Meteora DLMM pools are among the
  *              venues the registry measures exit depth against.
  *   Clawpump - the launch surface a new stock-quoted market is opened through.

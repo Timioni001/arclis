@@ -44,6 +44,10 @@ Six pieces:
   the hedge survives the agent's own keeper going down.
 - **`src/dbc/`**: launch and monitoring tooling for Meteora DBC pools whose
   quote token is a tokenized stock.
+- **`tools/clawpump/`**: launches an agent's token through the ClawPump partner
+  API on a Pump.fun curve quoted in a tokenized stock, with creator fees paid
+  to the agent. Command line only, because the API key must never reach a
+  browser.
 - **`keeper/`**: the daemons a live market needs. An oracle keeper that
   publishes prices and sessions off a real NYSE calendar, a funding crank, a
   liquidator, and a corporate-action watcher. Without them a deployment is a
@@ -74,23 +78,81 @@ work to each bounty and says what still needs a mainnet transaction.
 Nothing in the program is hardcoded to stocks: `create_market` takes an oracle
 account, not a ticker.
 
+## Try it
+
+| | |
+|---|---|
+| Interface | [arclis.timioni1490.workers.dev](https://arclis.timioni1490.workers.dev), reading Solana devnet |
+| Program | [`BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP`](https://explorer.solana.com/address/BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP?cluster=devnet) on devnet |
+| Keeper | [arclis-keeper.fly.dev/health](https://arclis-keeper.fly.dev/health): live prices for all fifteen markets from Finnhub |
+| Markets | AAPL, NVDA, MSFT, TSLA, GOOGL, AMZN, META, AVGO, PLTR, AMD, COIN, HOOD, MSTR, SPY, QQQ |
+
+The Registry needs nothing: open it and look a tokenized stock up. Trading
+needs a devnet wallet holding Arclis's devnet test USDC; the operator funds one
+with `npm run seed -- --url <devnet rpc> --airdrop <address>`. Risk-increasing
+orders are refused outside US market hours, on purpose.
+
+## How the pieces fit: accounts, trading, agents
+
+**Accounts.** Two ways in, one session model (`app/src/lib/auth/`). A Wallet
+Standard wallet (Phantom, Solflare, Backpack) signs as itself. A passkey
+account is an Ed25519 key generated in the browser and encrypted under a
+secret only the device's Face ID, Touch ID or PIN can reproduce: no seed
+phrase, no password, nothing held by a server. A session is `anonymous`,
+`watching` (a passkey account not unlocked this visit) or `trading`, and only
+`trading` is ever offered a signature. There is no Google sign-in and no
+third-party auth provider, because there is no server-side account for one to
+log into.
+
+**Trading.** The order ticket (`app/src/components/protocol/OrderTicket.tsx`)
+is the one place the interface asks a wallet to sign an order. Before it does,
+it checks that this is a real deployment, that the session can sign, that the
+market's LP pool has liquidity and the order is not larger than it, and that
+the wallet's quote balance, read from its token account, covers collateral
+plus fee. Then an explicit review of side, size, deposit and liquidation price.
+On confirm, `sendInstructions` simulates the transaction against current chain
+state before the wallet opens, so a closed market or a breached margin check is
+a sentence and nothing is signed. No key passes through the interface.
+
+**Agents.** An agent's life runs through three systems:
+
+1. **Launch** on ClawPump (`tools/clawpump/launch.ts`). The agent's token goes
+   live on a Pump.fun curve whose quote asset is a tokenized stock, chosen from
+   ClawPump's live catalogue of 79 stocks and ETFs. A 1% to 3% creator fee on
+   volume accrues in that stock, and 75% of it is paid to the agent's wallet.
+   Dry run unless `--execute`; refuses pairs that are not stocks, fees outside
+   the live range, and malformed payout wallets, and never retries a launch.
+   Pump.fun is mainnet.
+2. **Treasury** on Arclis (`programs/arclis/src/instructions/treasury.rs`).
+   The agent deposits the stock it raised, posts margin with
+   `fund_treasury_hedge`, and `rebalance_hedge` shorts the matching perp so the
+   runway holds its dollar value. Rebalancing is permissionless and the keeper
+   cranks it every five minutes, so the hedge survives the agent being down.
+   `npm run seed:treasury` opens a complete one on devnet.
+3. **Visibility** in the interface. The Treasuries screen lists every stock an
+   agent can launch against, marks the fifteen Arclis can hedge, and shows
+   every treasury on chain with its hedge, drift and NAV per token.
+
+The Meteora DBC tooling in `src/dbc/` covers the case ClawPump does not: a
+custom curve shape, which a Pump.fun launch cannot set.
+
 ## Status
 
 | | |
 |---|---|
 | Compiles (`cargo check`) | **yes**, clean |
-| Program ID | `A2WJAgqLpcZSkyqHu1cJA62gANDjiYx7M5Qyz9kZdoH3` (rotated; the original key's secret was in git history) |
+| Program ID | `BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP` (rotated; the original key's secret was in git history) |
 | Rust unit tests (`cargo test --lib`) | **129 passing**: PnL, funding, margin, liquidation, sessions, splits, dividends, treasury hedging, pool NAV and the loss waterfall |
 | DBC tests (`npm run test:dbc`) | **37 passing**, against the real Meteora SDK, no network |
-| Keeper and pipeline tests (`npm run keeper:test`) | **88 passing**: the NYSE calendar to the minute across holidays and both DST transitions, liquidation health, mint parsing, the depth ladder, and the live-snapshot fallbacks |
-| App tests (`npm run app:test`) | **104 passing**: the read model against the Rust, the registry's scoring, every instruction's account list against the IDL, and the glass and grid rules that two measured layout bugs came in through |
+| Keeper, pipeline and ClawPump tests (`npm run keeper:test`) | **158 passing**: the treasury rebalancer, the ClawPump launch guards, the NYSE calendar to the minute across holidays and both DST transitions, liquidation health, mint parsing, the depth ladder, and the live-snapshot fallbacks |
+| App tests (`npm run app:test`) | **202 passing**: the order ticket's refusals, the treasury scan, candle bucketing and timeframes, the read model against the Rust, the registry's scoring, every instruction's account list against the IDL, and the glass and grid rules that two measured layout bugs came in through |
 | Integration tests (`anchor test`) | **25 passing** on a contributor machine, covering the pool, splits, dividends, insurance, session gating, a real liquidation and the bad-debt waterfall. Not runnable in the authoring environment, which has no Solana toolchain |
 | Interface audit | **clean** across 6 screens x 3 widths x 2 themes: no overflow, clipping, contrast failure or undersized touch target |
-| IDL (`npm run idl`) | **generated**: 26 instructions, committed under `idl/` |
+| IDL (`npm run idl`) | **generated**: 28 instructions, committed under `idl/` |
 | `clippy -D warnings`, `cargo fmt`, `tsc`, prettier | **clean** |
 | `anchor build` | **succeeds** on a contributor machine; not runnable in the authoring environment |
 | Local deployment | **done**: `anchor deploy` to a local validator, seeded by `npm run seed` |
-| Devnet deployment | **done**: [`BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP`](https://explorer.solana.com/address/BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP?cluster=devnet), five markets seeded with pools and open positions |
+| Devnet deployment | **done**: [`BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP`](https://explorer.solana.com/address/BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP?cluster=devnet), fifteen markets seeded with pools and open positions, prices published live by the keeper |
 | Mainnet deployment | **not done**, and not appropriate: see `docs/FEASIBILITY.md` |
 
 The lockfile has been resolved and audited against the exact rustc that
@@ -112,8 +174,8 @@ to git history, so it was replaced and the old ID is burned.
 A deployment needs four daemons. They are all permissionless except the oracle:
 
 ```bash
-KEEPER_KEYPAIR=./keeper.json RPC_URL=https://api.devnet.solana.com \
-POLYGON_API_KEY=... QUOTE_MINT=<mint> npm run keeper
+KEEPER_KEYPAIR=./keeper.json RPC_URL=<dedicated devnet RPC> \
+FINNHUB_API_KEY=... QUOTE_MINT=<mint> npm run keeper
 ```
 
 That publishes prices and sessions off a real NYSE calendar, cranks funding,
@@ -121,6 +183,12 @@ liquidates underwater positions, and applies splits and dividends on their
 ex-date. With no price provider and a local RPC it runs a simulated feed and
 says so; with a non-local RPC it refuses to start rather than publishing
 invented prices to a real market. See [`keeper/README.md`](keeper/README.md).
+
+Use a dedicated RPC endpoint for the keeper. Fifteen markets is enough traffic
+to draw a wall of 429s from the public devnet endpoint, which is how the
+deployed keeper was taken down before it moved to Helius. The endpoint URL
+carries its API key, so on Fly it is a secret (`fly secrets set RPC_URL=...`),
+and the keeper reports only its host.
 
 The registry's live data comes from a separate pipeline, run on a schedule:
 
@@ -376,19 +444,25 @@ Listed plainly, because a judge will find them anyway:
 - **DBC migration cannot be oracle-gated.** Graduation is permissionless with no
   oracle hook, so it can fire while the underlying is shut. The monitor warns;
   nothing can enforce.
+- **Trading needs Arclis's own test token.** Markets settle in a devnet USDC
+  stand-in the seed script mints, so a visitor's wallet holds none until the
+  operator funds it. A public faucet would need a server holding the mint
+  authority, which this deployment deliberately does not run.
+- **The agent flow spans two clusters.** ClawPump launches on mainnet; the
+  treasury program runs on devnet. Each half is real, but a token launched
+  today cannot be hedged by the treasury deployed today.
+- **Corporate actions and the activity feed need an indexer.** They are emitted
+  events with no account left behind, so unlike treasuries they cannot be
+  found by scanning, and the interface shows them empty on a live chain.
 - **Devnet is the furthest this has gone.** The program is deployed and
   seeded there and the interface reads it, but devnet is not an environment
   where anything is at stake. Nothing here has met a real counterparty.
 
 ## Next steps
 
-1. **Purge the leaked keypair from git history before publishing this
-   repository.** The program ID it belonged to is burned and rotated, so
-   nothing is at risk today, but the secret is still recoverable from one blob
-   in the history and publishing would ship a private key:
-   `git filter-repo --path target/deploy/perp_engine-keypair.json --invert-paths`.
-2. Deploy to devnet and point the interface at it.
-3. Swap the keeper oracle for Pyth, and run a session keeper on a real market
-   calendar.
-4. Run the funding crank and a liquidator, without which the loss waterfall is
-   theoretical.
+1. Swap the keeper's oracle authority for Pyth, removing the one trusted key.
+2. An event indexer, for corporate actions, the activity feed and volume.
+3. Deploy the treasury program to mainnet alongside ClawPump launches, so a
+   launched agent can be hedged end to end.
+4. A faucet for the devnet quote token, so anyone can trade without the
+   operator funding their wallet first.

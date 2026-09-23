@@ -39,7 +39,7 @@
  * launch to the stock's fair value" is not something any client of this API
  * can do. The stock's live price is printed alongside the plan so the operator
  * sees what the quote asset is worth, and that is as far as it honestly goes.
- * Custom curve shapes are what `tools/dbc` builds for Meteora's DBC directly.
+ * Custom curve shapes are what `src/dbc` builds for Meteora's DBC directly.
  *
  * Pump.fun is mainnet. A token launched here is real and costs real SOL.
  *

@@ -2482,3 +2482,18 @@ input[type="range"]::-moz-range-thumb {
   flex-direction: column;
   gap: var(--space-3);
 }
+
+/* A wide table scrolls inside its own box instead of widening the page.
+
+   `position: relative` is the part that matters. The Portfolio table's cells
+   carry `.sr-only` labels, which are absolutely positioned, and an absolute
+   element is clipped by a scroll container only when that container is also
+   its containing block. Without it their nearest positioned ancestor was
+   `.app`, so they escaped the scroll box and pushed a phone viewport 8px
+   sideways at 390px and 78px at 320px. */
+.table-scroll {
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}

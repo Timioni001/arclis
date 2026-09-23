@@ -381,7 +381,7 @@ export function Markets({
           The one stat tile that carries a mark, and the only place outside
           the hero strip and the footer that does.
 
-          This is a claim about our own tooling - `tools/dbc` builds real DBC
+          This is a claim about our own tooling - `src/dbc` builds real DBC
           configs and the suite runs against Meteora's published SDK - so the
           mark is evidence, not a placement. The registry deliberately does
           not do this: it lists Meteora DLMM alongside Orca Whirlpool and

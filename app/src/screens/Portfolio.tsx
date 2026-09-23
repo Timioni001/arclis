@@ -185,68 +185,72 @@ export function Portfolio({
               </Empty>
             )
           ) : (
-            <table className="table num">
-              <thead>
-                <tr>
-                  <th>Market</th>
-                  <th className="right">Size</th>
-                  <th className="right">Entry</th>
-                  <th className="right">Mark</th>
-                  <th className="right">P&L</th>
-                  <th className="right">Margin</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr
-                    key={r.symbol}
-                    onClick={() => onOpen(r.symbol)}
-                    style={{ cursor: "pointer" }}
-                  >
-                    <td>
-                      <div
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "var(--space-3)",
-                        }}
-                      >
-                        <Chip
-                          small
-                          tone={r.pnl >= 0n ? "positive" : "negative"}
+            <div className="table-scroll">
+              <table className="table num">
+                <thead>
+                  <tr>
+                    <th>Market</th>
+                    <th className="right">Size</th>
+                    <th className="right">Entry</th>
+                    <th className="right">Mark</th>
+                    <th className="right">P&L</th>
+                    <th className="right">Margin</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr
+                      key={r.symbol}
+                      onClick={() => onOpen(r.symbol)}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <td>
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "var(--space-3)",
+                          }}
                         >
-                          <Icon
-                            name={r.size > 0n ? "arrowUp" : "arrowDown"}
-                            size={15}
-                          />
-                        </Chip>
-                        <div>
-                          <strong>{r.symbol}</strong>
-                          <div className="metric-sub">
-                            {r.size > 0n ? "Long" : "Short"}
+                          <Chip
+                            small
+                            tone={r.pnl >= 0n ? "positive" : "negative"}
+                          >
+                            <Icon
+                              name={r.size > 0n ? "arrowUp" : "arrowDown"}
+                              size={15}
+                            />
+                          </Chip>
+                          <div>
+                            <strong>{r.symbol}</strong>
+                            <div className="metric-sub">
+                              {r.size > 0n ? "Long" : "Short"}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="right">{fmtShares(r.size)}</td>
-                    <td className="right">
-                      {usd(r.entry, { compact: false })}
-                    </td>
-                    <td className="right">{usd(r.mark, { compact: false })}</td>
-                    <td className="right">
-                      <Delta value={r.pnl}>
-                        {usdSigned(r.pnl, { compact: false })}
-                      </Delta>
-                    </td>
-                    <td className="right">
-                      {r.marginBps === null
-                        ? "n/a"
-                        : pctPlain(Number(r.marginBps) / 100)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </td>
+                      <td className="right">{fmtShares(r.size)}</td>
+                      <td className="right">
+                        {usd(r.entry, { compact: false })}
+                      </td>
+                      <td className="right">
+                        {usd(r.mark, { compact: false })}
+                      </td>
+                      <td className="right">
+                        <Delta value={r.pnl}>
+                          {usdSigned(r.pnl, { compact: false })}
+                        </Delta>
+                      </td>
+                      <td className="right">
+                        {r.marginBps === null
+                          ? "n/a"
+                          : pctPlain(Number(r.marginBps) / 100)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </Card>
 

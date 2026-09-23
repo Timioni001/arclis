@@ -579,39 +579,41 @@ function StockDetail({
 
           <h4 className="registry-detail-h">Getting out</h4>
           <p className="registry-detail-note">{liquidity.note}</p>
-          <table className="table registry-pools">
-            <thead>
-              <tr>
-                <th scope="col">Venue</th>
-                <th scope="col" className="ta-right">
-                  Pooled
-                </th>
-                <th scope="col" className="ta-right">
-                  Sell impact
-                </th>
-                <th scope="col" className="ta-right">
-                  24h volume
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {stock.pools.map((p) => (
-                <tr key={p.poolAddress}>
-                  <th scope="row">{p.venue}</th>
-                  <td className="ta-right num">{usd(p.quoteLiquidity)}</td>
-                  <td className="ta-right num">
-                    {(p.sellImpactBps / 100).toFixed(2)}%
-                  </td>
-                  <td className="ta-right num">{usd(p.volume24h)}</td>
-                </tr>
-              ))}
-              {stock.pools.length === 0 && (
+          <div className="table-scroll">
+            <table className="table registry-pools">
+              <thead>
                 <tr>
-                  <td colSpan={4}>No DEX pool found for this token.</td>
+                  <th scope="col">Venue</th>
+                  <th scope="col" className="ta-right">
+                    Pooled
+                  </th>
+                  <th scope="col" className="ta-right">
+                    Sell impact
+                  </th>
+                  <th scope="col" className="ta-right">
+                    24h volume
+                  </th>
                 </tr>
-              )}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {stock.pools.map((p) => (
+                  <tr key={p.poolAddress}>
+                    <th scope="row">{p.venue}</th>
+                    <td className="ta-right num">{usd(p.quoteLiquidity)}</td>
+                    <td className="ta-right num">
+                      {(p.sellImpactBps / 100).toFixed(2)}%
+                    </td>
+                    <td className="ta-right num">{usd(p.volume24h)}</td>
+                  </tr>
+                ))}
+                {stock.pools.length === 0 && (
+                  <tr>
+                    <td colSpan={4}>No DEX pool found for this token.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
 
           <h4 className="registry-detail-h">Corporate actions and income</h4>
           <dl className="registry-facts">
