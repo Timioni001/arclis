@@ -12,11 +12,11 @@
 @font-face{font-family:PJS;src:url(../../app/public/fonts/pjs-latin-400.woff2);font-weight:400}
 @font-face{font-family:PJS;src:url(../../app/public/fonts/pjs-latin-700.woff2);font-weight:700}
 @font-face{font-family:JBM;src:url(../../app/public/fonts/jbm-latin-600.woff2);font-weight:600}
-:root{--bg:#0b0d0a;--surface:#14170f;--border:#272c20;--text:#f3f6ef;--muted:#a8b0a2;--lime:#c6f03f;--red:#ff6b5e}
+:root{--bg:#ffffff;--surface:#f6f8f5;--border:#e3e7e0;--text:#10150e;--muted:#5f685e;--lime:#c6f03f;--ink:#46650a;--on-lime:#16210c;--red:#d93a2b}
 *{box-sizing:border-box;margin:0}
 html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-family:PJS,sans-serif;overflow:hidden}
 .stage{position:absolute;inset:0;display:grid;place-items:center}
-.stage::before{content:"";position:absolute;inset:0;background:radial-gradient(60vw 40vw at 80% 0%,rgba(198,240,63,.13),transparent 70%)}
+.stage::before{content:"";position:absolute;inset:0;background:radial-gradient(60vw 40vw at 80% 0%,rgba(198,240,63,.25),transparent 70%)}
 .scene{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3vw;opacity:0;animation:scene var(--len) ease var(--at) both;text-align:center;padding:0 8vw}
 @keyframes scene{0%{opacity:0}8%{opacity:1}90%{opacity:1}100%{opacity:0;visibility:hidden}}
 .last{animation-name:sceneStay}
@@ -26,8 +26,8 @@ html,body{width:100%;height:100%;background:var(--bg);color:var(--text);font-fam
 h1{font-weight:700;font-size:6.2vw;letter-spacing:-.035em;line-height:1.02}
 h2{font-weight:700;font-size:4.6vw;letter-spacing:-.03em;line-height:1.06}
 .muted{color:var(--muted)}
-.lime{color:var(--lime)}
-.eyebrow{font-family:JBM,monospace;font-weight:600;font-size:1.3vw;letter-spacing:.16em;text-transform:uppercase;color:var(--lime)}
+.lime{color:var(--ink)}
+.eyebrow{font-family:JBM,monospace;font-weight:600;font-size:1.3vw;letter-spacing:.16em;text-transform:uppercase;color:var(--ink)}
 /* scene 1: the mark draws itself */
 .mark{width:11vw;height:11vw}
 .mark rect{transform-origin:16px 16px;animation:pop .8s cubic-bezier(.2,.9,.3,1.2) .2s both}
@@ -41,14 +41,14 @@ h2{font-weight:700;font-size:4.6vw;letter-spacing:-.03em;line-height:1.06}
 .tok .sym{font-family:JBM,monospace;font-weight:600;font-size:2.6vw}
 .tok .what{font-size:1.5vw;color:var(--muted);margin-top:.8vw}
 .tok .tag{display:inline-block;margin-top:1.2vw;font-family:JBM,monospace;font-size:1.1vw;padding:.4vw .8vw;border-radius:99px}
-.ok{background:rgba(198,240,63,.15);color:var(--lime)}
-.bad{background:rgba(255,107,94,.15);color:var(--red)}
+.ok{background:#eefbc9;color:var(--ink)}
+.bad{background:#fdecea;color:var(--red)}
 /* scene 3: three facts */
 .facts{display:flex;flex-direction:column;gap:1vw}
 .facts div{font-weight:700;font-size:5vw;letter-spacing:-.03em}
 .strike{position:relative}
 /* scene 4: chart */
-.chart{width:62vw;border:1px solid var(--border);border-radius:1.4vw;overflow:hidden;box-shadow:0 3vw 8vw rgba(0,0,0,.6)}
+.chart{width:62vw;border:1px solid var(--border);border-radius:1.4vw;overflow:hidden;box-shadow:0 2vw 6vw rgba(16,21,14,.14)}
 .chart img{display:block;width:100%}
 .pill{display:inline-flex;align-items:center;gap:.7vw;font-family:JBM,monospace;font-weight:600;font-size:1.3vw;padding:.7vw 1.3vw;border-radius:99px;border:1px solid var(--border);background:var(--surface)}
 .pill i{width:.8vw;height:.8vw;border-radius:50%;background:var(--red);display:inline-block}
@@ -57,10 +57,10 @@ h2{font-weight:700;font-size:4.6vw;letter-spacing:-.03em;line-height:1.06}
 .node{background:var(--surface);border:1px solid var(--border);border-radius:1.2vw;padding:1.6vw 2vw;min-width:17vw}
 .node b{display:block;font-size:1.9vw}
 .node span{display:block;font-size:1.2vw;color:var(--muted);margin-top:.5vw}
-.arrow{font-size:2.6vw;color:var(--lime)}
+.arrow{font-size:2.6vw;color:var(--ink)}
 /* scene 6: end card */
 .stats{display:flex;gap:4vw}
-.stat .n{font-weight:700;font-size:5.4vw;color:var(--lime);letter-spacing:-.04em;line-height:1}
+.stat .n{font-weight:700;font-size:5.4vw;color:var(--ink);letter-spacing:-.04em;line-height:1}
 .stat .l{font-size:1.3vw;color:var(--muted);margin-top:.6vw}
 .url{font-family:JBM,monospace;font-weight:600;font-size:1.6vw}
 .brand{display:flex;align-items:center;gap:1.2vw;font-weight:700;font-size:3vw}
@@ -102,7 +102,7 @@ h2{font-weight:700;font-size:4.6vw;letter-spacing:-.03em;line-height:1.06}
 
   <section class="scene" style="--at:16s;--len:6s">
     <div class="eyebrow rise" style="--d:.1s">Perpetuals · 15 equity and ETF markets</div>
-    <div class="chart rise" style="--d:.4s"><img src="../chart-desktop-dark.png" alt=""></div>
+    <div class="chart rise" style="--d:.4s"><img src="../chart-desktop-candles.png" alt=""></div>
     <div class="pill rise" style="--d:1.6s"><i></i>MARKET CLOSED · new risk refused, exits allowed</div>
   </section>
 
@@ -127,7 +127,7 @@ h2{font-weight:700;font-size:4.6vw;letter-spacing:-.03em;line-height:1.06}
       <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8.5" fill="url(#g)"/><path d="M7 23.8C13.5 23.2 18.2 19.2 21.4 11.2" fill="none" stroke="#16210c" stroke-width="3" stroke-linecap="round"/><circle cx="23.4" cy="5.9" r="2.15" fill="#16210c"/></svg>
       Arclis
     </div>
-    <div class="url rise muted" style="--d:1.3s">arclis.timioni1490.workers.dev · Live on Solana devnet</div>
+    <div class="url rise muted" style="--d:1.3s">arclis.timioni1490.workers.dev | arclistrade.world</div>
   </section>
 
 </div>

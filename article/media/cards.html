@@ -8,36 +8,36 @@
 @font-face{font-family:PJS;src:url(../../app/public/fonts/pjs-latin-500.woff2);font-weight:500}
 @font-face{font-family:PJS;src:url(../../app/public/fonts/pjs-latin-700.woff2);font-weight:700}
 @font-face{font-family:JBM;src:url(../../app/public/fonts/jbm-latin-600.woff2);font-weight:600}
-:root{--bg:#0b0d0a;--surface:#14170f;--border:#272c20;--text:#f3f6ef;--muted:#a8b0a2;--lime:#c6f03f;--on-lime:#101806}
+:root{--bg:#ffffff;--surface:#f6f8f5;--border:#e3e7e0;--text:#10150e;--muted:#5f685e;--lime:#c6f03f;--ink:#46650a;--on-lime:#16210c;--red:#d93a2b}
 *{box-sizing:border-box;margin:0}
-body{background:#222;font-family:PJS,sans-serif;color:var(--text)}
+body{background:#fff;font-family:PJS,sans-serif;color:var(--text)}
 .card{width:1600px;height:900px;background:var(--bg);position:relative;overflow:hidden;display:grid;padding:88px 96px;margin-bottom:40px}
-.card::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 500px at 88% -10%,rgba(198,240,63,.16),transparent 70%);pointer-events:none}
+.card::before{content:"";position:absolute;inset:0;background:radial-gradient(900px 500px at 88% -10%,rgba(198,240,63,.28),transparent 70%);pointer-events:none}
 .brand{display:flex;align-items:center;gap:16px;font-weight:700;font-size:30px;letter-spacing:-.01em}
 .brand img{width:48px;height:48px;border-radius:12px}
-.eyebrow{font-family:JBM,monospace;font-weight:600;font-size:22px;letter-spacing:.14em;text-transform:uppercase;color:var(--lime)}
+.eyebrow{font-family:JBM,monospace;font-weight:600;font-size:22px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink)}
 h1{font-weight:700;font-size:84px;line-height:1.02;letter-spacing:-.035em}
 h2{font-weight:700;font-size:64px;line-height:1.05;letter-spacing:-.03em}
 p.lede{font-size:30px;line-height:1.4;color:var(--muted);max-width:1100px}
 .foot{position:absolute;left:96px;right:96px;bottom:56px;display:flex;justify-content:space-between;font-family:JBM,monospace;font-weight:600;font-size:20px;color:var(--muted)}
 .foot b{color:var(--text);font-weight:600}
-.shot{border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:0 40px 120px rgba(0,0,0,.55);background:var(--surface)}
+.shot{border:1px solid var(--border);border-radius:20px;overflow:hidden;box-shadow:0 30px 90px rgba(16,21,14,.14);background:var(--surface)}
 .shot img{display:block;width:100%;height:100%;object-fit:cover;object-position:top left}
 .split{grid-template-columns:600px 1fr;gap:64px;align-items:center}
 .split .copy{display:flex;flex-direction:column;gap:28px}
 .split .shot{height:640px;width:1100px}
 ul.facts{list-style:none;padding:0;display:flex;flex-direction:column;gap:18px}
 ul.facts li{font-size:26px;line-height:1.35;color:var(--muted);padding-left:34px;position:relative}
-ul.facts li::before{content:"";position:absolute;left:0;top:13px;width:14px;height:14px;border-radius:4px;background:var(--lime)}
+ul.facts li::before{content:"";position:absolute;left:0;top:13px;width:14px;height:14px;border-radius:4px;background:var(--lime);box-shadow:inset 0 0 0 1px rgba(70,101,10,.35)}
 ul.facts li b{color:var(--text);font-weight:600}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:24px;margin-top:40px}
 .stat{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:26px 36px}
-.stat .n{font-weight:700;font-size:76px;letter-spacing:-.04em;color:var(--lime);line-height:1}
+.stat .n{font-weight:700;font-size:76px;letter-spacing:-.04em;color:var(--ink);line-height:1}
 .stat .l{font-size:24px;color:var(--muted);margin-top:12px}
 .pill{display:inline-flex;align-items:center;gap:10px;background:var(--lime);color:var(--on-lime);font-weight:700;font-size:22px;padding:10px 20px;border-radius:999px}
 .flow{display:flex;align-items:center;gap:18px;margin-top:8px}
 .flow span{font-family:JBM,monospace;font-weight:600;font-size:20px;border:1px solid var(--border);background:var(--surface);border-radius:12px;padding:12px 16px}
-.flow i{color:var(--lime);font-style:normal;font-size:24px}
+.flow i{color:var(--ink);font-style:normal;font-size:24px}
 </style>
 </head>
 <body>
@@ -50,7 +50,7 @@ ul.facts li b{color:var(--text);font-weight:600}
     <h1>Public equities on-chain, with the rules that make them equities.</h1>
     <p class="lede">A registry that discloses what every tokenized stock is backed by, and a perpetuals engine that respects market hours, halts, splits and dividends.</p>
   </div>
-  <div class="foot"><span><b>arclis.timioni1490.workers.dev</b></span><span>Live on Solana devnet</span></div>
+  <div class="foot"><span><b>arclis.timioni1490.workers.dev | arclistrade.world</b></span><span>Live on Solana devnet</span></div>
 </section>
 
 <!-- 2. Registry -->
@@ -81,7 +81,7 @@ ul.facts li b{color:var(--text);font-weight:600}
       <li><b>Explicit loss waterfall</b> down to recorded bad debt</li>
     </ul>
   </div>
-  <div class="shot" style="height:auto"><img src="../chart-desktop-dark.png" alt="" style="height:auto;object-fit:contain"></div>
+  <div class="shot" style="height:auto"><img src="../chart-desktop-candles.png" alt="" style="height:auto;object-fit:contain"></div>
   <div class="foot"><span><b>Arclis</b> · 15 equity and ETF markets</span><span>Solana devnet</span></div>
 </section>
 
@@ -112,14 +112,14 @@ ul.facts li b{color:var(--text);font-weight:600}
       <div class="stat"><div class="n">0</div><div class="l">Instructions that move user funds to the authority</div></div>
     </div>
   </div>
-  <div class="foot"><span><b>arclis.timioni1490.workers.dev</b></span><span>github.com/Timioni001/arclis</span></div>
+  <div class="foot"><span><b>arclis.timioni1490.workers.dev | arclistrade.world</b></span><span>github.com/Timioni001/arclis</span></div>
 </section>
 
 <!-- 6. Markets grid -->
 <section class="card" id="c6" style="grid-template-rows:auto 1fr;gap:40px">
   <div style="display:flex;justify-content:space-between;align-items:end">
     <div><div class="eyebrow">Live on devnet</div><h2 style="margin-top:16px">AAPL to QQQ, priced every 20 seconds.</h2></div>
-    <span class="pill">Try it</span>
+    <span class="pill">arclis.timioni1490.workers.dev | arclistrade.world</span>
   </div>
   <div class="shot" style="height:600px"><img src="../05-markets-grid.png" alt=""></div>
 </section>

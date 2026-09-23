@@ -159,10 +159,10 @@ browser.
 | 10.5 to 16 s | Problem | "Markets close. Stocks split. Trading halts." | Lines stack, then the lime answer |
 | 16 to 22 s | Perpetuals | Live chart, "MARKET CLOSED · new risk refused, exits allowed" | Chart rises, pill follows |
 | 22 to 27.5 s | Agents | ClawPump → Treasury → Short perp | Nodes and arrows build left to right |
-| 27.5 to 32 s | End card | 15 markets · 28 instructions · 600+ tests, logo, URL | Stats rise, logo, URL; holds |
+| 27.5 to 32 s | End card | 15 markets · 28 instructions · 600+ tests, logo, arclis.timioni1490.workers.dev \| arclistrade.world | Stats rise, logo, URL; holds |
 
 To use a single scene as a still, pause the recording on it. Colours and
-fonts match the product: lime `#c6f03f` on `#0b0d0a`, Plus Jakarta Sans and
+fonts match the product: white `#ffffff` background, dark olive `#46650a` accents and the lime `#c6f03f` logo tile, Plus Jakarta Sans and
 JetBrains Mono. Background music: pick a track from the YouTube Audio Library
 (free to use) around 100 BPM, and keep it low (−20 dB) under the voice.
 
@@ -212,7 +212,7 @@ JetBrains Mono. Background music: pick a track from the YouTube Audio Library
 > Live on Solana devnet. Connect a wallet, grab test USDC from the in-app
 > faucet, and trade.
 >
-> Demo: arclis.timioni1490.workers.dev
+> Demo: arclis.timioni1490.workers.dev | arclistrade.world
 > Code: github.com/Timioni001/arclis
 >
 > Built for #Stocklana on @solana
@@ -223,7 +223,11 @@ JetBrains Mono. Background music: pick a track from the YouTube Audio Library
 > A registry of what each tokenized stock is really backed by, and perps that
 > respect market hours, halts, splits and dividends.
 >
-> Live on devnet → arclis.timioni1490.workers.dev
+> Live on devnet → arclis.timioni1490.workers.dev | arclistrade.world
+
+When arclistrade.world is connected in Cloudflare, drop the workers.dev
+address everywhere: edit `media/cards.html` and `media/motion.html`, then
+re-render.
 
 Check each partner's handle on X before tagging. Post the thread when the
 demo and repository are live and public.

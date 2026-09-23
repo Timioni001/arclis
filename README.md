@@ -13,7 +13,7 @@ matching perpetual and hold the dollar value of its treasury steady.
 
 | Component | Location |
 |---|---|
-| Interface | [arclis.timioni1490.workers.dev](https://arclis.timioni1490.workers.dev) |
+| Interface | [arclis.timioni1490.workers.dev](https://arclis.timioni1490.workers.dev) \| arclistrade.world (connecting) |
 | Program (devnet) | [`BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP`](https://explorer.solana.com/address/BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP?cluster=devnet) |
 | Keeper | [arclis-keeper.fly.dev/health](https://arclis-keeper.fly.dev/health) |
 | Markets | AAPL, NVDA, MSFT, TSLA, GOOGL, AMZN, META, AVGO, PLTR, AMD, COIN, HOOD, MSTR, SPY, QQQ |
