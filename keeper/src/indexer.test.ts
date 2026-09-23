@@ -67,14 +67,19 @@ describe("EventIndexer", () => {
   it("backfills, then asks only for what is newer", async () => {
     const connection = {
       getSignaturesForAddress: vi.fn(async (_a: PublicKey, o: { until?: string }) =>
-        o.until ? [] : [{ signature: "s1", err: null, blockTime: 50 }]),
-      getTransactions: vi.fn(async () => [
-        { blockTime: 50, meta: { logMessages: logsFor("PositionOpened", opened) } },
-      ]),
+        o.until ? [] : [
+          { signature: "s1", err: null, blockTime: 50, memo: null },
+          { signature: "f1", err: null, blockTime: 40, memo: "[14] arclis:funding" },
+        ]),
+      getTransaction: vi.fn(async () => (
+        { blockTime: 50, meta: { logMessages: logsFor("PositionOpened", opened) } }
+      )),
     };
     const ix = new EventIndexer(connection as never, programId, ["AAPL"]);
     expect(await ix.poll()).toBe(1);
     expect(ix.list({ symbol: "AAPL" })[0].kind).toBe("PositionOpened");
+    // The funding crank was skipped from its memo, never fetched.
+    expect(connection.getTransaction).toHaveBeenCalledTimes(1);
     expect(await ix.poll()).toBe(0);
     expect(connection.getSignaturesForAddress.mock.calls[1][1]).toMatchObject({ until: "s1" });
   });

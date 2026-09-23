@@ -35,7 +35,7 @@ import { PriceHistory, backfillSymbol } from "./price-history";
 import { MarketData } from "./market-data";
 import {
   corporateTick,
-  ephemeralAppliedLog,
+  chainAppliedLog,
   polygonActions,
   type CorporateActionFeed,
 } from "./corporate";
@@ -373,7 +373,7 @@ async function main() {
       "indexer",
       Number(env.INDEXER_INTERVAL_MS ?? 60_000),
       async () => {
-        const added = await indexer.poll();
+        const added = await indexer.poll(Number(env.INDEXER_BACKFILL ?? 300));
         if (added) log("info", "indexed events", { added });
       },
       abort.signal,
@@ -384,11 +384,8 @@ async function main() {
   // and the ex-date is known days ahead.
   const corporate = pickCorporateFeed();
   if (corporate) {
-    const applied = ephemeralAppliedLog();
-    log("warn", "the applied-actions log is in memory only", {
-      consequence:
-        "a restart could re-apply a split; back it with durable storage",
-    });
+    // Durable across restarts: applied actions are recorded on chain.
+    const applied = chainAppliedLog(config.connection, config.programId);
     tasks.push(
       loop(
         config,

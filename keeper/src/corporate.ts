@@ -20,9 +20,9 @@
  * A corporate action applied twice is a four-for-one split becoming sixteen.
  * There is no on-chain replay guard keyed to a provider's action id, so the
  * guard lives here: applied actions are recorded, and the record is checked
- * before anything is sent. `AppliedLog` is an interface so a deployment can
- * back it with something that survives a restart, and the default in-memory
- * one is explicitly not that.
+ * before anything is sent. The keeper uses `chainAppliedLog`, which keeps the
+ * record on chain as a memo on each applied action's own transaction, so it
+ * survives restarts with no storage to provision or lose.
  */
 
 import { PublicKey, TransactionInstruction } from "@solana/web3.js";
@@ -79,6 +79,60 @@ export function ephemeralAppliedLog(): AppliedLog {
   return {
     async has(id) {
       return seen.has(id);
+    },
+    async record(id) {
+      seen.add(id);
+    },
+  };
+}
+
+/** SPL Memo v2. */
+export const MEMO_PROGRAM_ID = new PublicKey(
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+);
+
+/**
+ * An address that appears in every corporate-action transaction and nothing
+ * else. It holds no account; it is a label. The program ignores extra
+ * accounts, so adding it changes nothing on chain, and it makes the history
+ * of applied actions one `getSignaturesForAddress` call away.
+ */
+export function corporateLogAddress(programId: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("corporate-log")],
+    programId,
+  )[0];
+}
+
+export const memoFor = (id: string) => `arclis:corporate:${id}`;
+
+/**
+ * The durable log, kept on chain.
+ *
+ * Every applied action's transaction carries a memo naming the action's id and
+ * references `corporateLogAddress`. After a restart, "has this been applied?"
+ * is answered from that transaction history, so no split can be applied
+ * twice, and there is no file or database to lose.
+ */
+export function chainAppliedLog(
+  connection: {
+    getSignaturesForAddress: (
+      a: PublicKey,
+      o?: { limit?: number },
+    ) => Promise<{ err: unknown; memo: string | null }[]>;
+  },
+  programId: PublicKey,
+): AppliedLog {
+  const seen = new Set<string>();
+  const tag = corporateLogAddress(programId);
+  return {
+    async has(id) {
+      if (seen.has(id)) return true;
+      const sigs = await connection.getSignaturesForAddress(tag, { limit: 1000 });
+      const marker = memoFor(id);
+      const found = sigs.some((s) => !s.err && (s.memo ?? "").includes(marker));
+      if (found) seen.add(id);
+      return found;
     },
     async record(id) {
       seen.add(id);
@@ -238,7 +292,18 @@ export async function corporateTick(options: CorporateOptions): Promise<{
       { pubkey: config.payer.publicKey, isSigner: true, isWritable: false },
       rw(a.oracle),
       rw(a.market),
+      // A label for the durable log; see `chainAppliedLog`.
+      {
+        pubkey: corporateLogAddress(config.programId),
+        isSigner: false,
+        isWritable: false,
+      },
     ];
+    const memo = new TransactionInstruction({
+      programId: MEMO_PROGRAM_ID,
+      keys: [],
+      data: Buffer.from(memoFor(action.id)),
+    });
 
     const outcome =
       action.kind === "split"
@@ -254,6 +319,7 @@ export async function corporateTick(options: CorporateOptions): Promise<{
                 },
                 keys,
               ),
+              memo,
             ],
             `split ${action.symbol} ${action.numerator}:${action.denominator}`,
           )
@@ -269,6 +335,7 @@ export async function corporateTick(options: CorporateOptions): Promise<{
                 { per_share: new BN(Math.floor(action.perShare * 1_000_000)) },
                 keys,
               ),
+              memo,
             ],
             `dividend ${action.symbol} ${action.perShare}`,
           );

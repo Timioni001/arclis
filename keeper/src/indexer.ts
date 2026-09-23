@@ -20,6 +20,7 @@
 import { PublicKey, type Connection } from "@solana/web3.js";
 import { BorshCoder, EventParser } from "@coral-xyz/anchor";
 import idl from "../../idl/arclis.json";
+import { FUNDING_MEMO } from "./cranks";
 
 export interface IndexedEvent {
   /** `signature:index`, unique and stable. */
@@ -33,6 +34,9 @@ export interface IndexedEvent {
 }
 
 const SKIP = new Set(["FundingAccrued"]);
+const FETCH_CHUNK = 5;
+
+type Sig = { signature: string; err: unknown; memo?: string | null; blockTime?: number | null };
 const CAPACITY = 2_000;
 const seed = (s: string) => Buffer.from(new TextEncoder().encode(s));
 
@@ -110,34 +114,67 @@ export class EventIndexer {
     });
   }
 
-  /** One pass over every market. The first pass backfills recent history. */
-  async poll(backfill = 50): Promise<number> {
+  /**
+   * One pass over every market. The first pass backfills the last `backfill`
+   * signatures per market, paging back through history.
+   *
+   * Funding cranks carry a memo (`FUNDING_MEMO`), and signatures come back
+   * with their memo, so cranks are skipped without being fetched. That is what
+   * makes a deep backfill affordable: the market account is written every
+   * five minutes by funding, and only the transactions in between are read.
+   */
+  async poll(backfill = 300): Promise<number> {
     let added = 0;
     for (const { market } of this.markets) {
       const key = market.toBase58();
       const until = this.newest.get(key);
-      const sigs = await this.connection.getSignaturesForAddress(
-        market,
-        until ? { until, limit: 100 } : { limit: backfill },
-      );
+      const sigs: Sig[] = [];
+      if (until) {
+        sigs.push(...(await this.connection.getSignaturesForAddress(market, { until, limit: 1000 })));
+      } else {
+        let before: string | undefined;
+        while (sigs.length < backfill) {
+          const limit = Math.min(1000, backfill - sigs.length);
+          const page = await this.connection.getSignaturesForAddress(market, { before, limit });
+          sigs.push(...page);
+          if (page.length < limit) break;
+          before = page[page.length - 1].signature;
+        }
+      }
       if (sigs.length === 0) continue;
       this.newest.set(key, sigs[0].signature);
-      const fresh = sigs.filter((s) => !s.err && !this.seen.has(s.signature));
-      for (const s of fresh) this.seen.add(s.signature);
-      if (fresh.length === 0) continue;
-      const txs = await this.connection.getTransactions(
-        fresh.map((s) => s.signature),
-        { maxSupportedTransactionVersion: 0, commitment: "confirmed" },
+      const fresh = sigs.filter(
+        (s) =>
+          !s.err &&
+          !this.seen.has(s.signature) &&
+          !(s.memo ?? "").includes(FUNDING_MEMO),
       );
-      txs.forEach((tx, i) => {
-        const logs = tx?.meta?.logMessages;
-        if (!logs) return;
-        const sig = fresh[i].signature;
-        const ts = tx.blockTime ?? fresh[i].blockTime ?? Math.floor(Date.now() / 1000);
-        const evs = eventsFromLogs(this.parser, logs, sig, ts, (a) => this.symbols.get(a) ?? null);
-        this.events.push(...evs);
-        added += evs.length;
-      });
+      for (const s of fresh) this.seen.add(s.signature);
+      // A few at a time: single requests, not a JSON-RPC batch, which some
+      // providers' free tiers refuse, and slow enough to stay under their
+      // per-second limits.
+      for (let i = 0; i < fresh.length; i += FETCH_CHUNK) {
+        const chunk = fresh.slice(i, i + FETCH_CHUNK);
+        const txs = await Promise.all(
+          chunk.map((s) =>
+            this.connection
+              .getTransaction(s.signature, {
+                maxSupportedTransactionVersion: 0,
+                commitment: "confirmed",
+              })
+              .catch(() => null),
+          ),
+        );
+        txs.forEach((tx, j) => {
+          const logs = tx?.meta?.logMessages;
+          if (!logs) return;
+          const sig = chunk[j].signature;
+          const ts = tx.blockTime ?? chunk[j].blockTime ?? Math.floor(Date.now() / 1000);
+          const evs = eventsFromLogs(this.parser, logs, sig, ts, (a) => this.symbols.get(a) ?? null);
+          this.events.push(...evs);
+          added += evs.length;
+        });
+      }
     }
     if (added) {
       this.events.sort((a, b) => b.ts - a.ts);

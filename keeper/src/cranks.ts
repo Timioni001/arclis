@@ -23,6 +23,12 @@ import { send, type ChainConfig } from "./chain";
 
 const coder = new BorshCoder(idl as never);
 
+/** SPL Memo v2, and the label on every funding crank. */
+const MEMO_PROGRAM_ID = new PublicKey(
+  "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+);
+export const FUNDING_MEMO = "arclis:funding";
+
 const seed = (s: string) => Buffer.from(new TextEncoder().encode(s));
 
 function pda(programId: PublicKey, parts: (Buffer | Uint8Array)[]): PublicKey {
@@ -117,6 +123,13 @@ export async function crankFunding(
           ro(a.pool),
           ro(a.poolVault),
         ]),
+        // A label, so the event indexer can skip funding cranks from their
+        // signatures alone instead of fetching each one. See indexer.ts.
+        new TransactionInstruction({
+          programId: MEMO_PROGRAM_ID,
+          keys: [],
+          data: Buffer.from(FUNDING_MEMO),
+        }),
       ],
       `crank_funding ${symbol}`,
     );
