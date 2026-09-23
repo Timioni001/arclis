@@ -474,9 +474,8 @@ async function main() {
       market.toBuffer(),
     ]);
 
-    say(`${listing.symbol} at $${listing.price}`);
-
     if (!(await exists(conn, oracle))) {
+      say(`${listing.symbol} at $${listing.price}`);
       await program.methods
         .initializePriceOracle(symbol, dollars(listing.price))
         .accounts({
@@ -486,6 +485,16 @@ async function main() {
         })
         .rpc();
       await pace();
+    } else {
+      // An oracle that already exists belongs to the keeper, which has been
+      // publishing the live price into it. Re-seeding at the file's
+      // indicative figure would be a jump the program's 10% per-update cap
+      // refuses, and would be wrong even if it were allowed. So adopt the
+      // price already on chain: the republish below then refreshes its
+      // timestamp without moving it.
+      const current = await program.account.priceOracle.fetch(oracle);
+      listing.price = Number(current.price.toString()) / SCALE;
+      say(`${listing.symbol} exists at $${listing.price}, keeping the keeper's price`);
     }
 
     // Publish the price, which is what a keeper does and what the program
