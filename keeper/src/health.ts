@@ -24,6 +24,7 @@
 import { createServer } from "node:http";
 import type { PriceHistory } from "./price-history";
 import type { MarketData } from "./market-data";
+import type { FaucetHandler } from "./faucet";
 
 /** Consecutive failures tolerated before a task is called broken. */
 const FAILURE_BUDGET = 5;
@@ -161,6 +162,8 @@ export function startHealthServer(
     /** Previous close per symbol from the live price feed. */
     previousClose: Map<string, number>;
   },
+  /** The test-token faucet, once it is ready; null while off. */
+  faucet?: () => FaucetHandler | null,
 ): void {
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://keeper");
@@ -168,10 +171,37 @@ export function startHealthServer(
       res.writeHead(status, {
         "content-type": "application/json",
         "access-control-allow-origin": "*",
-        "cache-control": `public, max-age=${maxAge}`,
+        "cache-control": maxAge > 0 ? `public, max-age=${maxAge}` : "no-store",
       });
       res.end(JSON.stringify(body));
     };
+
+    // Test USDC for a devnet wallet. POST only, so a link preview or a
+    // crawler following a URL cannot spend a grant; with no body it is a
+    // simple CORS request and needs no preflight.
+    if (url.pathname === "/faucet") {
+      const handler = faucet?.() ?? null;
+      if (!handler) {
+        json(404, { error: "The faucet is not running on this deployment." }, 0);
+        return;
+      }
+      if (req.method !== "POST") {
+        json(405, { error: "Use POST." }, 0);
+        return;
+      }
+      // Fly terminates TLS and passes the caller's address in this header.
+      const ip =
+        String(req.headers["fly-client-ip"] ?? "") ||
+        req.socket.remoteAddress ||
+        "unknown";
+      handler(url.searchParams.get("address"), ip)
+        .then((r) => json(r.status, r.body, 0))
+        .catch((e) => {
+          log("error", "faucet failed", { message: String((e as Error)?.message ?? e) });
+          json(500, { error: "The faucet failed. Try again later." }, 0);
+        });
+      return;
+    }
 
     // Daily bars over the full listing history, or 15-minute bars over the
     // last month. Refreshed on a slow schedule, so long-cached.

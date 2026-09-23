@@ -50,7 +50,7 @@ Solana, Anchor, Meteora Dynamic Bonding Curve, ClawPump, Jupiter, TradingView Li
 
 ## Status
 
-Live on devnet with 15 markets and prices updating in real time. 600 automated tests across the program, keeper and interface. Not audited, and devnet only by design: mainnet requires Pyth price feeds, an audit and legal review.
+Live on devnet with 15 markets and prices updating in real time. More than 600 automated tests across the program, keeper and interface. Not audited, and devnet only by design: mainnet requires Pyth price feeds, an audit and legal review.
 
 ## Try it
 

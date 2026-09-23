@@ -48,6 +48,7 @@ import {
 import type { PriceFeed } from "./prices/types";
 import { isCovered, KNOWN_THROUGH } from "./calendar";
 import { newHealth, startHealthServer, redactRpc } from "./health";
+import { createFaucet, type FaucetHandler } from "./faucet";
 
 const env = process.env;
 
@@ -204,13 +205,35 @@ async function main() {
     clearInterval(intradayTimer);
   });
 
+  // The test-token faucet. Opt-in, and only where the keeper can mint.
+  let faucet: FaucetHandler | null = null;
+  if (env.FAUCET_ENABLED === "yes" && env.QUOTE_MINT) {
+    createFaucet(config, new PublicKey(env.QUOTE_MINT))
+      .then((f) => {
+        if (typeof f === "string") log("warn", "faucet not started", { reason: f });
+        else {
+          faucet = f;
+          log("info", "faucet ready");
+        }
+      })
+      .catch((e) =>
+        log("warn", "faucet not started", {
+          reason: String((e as Error)?.message ?? e).slice(0, 200),
+        }),
+      );
+  }
+
   const healthPort = Number(env.HEALTH_PORT ?? 0);
   if (healthPort > 0) {
-    startHealthServer(health, healthPort, abort.signal, log, history, {
-      data: marketData,
-      symbols: SYMBOLS,
-      previousClose: state.previousClose,
-    });
+    startHealthServer(
+      health,
+      healthPort,
+      abort.signal,
+      log,
+      history,
+      { data: marketData, symbols: SYMBOLS, previousClose: state.previousClose },
+      () => faucet,
+    );
   }
 
   const PRICE_INTERVAL_MS = Number(env.PRICE_INTERVAL_MS ?? 10_000);

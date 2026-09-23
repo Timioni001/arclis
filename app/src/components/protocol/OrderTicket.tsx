@@ -36,6 +36,7 @@ import { DATA_SOURCE, PROGRAM_ID, QUOTE_MINT, RPC_URL } from "../../lib/config";
 import { depositAndOpen } from "../../lib/protocol/tx/actions";
 import { TransactionError } from "../../lib/protocol/tx/send";
 import { usd } from "../../lib/format";
+import { FaucetButton } from "./FaucetButton";
 
 export interface OrderPreview {
   /** Signed base units: negative is a short. */
@@ -80,6 +81,7 @@ export function OrderTicket({
 }) {
   const [step, setStep] = useState<Step>({ kind: "idle" });
   const [balance, setBalance] = useState<bigint | null>(null);
+  const [reads, setReads] = useState(0);
 
   const live = DATA_SOURCE === "rpc";
   const address = session.address;
@@ -105,7 +107,7 @@ export function OrderTicket({
     return () => {
       cancelled = true;
     };
-  }, [live, address, step.kind === "done"]);
+  }, [live, address, step.kind === "done", reads]);
 
   // Collateral plus the taker fee, which is charged against collateral. Posting
   // only the collateral would open the position a fee's width under the
@@ -125,7 +127,16 @@ export function OrderTicket({
       return `Needs ${usd(deposit, { compact: false })} of test USDC; this wallet holds ${usd(balance, { compact: false })}.`;
     }
     return null;
-  }, [live, preview, poolLiquidity, symbol, address, session, balance, deposit]);
+  }, [
+    live,
+    preview,
+    poolLiquidity,
+    symbol,
+    address,
+    session,
+    balance,
+    deposit,
+  ]);
 
   async function confirm() {
     setStep({ kind: "sending" });
@@ -169,8 +180,8 @@ export function OrderTicket({
           Watch-only session
         </Button>
         <p className="metric-sub ticket-note">
-          This account can view positions but cannot sign. Sign in with a
-          wallet to trade.
+          This account can view positions but cannot sign. Sign in with a wallet
+          to trade.
         </p>
       </>
     );
@@ -205,8 +216,8 @@ export function OrderTicket({
           />
         </dl>
         <p className="metric-sub ticket-note">
-          Checked against the chain before your wallet is asked to sign.
-          Devnet test tokens only.
+          Checked against the chain before your wallet is asked to sign. Devnet
+          test tokens only.
         </p>
         <div className="ticket-actions">
           <Button
@@ -220,7 +231,9 @@ export function OrderTicket({
             onClick={confirm}
             disabled={step.kind === "sending"}
           >
-            {step.kind === "sending" ? "Waiting for wallet…" : "Confirm and sign"}
+            {step.kind === "sending"
+              ? "Waiting for wallet…"
+              : "Confirm and sign"}
           </Button>
         </div>
       </div>
@@ -246,6 +259,17 @@ export function OrderTicket({
         <p className="metric-sub ticket-note">
           Wallet balance {usd(balance, { compact: false })} test USDC
         </p>
+      )}
+      {balance !== null && balance < deposit && (
+        <FaucetButton
+          address={address}
+          onFunded={() => {
+            // The mint confirms before the faucet answers; re-read now, and
+            // once more shortly after in case the RPC node lags.
+            setReads((n) => n + 1);
+            setTimeout(() => setReads((n) => n + 1), 3000);
+          }}
+        />
       )}
     </>
   );

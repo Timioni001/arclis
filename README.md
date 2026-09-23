@@ -22,9 +22,10 @@ The deployment runs on Solana devnet. Prices are published by the keeper from
 Finnhub quotes. Orders that increase risk are accepted only while the
 underlying US market is open.
 
-The Registry requires no wallet. Trading requires a devnet wallet holding the
-deployment's test USDC, which the operator provides with
-`npm run seed -- --url <rpc> --airdrop <address>`.
+The Registry requires no wallet. Trading and providing liquidity require a
+devnet wallet holding the deployment's test USDC. The interface offers
+**Get test USDC** wherever a balance falls short: the keeper mints 10,000 test
+USDC per wallet per day, plus 0.05 devnet SOL for fees to a wallet with none.
 
 ## Components
 
@@ -175,6 +176,7 @@ markets start at the live price.
 | `KEEPER_KEYPAIR` | secret | Oracle authority and fee payer. |
 | `MARKETS` | env | Symbols to operate; must match `markets.json`. |
 | `PRICE_INTERVAL_MS` | env | Publish interval; 20 s keeps fifteen markets within Finnhub's free tier. |
+| `FAUCET_ENABLED` | env | `yes` serves test USDC at `POST /faucet?address=`. Limited per wallet, per client IP and per day; SOL is given only while the keeper holds more than 2 SOL. Starts only if the keeper key is the quote mint's authority. |
 
 The health endpoint reports each loop's liveness and redacts the RPC URL.
 
@@ -192,8 +194,8 @@ interface.
 |---|---|---|
 | Program unit tests | `cargo test --lib` | 129 passing |
 | Integration (local validator) | `npm run test:integration` | 25 passing |
-| Interface | `npm run app:test` | 226 passing |
-| Keeper, pipeline, ClawPump | `npm run keeper:test` | 183 passing |
+| Interface | `npm run app:test` | 233 passing |
+| Keeper, pipeline, ClawPump | `npm run keeper:test` | 191 passing |
 | Meteora DBC tooling | `npm run test:dbc` | 37 passing |
 
 CI runs formatting, Clippy, unit tests, the DBC suite, a lockfile audit
@@ -221,8 +223,8 @@ integration suite.
 - **Gap risk.** A large move across a market close can exceed the insurance
   fund before liquidation is possible. The loss waterfall makes the outcome
   ordered and visible; it does not prevent it.
-- **Test collateral.** Markets settle in a devnet test token; there is no
-  public faucet.
+- **Test collateral.** Markets settle in a devnet test token, issued by the
+  keeper's faucet.
 - **Two clusters.** ClawPump launches run on mainnet and the treasury program
   on devnet, so a launched agent cannot yet be hedged end to end.
 - **Indexing.** Corporate actions and the activity feed are emitted events and

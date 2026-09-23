@@ -2517,3 +2517,7 @@ input[type="range"]::-moz-range-thumb {
   min-width: 0;
   overflow: hidden;
 }
+
+.faucet {
+  margin-top: var(--space-2);
+}

@@ -416,6 +416,11 @@ export function App({ source }: { source: DataSource }) {
               lpPositions={(p) => source.lpPosition(p)}
               now={now}
               loading={loadingFirstRead}
+              session={session}
+              onSignIn={() =>
+                requestSignIn("Sign in with a wallet to provide liquidity.")
+              }
+              onDone={liveStatus.refresh}
             />
           )}
 

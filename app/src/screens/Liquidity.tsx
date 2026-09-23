@@ -13,7 +13,6 @@ import { useMemo, useState } from "react";
 import type { LpPosition, MarketView } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
 import {
-  Button,
   Card,
   CardLink,
   Chip,
@@ -31,6 +30,13 @@ import {
   StatTile,
 } from "../components/ui";
 import { ExposureBreakdown } from "../components/protocol";
+import { TxButton } from "../components/protocol/TxButton";
+import { FaucetButton } from "../components/protocol/FaucetButton";
+import type { ActionContext } from "../lib/protocol/tx/actions";
+
+/** The transaction layer, loaded on first use; see `TxButton`. */
+const tx = () => import("../lib/protocol/tx/actions");
+import { ANONYMOUS, type Session } from "../lib/auth/session";
 import { duration, usd, pctPlain } from "../lib/format";
 
 export function Liquidity({
@@ -38,12 +44,19 @@ export function Liquidity({
   lpPositions,
   now,
   loading = false,
+  session = ANONYMOUS,
+  onSignIn,
+  onDone,
 }: {
   markets: MarketView[];
   lpPositions: (poolAddress: string) => LpPosition | undefined;
   now: number;
   /** True until the first read lands; see `App`. */
   loading?: boolean;
+  session?: Session;
+  onSignIn?: () => void;
+  /** Re-read the chain after a transaction lands. */
+  onDone?: () => void;
 }) {
   const [selected, setSelected] = useState(markets[0]?.oracle.symbol ?? "");
   const [amount, setAmount] = useState("5000");
@@ -151,7 +164,10 @@ export function Liquidity({
     const amt = BigInt(
       Math.round((Number(amount) || 0) * Number(m.QUOTE_SCALE)),
     );
-    if (amt <= 0n || stats.nav <= 0n) return null;
+    if (amt <= 0n) return null;
+    // An empty pool mints shares one for one; any other pool prices them at
+    // NAV, and a pool with no positive NAV cannot price them at all.
+    if (view.pool.totalShares > 0n && stats.nav <= 0n) return null;
     const sharesOut = m.sharesForDeposit(amt, view.pool.totalShares, stats.nav);
     const newOwnership =
       Number(sharesOut) / Number(view.pool.totalShares + sharesOut);
@@ -160,6 +176,21 @@ export function Liquidity({
 
   const cooldownLeft =
     lp && lp.pendingShares > 0n ? lp.cooldownEndsTs - now : 0;
+
+  // The shares worth what this LP can take out now: all of them when nothing
+  // caps it, otherwise the free amount priced at NAV, never more than held.
+  const freeShares = (() => {
+    if (!lp || lp.shares === 0n || stats.yourFree === 0n) return 0n;
+    if (stats.yourFree >= stats.yourValue) return lp.shares;
+    const s = m.sharesForDeposit(
+      stats.yourFree,
+      view.pool.totalShares,
+      stats.nav,
+    );
+    return s < lp.shares ? s : lp.shares;
+  })();
+  const pending = lp !== undefined && lp.pendingShares > 0n;
+  const symbol = view.oracle.symbol;
 
   return (
     <div className="page">
@@ -171,17 +202,19 @@ export function Liquidity({
             fees, funding and trader losses for taking the other side.
           </p>
         </div>
-        <div className="seg" role="group" aria-label="Market">
-          {markets.slice(0, 4).map((mv) => (
-            <button
-              key={mv.oracle.symbol}
-              aria-pressed={mv.oracle.symbol === selected}
-              onClick={() => setSelected(mv.oracle.symbol)}
-            >
-              {mv.oracle.symbol}
-            </button>
-          ))}
-        </div>
+        <label className="registry-sort">
+          <span className="sr-only">Market</span>
+          <select
+            value={view.oracle.symbol}
+            onChange={(e) => setSelected(e.target.value)}
+          >
+            {markets.map((mv) => (
+              <option key={mv.oracle.symbol} value={mv.oracle.symbol}>
+                {mv.oracle.symbol} pool
+              </option>
+            ))}
+          </select>
+        </label>
       </header>
 
       <div className="grid grid-4">
@@ -308,14 +341,32 @@ export function Liquidity({
               />
             </dl>
             <div style={{ marginTop: "var(--space-4)" }}>
-              <Button
-                block
+              <TxButton
                 variant="primary"
-                disabled={view.pool.depositsPaused || !depositPreview}
+                symbol={symbol}
+                session={session}
+                onSignIn={onSignIn}
+                onDone={onDone}
+                blocker={
+                  view.pool.depositsPaused
+                    ? "Deposits to this pool are paused."
+                    : depositPreview
+                      ? null
+                      : "Enter an amount above zero."
+                }
+                doneText="Liquidity added."
+                action={async (ctx) =>
+                  (await tx()).depositLiquidity(ctx, depositPreview!.amt)
+                }
               >
-                Continue
-              </Button>
+                {`Deposit ${depositPreview ? usd(depositPreview.amt, { compact: false }) : ""}`.trim()}
+              </TxButton>
             </div>
+            {session.address && (
+              <div style={{ marginTop: "var(--space-2)" }}>
+                <FaucetButton address={session.address} onFunded={onDone} />
+              </div>
+            )}
             <div className="metric-sub" style={{ marginTop: "var(--space-2)" }}>
               Shares stay at risk until a withdrawal settles, including during
               the cooldown.
@@ -353,13 +404,64 @@ export function Liquidity({
               />
             </dl>
             <div style={{ marginTop: "var(--space-4)" }}>
-              <Button block disabled={stats.yourFree === 0n}>
-                {stats.yourFree === 0n
-                  ? "No free liquidity"
-                  : "Request withdrawal"}
-              </Button>
+              {pending ? (
+                <div className="ticket-actions">
+                  <div>
+                    <TxButton
+                      symbol={symbol}
+                      session={session}
+                      onDone={onDone}
+                      doneText="Withdrawal request cancelled."
+                      action={async (ctx: ActionContext) =>
+                        (await tx()).cancelWithdrawLiquidity(ctx)
+                      }
+                    >
+                      Cancel request
+                    </TxButton>
+                  </div>
+                  <div>
+                    <TxButton
+                      variant="primary"
+                      symbol={symbol}
+                      session={session}
+                      onDone={onDone}
+                      blocker={
+                        cooldownLeft > 0
+                          ? `Available in ${duration(cooldownLeft)}.`
+                          : null
+                      }
+                      doneText="Withdrawn to your wallet."
+                      action={async (ctx: ActionContext) =>
+                        (await tx()).withdrawLiquidity(ctx)
+                      }
+                    >
+                      Withdraw
+                    </TxButton>
+                  </div>
+                </div>
+              ) : (
+                <TxButton
+                  symbol={symbol}
+                  session={session}
+                  onSignIn={onSignIn}
+                  onDone={onDone}
+                  blocker={
+                    !lp || lp.shares === 0n
+                      ? "You have no liquidity in this pool."
+                      : freeShares === 0n
+                        ? "No free liquidity to withdraw."
+                        : null
+                  }
+                  doneText={`Requested. The cooldown is ${duration(view.pool.cooldownSecs)}.`}
+                  action={async (ctx) =>
+                    (await tx()).requestWithdrawLiquidity(ctx, freeShares)
+                  }
+                >
+                  Request withdrawal
+                </TxButton>
+              )}
             </div>
-            {stats.yourFree === 0n && (
+            {lp && lp.shares > 0n && stats.yourFree === 0n && (
               <div style={{ marginTop: "var(--space-3)" }}>
                 <Notice tone="warning" title="The open book needs this capital">
                   Utilisation is at the cap, so nothing can be withdrawn without

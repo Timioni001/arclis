@@ -48,6 +48,9 @@ kill_timeout = "30s"
   # is the real fix, and these can come back down once one is set.
   LIQUIDATOR_INTERVAL_MS = "30000"
   FUNDING_INTERVAL_MS = "300000"
+  # Test USDC for visitors' devnet wallets, at POST /faucet. The keeper checks
+  # at startup that its key is the quote mint's authority and stays off if not.
+  FAUCET_ENABLED = "yes"
   HEALTH_PORT = "8080"
 
 [http_service]

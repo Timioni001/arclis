@@ -16,7 +16,6 @@ import {
   Delta,
   Icon,
   Metric,
-  Notice,
   NumberField,
   Row,
   Segmented,
@@ -45,6 +44,8 @@ import {
 import type { CorporateAction } from "../lib/protocol/types";
 import type { Session } from "../lib/auth/session";
 import { OrderTicket } from "../components/protocol/OrderTicket";
+import { TxButton } from "../components/protocol/TxButton";
+import { closePosition, withdrawCollateral } from "../lib/protocol/tx/actions";
 import {
   mergePoints,
   useKeeperHistory,
@@ -88,7 +89,6 @@ function spanLabel(candles: Candle[]): string {
   if (hours < 48) return `${Math.round(hours)} hours`;
   return `${Math.round(hours / 24)} days`;
 }
-
 
 export function Trade({
   view,
@@ -403,8 +403,9 @@ export function Trade({
           )}
           {(source === "daily" || source === "intraday") && (
             <div className="card-note" style={{ marginTop: "var(--space-3)" }}>
-              History: {oracle.symbol} {source === "daily" ? "daily" : "intraday"}{" "}
-              bars from Yahoo Finance. Latest bar: the Arclis oracle, live.
+              History: {oracle.symbol}{" "}
+              {source === "daily" ? "daily" : "intraday"} bars from Yahoo
+              Finance. Latest bar: the Arclis oracle, live.
             </div>
           )}
         </Card>
@@ -513,10 +514,31 @@ export function Trade({
       <div className="split-2">
         <Card title="Your position">
           {!pos || pos.size === 0n || !derived ? (
-            <div className="empty">
-              <div className="empty-title">No open position</div>
-              <div>Your position in {oracle.symbol} will appear here.</div>
-            </div>
+            <>
+              <div className="empty">
+                <div className="empty-title">No open position</div>
+                <div>Your position in {oracle.symbol} will appear here.</div>
+              </div>
+              {pos && pos.size === 0n && pos.collateral > 0n && (
+                <div style={{ marginTop: "var(--space-4)" }}>
+                  <dl style={{ margin: "0 0 var(--space-3)" }}>
+                    <Row
+                      label="Idle collateral"
+                      value={usd(pos.collateral, { compact: false })}
+                    />
+                  </dl>
+                  <TxButton
+                    symbol={oracle.symbol}
+                    session={session}
+                    onDone={onFilled}
+                    doneText="Collateral returned to your wallet."
+                    action={(ctx) => withdrawCollateral(ctx, pos.collateral)}
+                  >
+                    Withdraw collateral
+                  </TxButton>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <div className="card-head">
@@ -533,12 +555,6 @@ export function Trade({
                     {fmtShares(pos.size, { unit: true })}
                   </span>
                 </div>
-                <Button
-                  disabled={!canReduce.allowed}
-                  title={canReduce.allowed ? undefined : canReduce.reason}
-                >
-                  Close position
-                </Button>
               </div>
 
               <div
@@ -582,13 +598,25 @@ export function Trade({
                 />
               </dl>
 
-              {!canReduce.allowed && (
-                <div style={{ marginTop: "var(--space-3)" }}>
-                  <Notice tone="danger" title="Closing unavailable">
-                    {canReduce.reason}
-                  </Notice>
-                </div>
-              )}
+              <div style={{ marginTop: "var(--space-4)" }}>
+                <TxButton
+                  symbol={oracle.symbol}
+                  session={session}
+                  onSignIn={onSignIn}
+                  onDone={onFilled}
+                  blocker={
+                    canReduce.allowed
+                      ? null
+                      : (canReduce.reason ?? "Closing is unavailable.")
+                  }
+                  doneText="Position closed. Your collateral and P&L stay in the position until withdrawn."
+                  action={(ctx) =>
+                    closePosition(ctx, pos.size < 0n ? -pos.size : pos.size)
+                  }
+                >
+                  Close position
+                </TxButton>
+              </div>
             </>
           )}
         </Card>
