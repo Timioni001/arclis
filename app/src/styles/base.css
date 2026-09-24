@@ -2521,3 +2521,33 @@ input[type="range"]::-moz-range-thumb {
 .faucet {
   margin-top: var(--space-2);
 }
+
+/* Account sheet: the two balances side by side, and the actions row. */
+.account-balances {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+}
+.account-balance {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.account-balance-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.account-balance-value {
+  font-size: 24px;
+  font-weight: 700;
+}
+.account-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+}

@@ -64,8 +64,10 @@ function decodeProgramError(
   const haystack = `${JSON.stringify(err ?? "")} ${logs.join(" ")}`;
 
   const hex = haystack.match(/custom program error: 0x([0-9a-fA-F]+)/);
-  if (hex) {
-    const code = parseInt(hex[1], 16);
+  // Some RPCs return the structured form with no log line to match.
+  const structured = haystack.match(/"Custom":(\d+)/);
+  if (hex || structured) {
+    const code = hex ? parseInt(hex[1], 16) : Number(structured![1]);
     return {
       code,
       name: errorName(code) ?? "UnknownProgramError",
@@ -83,7 +85,26 @@ function decodeProgramError(
     return { code: -1, name, message: msg ?? name };
   }
 
-  return null;
+  // Not a program error: a system or token-program failure. Name the common
+  // ones, and otherwise show what the RPC said, because "would fail" on its
+  // own sends people to a support channel with nothing to report.
+  const text = haystack.toLowerCase();
+  const known: [RegExp, string][] = [
+    [/insufficient lamports|insufficient funds for (rent|fee)/, "Your wallet has no devnet SOL to pay the network fee. Get some from the account panel or faucet.solana.com."],
+    [/insufficient funds/, "Your wallet does not hold enough test USDC for this deposit."],
+    // A fee payer with zero SOL does not exist on chain, so simulation reports
+    // AccountNotFound before any program runs. It is by far the commonest cause.
+    [/accountnotfound|could not find account/, "Your wallet has no devnet SOL to pay the network fee. Open your account (the address button, top right) to get some, or use faucet.solana.com."],
+    [/blockhashnotfound|blockhash not found/, "The network moved on before the check finished. Try again."],
+  ];
+  for (const [re, message] of known) {
+    if (re.test(text)) return { code: -1, name: "SystemError", message };
+  }
+  const tail = logs.filter((l) => /program log|error/i.test(l)).slice(-2).join(" ");
+  const detail = tail || (typeof err === "string" ? err : JSON.stringify(err));
+  return detail
+    ? { code: -1, name: "SimulationFailed", message: `This transaction would fail: ${detail.slice(0, 220)}` }
+    : null;
 }
 
 export interface SendContext {

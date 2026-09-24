@@ -81,6 +81,9 @@ export function OrderTicket({
 }) {
   const [step, setStep] = useState<Step>({ kind: "idle" });
   const [balance, setBalance] = useState<bigint | null>(null);
+  // Lamports for fees. A wallet with none does not exist on chain, and every
+  // transaction it signs fails simulation before any program runs.
+  const [lamports, setLamports] = useState<number | null>(null);
   const [reads, setReads] = useState(0);
 
   const live = DATA_SOURCE === "rpc";
@@ -104,6 +107,10 @@ export function OrderTicket({
       .getTokenAccountBalance(ata)
       .then((r) => !cancelled && setBalance(BigInt(r.value.amount)))
       .catch(() => !cancelled && setBalance(0n));
+    connection()
+      .getBalance(new PublicKey(address))
+      .then((l) => !cancelled && setLamports(l))
+      .catch(() => !cancelled && setLamports(null));
     return () => {
       cancelled = true;
     };
@@ -122,6 +129,9 @@ export function OrderTicket({
     }
     if (preview.notional > poolLiquidity) {
       return `This order is larger than the ${usd(poolLiquidity)} of liquidity backing ${symbol}.`;
+    }
+    if (address && canTrade(session) && lamports !== null && lamports < 5_000_000) {
+      return "This wallet has no devnet SOL for the network fee. Get some below, or from faucet.solana.com.";
     }
     if (address && canTrade(session) && balance !== null && balance < deposit) {
       return `Needs ${usd(deposit, { compact: false })} of test USDC; this wallet holds ${usd(balance, { compact: false })}.`;
@@ -260,7 +270,8 @@ export function OrderTicket({
           Wallet balance {usd(balance, { compact: false })} test USDC
         </p>
       )}
-      {balance !== null && balance < deposit && (
+      {((balance !== null && balance < deposit) ||
+        (lamports !== null && lamports < 5_000_000)) && (
         <FaucetButton
           address={address}
           onFunded={() => {

@@ -23,9 +23,9 @@ import { Treasury } from "./screens/Treasury";
 import { Legal } from "./screens/Legal";
 import { Portfolio } from "./screens/Portfolio";
 import { AuthSheet } from "./components/auth/AuthSheet";
+import { AccountSheet } from "./components/auth/AccountSheet";
 import { Splash } from "./components/motion/Splash";
 import { AmbientShader } from "./components/motion/AmbientShader";
-import { AddressDisplay } from "./components/ui/data";
 import { useLiveSource } from "./lib/protocol/useLiveSource";
 import { useMarketSummary, withSummary } from "./lib/protocol/keeperHistory";
 import {
@@ -33,7 +33,7 @@ import {
   toCorporateAction,
   useKeeperEvents,
 } from "./lib/protocol/keeperEvents";
-import { explorerAddress, REFRESH_INTERVAL_MS } from "./lib/config";
+import { REFRESH_INTERVAL_MS } from "./lib/config";
 import { ago } from "./lib/format";
 import { Icon } from "./components/ui";
 import { Footer } from "./components/ui/Footer";
@@ -92,6 +92,7 @@ export function App({ source }: { source: DataSource }) {
   const [authOpen, setAuthOpen] = useState(false);
   const [authReason, setAuthReason] = useState<string | undefined>(undefined);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   // A clock, so "12s ago" stays true without re-fetching anything.
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -347,16 +348,19 @@ export function App({ source }: { source: DataSource }) {
 
             {session.address ? (
               <div className="account-cluster">
-                <AddressDisplay
-                  address={session.address}
-                  label={
-                    <Icon
-                      name={session.method === "passkey" ? "shield" : "wallet"}
-                      size={14}
-                    />
-                  }
-                  explorerHref={explorerAddress(session.address)}
-                />
+                <button
+                  className="account-chip"
+                  onClick={() => setAccountOpen(true)}
+                  aria-label="Account: balances and test USDC"
+                >
+                  <Icon
+                    name={session.method === "passkey" ? "shield" : "wallet"}
+                    size={14}
+                  />
+                  <span className="num">
+                    {session.address.slice(0, 4)}…{session.address.slice(-4)}
+                  </span>
+                </button>
                 {session.capability === "watching" && (
                   <span className="account-locked">locked</span>
                 )}
@@ -458,6 +462,16 @@ export function App({ source }: { source: DataSource }) {
 
         <Footer onNavigate={(t) => selectTab(t as Tab)} />
 
+        <AccountSheet
+          open={accountOpen && Boolean(session.address)}
+          session={session}
+          onClose={() => setAccountOpen(false)}
+          onSignOut={() => {
+            setAccountOpen(false);
+            signOut();
+          }}
+          onFunded={liveStatus.refresh}
+        />
         <AuthSheet
           open={authOpen}
           reason={authReason}
