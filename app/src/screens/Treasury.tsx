@@ -23,6 +23,7 @@ import {
 } from "../components/ui";
 import { HedgeHealth } from "../components/protocol";
 import { AgentPairs } from "../components/clawpump/AgentPairs";
+import { TreasuryGuide } from "../components/protocol/TreasuryGuide";
 import { ago, shares as fmtShares, usd, pctPlain } from "../lib/format";
 
 export function Treasury({
@@ -51,6 +52,8 @@ export function Treasury({
           </p>
         </div>
       </header>
+
+      <TreasuryGuide />
 
       <AgentPairs />
 

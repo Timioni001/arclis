@@ -2606,3 +2606,110 @@ input[type="range"]::-moz-range-thumb {
   padding: 0 var(--space-4) var(--space-4);
   color: var(--text-secondary);
 }
+
+/* Treasuries guide: a plain collapsible card, same quiet style as the
+   Registry's data note. */
+.guide {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 20px);
+  background: var(--surface);
+  margin-bottom: var(--space-5);
+}
+.guide summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  list-style: none;
+}
+.guide summary::-webkit-details-marker {
+  display: none;
+}
+.guide-title {
+  font-weight: 700;
+  font-size: 16px;
+}
+.guide-toggle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lime-ink);
+  flex: none;
+}
+.guide-body {
+  padding: 0 var(--space-5) var(--space-5);
+  display: grid;
+  gap: var(--space-4);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.guide-lede {
+  color: var(--text-secondary);
+  max-width: 70ch;
+}
+.guide-steps {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+  gap: var(--space-3);
+}
+.guide-steps li {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--surface-sunken);
+}
+.guide-steps p {
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.guide-n {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 700;
+  background: var(--lime);
+  color: var(--on-lime);
+}
+.guide-example {
+  padding: var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--lime-wash);
+}
+.guide-h {
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: var(--space-2);
+}
+.guide-terms {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.guide-terms > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 160px) 1fr;
+  gap: var(--space-3);
+}
+.guide-terms dt {
+  font-weight: 600;
+}
+.guide-terms dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+.guide-note code {
+  overflow-wrap: anywhere;
+}
+.guide-muted {
+  color: var(--text-muted, var(--text-secondary));
+  font-size: 13px;
+}
