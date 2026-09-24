@@ -173,19 +173,26 @@ export function Registry({
       </section>
 
       {registry.kind === "modelled" ? (
-        <Notice
-          tone="warning"
-          title="The rows below are modelled, and here is exactly what that means"
-        >
-          The scoring, the session logic and the exit-depth maths are the real
-          pipeline, running on this page as written. What is modelled is their
-          input: each row is shaped from the issuer's own public disclosure
-          rather than read live, because live rows need mint state from{" "}
-          <code>getAccountInfo</code> and routed depth from Jupiter on a
-          schedule, and this deployment does not run that crawl yet. Every
-          issuer is linked, so any row can be checked against its source. Do not
-          trade on these numbers.
-        </Notice>
+        <details className="data-note">
+          <summary>
+            <span className="data-note-dot" aria-hidden />
+            <span className="data-note-label">Sample data</span>
+            <span className="data-note-text">
+              Inputs from issuer disclosures
+            </span>
+            <span className="data-note-more">Details</span>
+          </summary>
+          <p>
+            The scoring, the session logic and the exit-depth maths are the
+            real pipeline, running on this page as written. What is modelled is
+            their input: each row is shaped from the issuer's own public
+            disclosure rather than read live, because live rows need mint state
+            from <code>getAccountInfo</code> and routed depth from Jupiter on a
+            schedule, and this deployment does not run that crawl yet. Every
+            issuer is linked, so any row can be checked against its source. Do
+            not trade on these numbers.
+          </p>
+        </details>
       ) : failures.length > 0 ? (
         <Notice
           tone="warning"
