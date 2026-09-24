@@ -234,6 +234,11 @@ export interface ConnectedWallet {
     connection: import("@solana/web3.js").Connection,
     options?: import("@solana/web3.js").SendOptions,
   ): Promise<string>;
+  /**
+   * Sign without broadcasting, when the wallet supports it. Returns the signed
+   * wire bytes, or null if the wallet can only sign-and-send.
+   */
+  signOnly(tx: import("@solana/web3.js").Transaction): Promise<Uint8Array | null>;
 }
 
 /**
@@ -259,6 +264,27 @@ export function connectedWallet(): ConnectedWallet | null {
      * and some do extra work there (priority fees, retries) that is lost if
      * the app broadcasts instead. `signTransaction` is the fallback.
      */
+    /**
+     * Preferred path. The app, not the wallet, broadcasts: a wallet sends
+     * through its own RPC for whichever network it is set to, and a devnet
+     * transaction broadcast to mainnet never lands. It then expires with
+     * "block height exceeded" after the user has already approved it.
+     */
+    async signOnly(tx) {
+      const signFeature = wallet.features?.["solana:signTransaction"] as
+        SignTransactionFeature | undefined;
+      if (!signFeature?.signTransaction) return null;
+      const serialized = new Uint8Array(
+        tx.serialize({ requireAllSignatures: false, verifySignatures: false }),
+      );
+      const [result] = await signFeature.signTransaction({
+        account,
+        transaction: serialized,
+        chain,
+      });
+      return result.signedTransaction;
+    },
+
     async signAndSend(tx, connection, options) {
       const serialized = new Uint8Array(
         tx.serialize({ requireAllSignatures: false, verifySignatures: false }),

@@ -26,6 +26,7 @@ import {
 import { errorMessage, errorName } from "../rpc/decode";
 import type { Session } from "../../auth/session";
 import { connectedWallet } from "../../auth/wallet";
+import { encodeBase58 } from "../../auth/base58";
 
 export interface SendResult {
   signature: string;
@@ -143,12 +144,28 @@ export async function sendInstructions(
     await simulate(connection, tx);
   }
 
-  const signature = await signAndSend(ctx, tx);
-
-  const confirmation = await connection.confirmTransaction(
-    { signature, blockhash, lastValidBlockHeight },
-    "confirmed",
-  );
+  const signed = await signOnly(ctx, tx);
+  let signature: string;
+  let confirmation: { value: { err: unknown } };
+  if (signed) {
+    signature = encodeBase58(signed.subarray(1, 65));
+    confirmation = await broadcastUntilConfirmed(
+      connection,
+      signed,
+      signature,
+      lastValidBlockHeight,
+    );
+  } else {
+    signature = await signAndSend(ctx, tx);
+    confirmation = await connection
+      .confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed")
+      .catch(async (e) => {
+        // Expiry is not proof of failure: check before saying so.
+        const st = (await connection.getSignatureStatuses([signature])).value[0];
+        if (st && !st.err && st.confirmationStatus) return { value: { err: null } };
+        throw expired(e);
+      });
+  }
   if (confirmation.value.err) {
     const logs = await fetchLogs(connection, signature);
     const decoded = decodeProgramError(confirmation.value.err, logs);
@@ -182,6 +199,75 @@ export async function simulate(
     );
   }
   return logs;
+}
+
+/**
+ * Sign without broadcasting. Wallets that support it return signed bytes and
+ * the app sends them to its own cluster; passkey accounts always do.
+ */
+async function signOnly(ctx: SendContext, tx: Transaction): Promise<Uint8Array | null> {
+  const { session } = ctx;
+  if (session.method === "wallet") {
+    const wallet = connectedWallet();
+    if (!wallet) {
+      throw new TransactionError(
+        "The wallet connection was lost. Reconnect and try again.",
+      );
+    }
+    return wallet.signOnly(tx);
+  }
+  if (session.method === "passkey" && session.sign) {
+    const signature = await session.sign(new Uint8Array(tx.serializeMessage()));
+    tx.addSignature(new PublicKey(session.address!), Buffer.from(signature));
+    if (!tx.verifySignatures()) {
+      throw new TransactionError(
+        "The signature did not verify. This is a bug, not a rejected approval.",
+      );
+    }
+    return new Uint8Array(tx.serialize());
+  }
+  return null;
+}
+
+/**
+ * Send the signed bytes, and keep re-sending every two seconds until the
+ * cluster confirms or the blockhash expires. Public devnet drops transactions
+ * under load; a single send and a long wait is what produced "block height
+ * exceeded" on a transaction that would have landed on a second try.
+ */
+export async function broadcastUntilConfirmed(
+  connection: Connection,
+  raw: Uint8Array,
+  signature: string,
+  lastValidBlockHeight: number,
+): Promise<{ value: { err: unknown } }> {
+  const send = () =>
+    connection
+      .sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 })
+      .catch(() => undefined);
+  await send();
+  for (;;) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const status = (await connection.getSignatureStatuses([signature])).value[0];
+    if (status?.err) return { value: { err: status.err } };
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+      return { value: { err: null } };
+    }
+    const height = await connection.getBlockHeight("confirmed").catch(() => 0);
+    if (height > lastValidBlockHeight) {
+      const last = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+      if (last && !last.err) return { value: { err: null } };
+      throw expired();
+    }
+    await send();
+  }
+}
+
+function expired(cause?: unknown): TransactionError {
+  void cause;
+  return new TransactionError(
+    "The network did not confirm this in time, so nothing happened and nothing was charged. Try again.",
+  );
 }
 
 async function signAndSend(ctx: SendContext, tx: Transaction): Promise<string> {

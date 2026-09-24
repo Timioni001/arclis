@@ -2464,6 +2464,8 @@ input[type="range"]::-moz-range-thumb {
 
 .ticket-note {
   margin-top: var(--space-2);
+  /* Signatures and RPC messages are long unbroken strings. */
+  overflow-wrap: anywhere;
 }
 
 .ticket-review dl {

@@ -25,3 +25,39 @@ describe("simulate", () => {
     ).rejects.toThrow(/would fail: .*something odd/);
   });
 });
+
+import { vi } from "vitest";
+import { broadcastUntilConfirmed } from "./send";
+
+describe("broadcastUntilConfirmed", () => {
+  it("re-sends until the cluster confirms", async () => {
+    vi.useFakeTimers();
+    let polls = 0;
+    const connection = {
+      sendRawTransaction: vi.fn(async () => "sig"),
+      getSignatureStatuses: vi.fn(async () => ({
+        value: [++polls < 3 ? null : { err: null, confirmationStatus: "confirmed" }],
+      })),
+      getBlockHeight: vi.fn(async () => 10),
+    };
+    const done = broadcastUntilConfirmed(connection as never, new Uint8Array(1), "sig", 100);
+    await vi.runAllTimersAsync();
+    await expect(done).resolves.toEqual({ value: { err: null } });
+    expect(connection.sendRawTransaction.mock.calls.length).toBeGreaterThan(1);
+    vi.useRealTimers();
+  });
+
+  it("says plainly that nothing happened when the blockhash expires", async () => {
+    vi.useFakeTimers();
+    const connection = {
+      sendRawTransaction: vi.fn(async () => "sig"),
+      getSignatureStatuses: vi.fn(async () => ({ value: [null] })),
+      getBlockHeight: vi.fn(async () => 200),
+    };
+    const done = broadcastUntilConfirmed(connection as never, new Uint8Array(1), "sig", 100);
+    const check = expect(done).rejects.toThrow(/nothing was charged/);
+    await vi.runAllTimersAsync();
+    await check;
+    vi.useRealTimers();
+  });
+});
