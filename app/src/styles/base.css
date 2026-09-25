@@ -3417,3 +3417,17 @@ button.market-row:focus-visible {
     transition: none;
   }
 }
+
+/* The market list's "Show more" footer. */
+.market-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2) var(--space-2);
+  border-top: 1px solid var(--border);
+}
+.market-more-count {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}

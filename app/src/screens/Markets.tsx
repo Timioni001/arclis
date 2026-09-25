@@ -6,7 +6,7 @@
  * decides what you can actually do. A generic token dashboard would put volume
  * in that slot.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MarketView } from "../lib/protocol/types";
 import { roundTheClock } from "../lib/markets";
 import { useNews } from "../lib/news";
@@ -447,6 +447,28 @@ function fundingRate(mv: MarketView): bigint {
   );
 }
 
+/**
+ * Rows per page of the market list: eight on a phone, fifteen elsewhere.
+ *
+ * The list grows with every market listed, and a phone scrolling through all
+ * of them to reach the news below was already too long at thirty-five.
+ * Search, the filters and "Show more" reach the rest.
+ */
+const PHONE = "(max-width: 640px)";
+function usePageSize(): number {
+  const query = () =>
+    typeof window !== "undefined" && window.matchMedia?.(PHONE).matches;
+  const [phone, setPhone] = useState(query);
+  useEffect(() => {
+    const mq = window.matchMedia?.(PHONE);
+    if (!mq) return;
+    const on = () => setPhone(mq.matches);
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return phone ? 8 : 15;
+}
+
 const FILTERS = ["All", "Open now", "24/7"] as const;
 type Filter = (typeof FILTERS)[number];
 type SortKey = "move" | "gainers" | "losers" | "oi" | "az";
@@ -469,6 +491,11 @@ function MarketList({
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("All");
   const [sort, setSort] = useState<SortKey>("move");
+  const page = usePageSize();
+  const [shown, setShown] = useState(page);
+
+  // A new search, filter or sort starts from the top of the list again.
+  useEffect(() => setShown(page), [page, query, filter, sort]);
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -566,7 +593,7 @@ function MarketList({
             No market matches &ldquo;{query}&rdquo;.
           </p>
         )}
-        {rows.map((mv) => {
+        {rows.slice(0, shown).map((mv) => {
           const rate = fundingRate(mv);
           return (
             <button
@@ -607,6 +634,33 @@ function MarketList({
             </button>
           );
         })}
+        {rows.length > page && (
+          <div className="market-more">
+            <span className="market-more-count">
+              Showing {Math.min(shown, rows.length)} of {rows.length}
+            </span>
+            {shown < rows.length ? (
+              <button
+                className="btn btn-sm"
+                onClick={() => setShown((n) => n + page)}
+              >
+                Show {Math.min(page, rows.length - shown)} more
+              </button>
+            ) : (
+              <button
+                className="btn btn-sm"
+                onClick={() => {
+                  setShown(page);
+                  document
+                    .getElementById("market-grid")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                Show less
+              </button>
+            )}
+          </div>
+        )}
       </Card>
     </section>
   );
