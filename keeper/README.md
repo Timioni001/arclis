@@ -47,7 +47,8 @@ fly launch --no-deploy --copy-config --name arclis-keeper
 # 2. Secrets. Never in fly.toml, never in the repo.
 #    loadKeypair accepts the CLI's JSON array directly, so this is a cat.
 fly secrets set KEEPER_KEYPAIR="$(cat ~/.config/solana/id.json)"
-fly secrets set FINNHUB_API_KEY=<your key>     # or POLYGON_API_KEY
+fly secrets set ALPACA_KEY_ID=<key id> ALPACA_SECRET_KEY=<secret>   # every market, one request
+fly secrets set FINNHUB_API_KEY=<your key>     # fills gaps; alone, ~18 markets
 
 # 3. Ship it. `--ha=false` is not optional: Fly otherwise creates a second
 #    machine for zero-downtime deploys, and two keepers on one key publish
@@ -130,7 +131,9 @@ back.
 | `QUOTE_MINT` | unset | liquidator is off without it |
 | `MARKETS` | `AAPL,NVDA,MSFT,TSLA,GOOGL` | |
 | `KEEPER_KEYPAIR` | **required** | path, JSON array, or base64 |
-| `FINNHUB_API_KEY` / `POLYGON_API_KEY` / `ALPACA_*` | unset | else simulated |
+| `POLYGON_API_KEY` / `ALPACA_KEY_ID`+`ALPACA_SECRET_KEY` / `FINNHUB_API_KEY` | unset | first one set wins, else simulated; Finnhub also fills Alpaca's gaps |
+| `ALPACA_DATA_FEED` | `iex` | `sip` needs a paid Alpaca plan |
+| `JUPITER_API_KEY` | unset | 24/7 markets' off-hours quotes; keyless endpoint without it |
 | `HEALTH_PORT` | off | no socket unless set |
 | `PRICE_INTERVAL_MS` | `10000` | |
 | `FUNDING_INTERVAL_MS` | `60000` | |

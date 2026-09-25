@@ -129,12 +129,27 @@ export function finnhubFeed(apiKey: string): PriceFeed {
 // Alpaca
 // ---------------------------------------------------------------------------
 
-export function alpacaFeed(keyId: string, secret: string): PriceFeed {
+/**
+ * Alpaca's latest-trade endpoint prices every symbol in one request, which is
+ * what lets the market count grow past Finnhub's sixty calls a minute.
+ *
+ * `feed=iex` is what a free Alpaca account may read in real time: trades on
+ * the IEX exchange, a slice of consolidated volume but real prints with real
+ * timestamps. A paid account can pass `sip` for the full tape.
+ */
+export function alpacaFeed(
+  keyId: string,
+  secret: string,
+  dataFeed: "iex" | "sip" = "iex",
+  fetchJson: (url: string, headers: Record<string, string>) => Promise<unknown> = getJson,
+): PriceFeed {
   return {
     name: "alpaca",
     async quote(symbols) {
-      const payload = (await getJson(
-        `https://data.alpaca.markets/v2/stocks/trades/latest?symbols=${symbols.join(",")}`,
+      const payload = (await fetchJson(
+        `https://data.alpaca.markets/v2/stocks/trades/latest?symbols=${symbols
+          .map(encodeURIComponent)
+          .join(",")}&feed=${dataFeed}`,
         { "APCA-API-KEY-ID": keyId, "APCA-API-SECRET-KEY": secret },
       )) as { trades?: Record<string, any> };
 

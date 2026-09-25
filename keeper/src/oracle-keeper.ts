@@ -130,11 +130,26 @@ export interface KeeperState {
   printedAt: Map<string, number>;
   /** Previous session close per symbol, in dollars, as the feed reports it. */
   previousClose: Map<string, number>;
+  /** Last time a 24/7 market had a usable quote, unix seconds. */
+  lastQuoteAt: Map<string, number>;
 }
 
 export function newKeeperState(): KeeperState {
-  return { sessions: new Map(), printedAt: new Map(), previousClose: new Map() };
+  return {
+    sessions: new Map(),
+    printedAt: new Map(),
+    previousClose: new Map(),
+    lastQuoteAt: new Map(),
+  };
 }
+
+/**
+ * How long a 24/7 market may go without a usable quote before the keeper
+ * closes it. Shorter than the program's sixty-second staleness budget, so the
+ * market is `Closed`, and exits work against the last price, before an open
+ * session would start refusing everything as stale.
+ */
+export const NO_PRICE_GRACE_SECS = 45;
 
 export interface KeeperOptions {
   config: ChainConfig;
@@ -148,6 +163,11 @@ export interface KeeperOptions {
    * which. See `cappedStep`.
    */
   catchUp?: boolean;
+  /**
+   * 24/7 markets: open whenever they can be priced, whatever the exchange
+   * calendar says. See `round-the-clock.ts`.
+   */
+  alwaysOpen?: Set<string>;
   /** Overridable for tests. */
   now?: () => number;
 }
@@ -215,10 +235,28 @@ export async function keeperTick(options: KeeperOptions): Promise<{
     const oracle = oraclePda(config.programId, symbol);
     const quote = bySymbol.get(symbol.toUpperCase());
 
+    const roundTheClock = options.alwaysOpen?.has(symbol.toUpperCase()) ?? false;
+
     // A halt from the exchange outranks the clock. This is the one way
     // `Halted` ever reaches the chain, and it is data, not a timer.
-    const target: MarketSession = quote?.halted ? "Halted" : clockSession;
-    const opening = target === "Open" && state.sessions.get(symbol) !== "Open";
+    //
+    // A 24/7 market is open while its price on chain is fresh and closed once
+    // nothing has landed for the grace period, whether the quote was missing
+    // or the program refused it. A single missed tick changes nothing.
+    const roundTheClockTarget = (): MarketSession =>
+      now - (state.lastQuoteAt.get(symbol) ?? 0) <= NO_PRICE_GRACE_SECS
+        ? "Open"
+        : "Closed";
+    let target: MarketSession = quote?.halted
+      ? "Halted"
+      : roundTheClock
+        ? roundTheClockTarget()
+        : clockSession;
+    // A 24/7 market reopens on a fresh price, so it publishes the price
+    // first: the program refuses to open against a mark older than sixty
+    // seconds, and its last mark is from before the gap.
+    const opening =
+      !roundTheClock && target === "Open" && state.sessions.get(symbol) !== "Open";
 
     const writeSession = async () => {
       if (state.sessions.get(symbol) === target) return;
@@ -286,6 +324,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
 
       if (outcome.ok) {
         state.printedAt.set(symbol, quote.printedAt);
+        state.lastQuoteAt.set(symbol, now);
         published.push(symbol);
         prints.push({ symbol, price: quote.price });
       } else if (outcome.error === "OracleDeviationTooLarge") {
@@ -354,6 +393,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
             // step short, forever.
             if (stepped.ok && step === quote.price) {
               state.printedAt.set(symbol, quote.printedAt);
+              state.lastQuoteAt.set(symbol, now);
               published.push(symbol);
               prints.push({ symbol, price: quote.price });
             } else {
@@ -368,6 +408,7 @@ export async function keeperTick(options: KeeperOptions): Promise<{
 
     // Closing (and every other transition): price first, session after, so the
     // final print is the one standing when the session flips.
+    if (roundTheClock && !quote?.halted) target = roundTheClockTarget();
     if (!opening) await writeSession();
   }
 

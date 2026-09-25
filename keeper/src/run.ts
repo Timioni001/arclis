@@ -46,6 +46,13 @@ import {
   simulatedFeed,
 } from "./prices/providers";
 import type { PriceFeed } from "./prices/types";
+import { withFallback } from "./prices/fallback";
+import { jupiterXStockFeed } from "./prices/jupiter";
+import {
+  ROUND_THE_CLOCK,
+  canonicalSymbol,
+  roundTheClockFeed,
+} from "./round-the-clock";
 import { isCovered, KNOWN_THROUGH } from "./calendar";
 import { newHealth, startHealthServer, redactRpc } from "./health";
 import { createFaucet, type FaucetHandler } from "./faucet";
@@ -59,10 +66,22 @@ const env = process.env;
 const RPC_URL =
   env.RPC_URL ??
   (env.FLY_APP_NAME ? "https://api.devnet.solana.com" : "http://127.0.0.1:8899");
+// Listed tickers are upper case; a 24/7 market keeps its xStock spelling
+// (`NVDAx`), whatever case the environment variable used.
 const SYMBOLS = (env.MARKETS ?? "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ")
   .split(",")
-  .map((s) => s.trim().toUpperCase())
-  .filter(Boolean);
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map(
+    (s) =>
+      canonicalSymbol(s, ROUND_THE_CLOCK.map((m) => m.symbol)) ?? s.toUpperCase(),
+  );
+
+/** The 24/7 markets this keeper serves. */
+const TWINS = ROUND_THE_CLOCK.filter((m) => SYMBOLS.includes(m.symbol));
+const ALWAYS_OPEN = new Set(TWINS.map((m) => m.symbol.toUpperCase()));
+const underlyingOf = (symbol: string) =>
+  TWINS.find((m) => m.symbol === symbol)?.underlying ?? symbol;
 
 /** Seed prices for the simulated feed, so a local run has plausible levels. */
 const SIMULATED_SEEDS: Record<string, number> = {
@@ -74,10 +93,63 @@ const SIMULATED_SEEDS: Record<string, number> = {
 };
 
 function pickFeed(log: ChainConfig["log"]): PriceFeed {
+  const stocks = pickStockFeed(log);
+  if (TWINS.length === 0) return stocks;
+  return roundTheClockFeed(
+    stocks,
+    jupiterXStockFeed(TWINS, { apiKey: env.JUPITER_API_KEY }),
+    TWINS,
+  );
+}
+
+/** Finnhub symbols per pass that fit in its sixty calls a minute, with room. */
+function finnhubPerPass(): number {
+  const passesPerMinute = 60_000 / Number(env.PRICE_INTERVAL_MS ?? 10_000);
+  return Math.max(1, Math.floor(55 / passesPerMinute));
+}
+
+function pickStockFeed(log: ChainConfig["log"]): PriceFeed {
   if (env.POLYGON_API_KEY) return polygonFeed(env.POLYGON_API_KEY);
-  if (env.FINNHUB_API_KEY) return finnhubFeed(env.FINNHUB_API_KEY);
+  /*
+   * Alpaca prices every market in one request, so it is preferred over
+   * Finnhub's one call per symbol once there are more markets than Finnhub's
+   * sixty calls a minute can keep fresh. With a Finnhub key as well, Finnhub
+   * prices only what Alpaca could not, capped to what fits in its rate limit,
+   * and the log names every symbol it fills.
+   */
   if (env.ALPACA_KEY_ID && env.ALPACA_SECRET_KEY) {
-    return alpacaFeed(env.ALPACA_KEY_ID, env.ALPACA_SECRET_KEY);
+    const alpaca = alpacaFeed(
+      env.ALPACA_KEY_ID,
+      env.ALPACA_SECRET_KEY,
+      env.ALPACA_DATA_FEED === "sip" ? "sip" : "iex",
+    );
+    if (!env.FINNHUB_API_KEY) return alpaca;
+    return withFallback(
+      alpaca,
+      finnhubFeed(env.FINNHUB_API_KEY),
+      (level, message, extra) => log(level, message, extra),
+      finnhubPerPass(),
+    );
+  }
+  if (env.FINNHUB_API_KEY) {
+    /*
+     * Finnhub alone: one call per symbol, sixty a minute. Asking for more
+     * than fits gets a scatter of 429s across every market, so it prices the
+     * first markets in listing order that fit and says which are left out.
+     */
+    const cap = finnhubPerPass();
+    if (SYMBOLS.length > cap) {
+      log("warn", "more markets than Finnhub's free tier can keep fresh", {
+        priced: SYMBOLS.slice(0, cap).join(","),
+        unpriced: SYMBOLS.slice(cap).join(","),
+        hint: "set ALPACA_KEY_ID and ALPACA_SECRET_KEY to price every market in one request",
+      });
+    }
+    const finnhub = finnhubFeed(env.FINNHUB_API_KEY);
+    return {
+      name: finnhub.name,
+      quote: (symbols) => finnhub.quote(symbols.slice(0, cap)),
+    };
   }
 
   const local = /127\.0\.0\.1|localhost/.test(RPC_URL);
@@ -189,8 +261,10 @@ async function main() {
    * minutes: neither changes faster in a way the chart can use, because the
    * live end of every chart comes from the oracle.
    */
-  const marketData = new MarketData(fetch, (level, message, extra) =>
-    log(level, message, extra),
+  const marketData = new MarketData(
+    fetch,
+    (level, message, extra) => log(level, message, extra),
+    underlyingOf,
   );
   const refreshMarketData = async (which: "1d" | "15m") => {
     if (!abort.signal.aborted) await marketData.refresh(SYMBOLS, which);
@@ -285,6 +359,7 @@ async function main() {
           // Opt-in, because the rejection it responds to is ambiguous. See
           // `cappedStep` in oracle-keeper.ts.
           catchUp: env.ORACLE_CATCHUP === "yes",
+          alwaysOpen: ALWAYS_OPEN,
         });
         health.published(result.published);
         for (const { symbol, price } of result.prints) {
@@ -395,8 +470,18 @@ async function main() {
           await corporateTick({
             config,
             feed: corporate,
-            symbols: SYMBOLS,
+            // Listed tickers only; each action is carried to its 24/7 twins.
+            symbols: SYMBOLS.filter((s) => !ALWAYS_OPEN.has(s.toUpperCase())),
             applied,
+            roundTheClock: {
+              twins: new Map(
+                TWINS.map((m) => [
+                  m.underlying,
+                  TWINS.filter((t) => t.underlying === m.underlying).map((t) => t.symbol),
+                ]),
+              ),
+              sessions: state.sessions,
+            },
           });
         },
         abort.signal,

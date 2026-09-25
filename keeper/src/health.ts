@@ -21,6 +21,7 @@
  * never decides the verdict.
  */
 
+import { canonicalSymbol } from "./round-the-clock";
 import { createServer } from "node:http";
 import type { PriceHistory } from "./price-history";
 import type { MarketData } from "./market-data";
@@ -167,6 +168,10 @@ export function startHealthServer(
   faucet?: () => FaucetHandler | null,
   events?: EventIndexer,
 ): void {
+  // A symbol from a URL, in the spelling the keeper uses (`nvdax` is `NVDAx`).
+  const resolve = (symbol: string) =>
+    market ? canonicalSymbol(symbol, market.symbols) : null;
+
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://keeper");
     const json = (status: number, body: unknown, maxAge: number) => {
@@ -208,7 +213,8 @@ export function startHealthServer(
     // Indexed program events, newest first: the activity feed and the
     // corporate-action log. `kinds` is a comma-separated filter.
     if (url.pathname === "/events" && events) {
-      const symbol = url.searchParams.get("symbol")?.toUpperCase() || null;
+      const raw = url.searchParams.get("symbol");
+      const symbol = raw ? (resolve(raw) ?? raw.toUpperCase()) : null;
       const kinds = url.searchParams.get("kinds")?.split(",").filter(Boolean);
       const limit = Number(url.searchParams.get("limit") ?? 50) || 50;
       json(200, { events: events.list({ symbol, kinds, limit }) }, 15);
@@ -218,7 +224,7 @@ export function startHealthServer(
     // Daily bars over the full listing history, or 15-minute bars over the
     // last month. Refreshed on a slow schedule, so long-cached.
     if (url.pathname === "/candles" && market) {
-      const symbol = (url.searchParams.get("symbol") ?? "").toUpperCase();
+      const symbol = resolve(url.searchParams.get("symbol") ?? "") ?? "";
       const interval = url.searchParams.get("interval") === "15m" ? "15m" : "1d";
       if (!market.symbols.includes(symbol)) {
         json(404, { error: "unknown symbol" }, 60);
@@ -239,11 +245,12 @@ export function startHealthServer(
     // browser on another origin, so it carries CORS headers; short-cached,
     // because every visitor on a market asks for the same document.
     if (url.pathname === "/history" && history) {
-      const symbol = (url.searchParams.get("symbol") ?? "").toUpperCase();
+      const raw = url.searchParams.get("symbol") ?? "";
+      const symbol = resolve(raw) ?? raw.toUpperCase();
       const limit = Number(url.searchParams.get("limit") ?? 0) || undefined;
       // Any well-formed ticker gets a 200, empty until its backfill lands: a
       // 404 there would read as "no such market" to the interface.
-      const known = /^[A-Z.]{1,12}$/.test(symbol);
+      const known = /^[A-Za-z.]{1,12}$/.test(symbol);
       res.writeHead(known ? 200 : 404, {
         "content-type": "application/json",
         "access-control-allow-origin": "*",

@@ -303,7 +303,7 @@ export function Markets({
                     <div className="card-note">{oracle.name}</div>
                   </div>
                 </div>
-                <SessionBadge session={oracle.session} />
+                <SessionBadge session={oracle.session} symbol={oracle.symbol} />
               </div>
 
               <div

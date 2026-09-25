@@ -64,7 +64,14 @@ const SCALE = 1_000_000; // price, quote and base all share 1e6
  */
 const MARKET_FILE = JSON.parse(
   fs.readFileSync(path.join(ROOT, "app", "src", "lib", "markets.json"), "utf8"),
-) as { markets: { symbol: string; indicativePrice: number }[] };
+) as {
+  markets: {
+    symbol: string;
+    indicativePrice: number;
+    schedule?: string;
+    underlying?: string;
+  }[];
+};
 
 const OPEN_POSITIONS: Record<string, number> = { AAPL: 50, TSLA: -20 };
 
@@ -72,6 +79,9 @@ const LISTINGS = MARKET_FILE.markets.map((m) => ({
   symbol: m.symbol,
   price: m.indicativePrice,
   long: OPEN_POSITIONS[m.symbol] ?? 0,
+  /** A 24/7 market is quoted, and seeded, at its listed underlying's price. */
+  quoteSymbol: m.underlying ?? m.symbol,
+  roundTheClock: m.schedule === "24/7",
 }));
 
 /** Replace indicative prices with live quotes, where Finnhub has one. */
@@ -79,7 +89,7 @@ async function useLivePrices(apiKey: string) {
   for (const listing of LISTINGS) {
     try {
       const res = await fetch(
-        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(listing.symbol)}&token=${apiKey}`,
+        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(listing.quoteSymbol)}&token=${apiKey}`,
       );
       const q = (await res.json()) as { c?: number };
       if (q.c && q.c > 0) listing.price = Math.round(q.c * 100) / 100;
@@ -474,6 +484,25 @@ async function main() {
       market.toBuffer(),
     ]);
 
+    /*
+     * A market that is already fully listed is left alone. Re-running this
+     * against a live deployment used to republish every price and force every
+     * session open behind the keeper's back, and the keeper, which only
+     * writes a session it believes has changed, would then leave a closed
+     * market open. Adding markets is the reason to re-run; touching the
+     * existing ones is not.
+     */
+    if (
+      (await exists(conn, oracle)) &&
+      (await exists(conn, market)) &&
+      (await exists(conn, pool)) &&
+      (await exists(conn, lpPosition))
+    ) {
+      say(`${listing.symbol} already listed`);
+      skip("market, pool and liquidity exist");
+      continue;
+    }
+
     if (!(await exists(conn, oracle))) {
       say(`${listing.symbol} at $${listing.price}`);
       await program.methods
@@ -532,8 +561,10 @@ async function main() {
     if (!(await exists(conn, market))) {
       await program.methods
         .createMarket({
-          maxLeverage: 10,
-          maintenanceMarginBps: 500,
+          // A 24/7 market prices off a thinner book overnight, so it carries
+          // half the leverage and twice the maintenance margin.
+          maxLeverage: listing.roundTheClock ? 5 : 10,
+          maintenanceMarginBps: listing.roundTheClock ? 1_000 : 500,
           takerFeeBps: 10,
           liquidationPenaltyBps: 500,
           fundingIntervalSecs: new BN(3600),

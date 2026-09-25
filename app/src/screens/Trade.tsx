@@ -6,6 +6,7 @@
  * reaches a disabled button, and that every number in the panel (collateral,
  * liquidation, fee) is computed by the same maths the program runs.
  */
+import { roundTheClock } from "../lib/markets";
 import { useMemo, useState } from "react";
 import type { MarketView, Position } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
@@ -25,6 +26,7 @@ import {
   CorporateActionCard,
   MarginHealth,
   OracleStatus,
+  ROUND_THE_CLOCK_CLOSED,
   SessionBadge,
   SessionNotice,
 } from "../components/protocol";
@@ -265,7 +267,11 @@ export function Trade({
           : null,
     });
   }, [view, tf, keeperPoints, bars, oracle.price, oracle.lastUpdateTs]);
-  const blockedReason = !canIncrease.allowed ? canIncrease.reason : null;
+  const blockedReason = !canIncrease.allowed
+    ? roundTheClock(oracle.symbol) && oracle.session === "Closed"
+      ? ROUND_THE_CLOCK_CLOSED
+      : canIncrease.reason
+    : null;
 
   return (
     <div className="page">
@@ -294,7 +300,7 @@ export function Trade({
               }}
             >
               <h1 className="page-title">{oracle.symbol}</h1>
-              <SessionBadge session={oracle.session} />
+              <SessionBadge session={oracle.session} symbol={oracle.symbol} />
             </div>
             <div className="page-sub">{oracle.name}</div>
             <div

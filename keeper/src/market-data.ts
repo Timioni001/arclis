@@ -179,6 +179,12 @@ export class MarketData {
   constructor(
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly log: (level: "info" | "warn", msg: string, extra?: unknown) => void = () => {},
+    /**
+     * The listed ticker to fetch for a market. A 24/7 market charts its
+     * underlying's history: before this deployment existed, the xStock and
+     * the stock were the same price.
+     */
+    private readonly sourceSymbol: (symbol: string) => string = (s) => s,
   ) {}
 
   /**
@@ -209,7 +215,7 @@ export class MarketData {
     let bars: Bar[] = [];
     let source = "yahoo";
     try {
-      const y = await fetchYahoo(symbol, "1d", this.fetchImpl);
+      const y = await fetchYahoo(this.sourceSymbol(symbol), "1d", this.fetchImpl);
       bars = y.bars;
       if (y.previousClose) this.previousClose.set(symbol, y.previousClose);
     } catch (e) {
@@ -222,7 +228,7 @@ export class MarketData {
     // bars are at most a few days apart (weekends, holidays); if the recent
     // gaps are wider, the series is not daily, so fall back to Stooq.
     if (bars.length === 0 || !looksDaily(bars)) {
-      const stooq = await fetchStooqDaily(symbol, this.fetchImpl).catch(() => []);
+      const stooq = await fetchStooqDaily(this.sourceSymbol(symbol), this.fetchImpl).catch(() => []);
       if (stooq.length) {
         bars = stooq;
         source = "stooq";
@@ -232,7 +238,7 @@ export class MarketData {
   }
 
   private async refreshIntraday(symbol: string) {
-    const y = await fetchYahoo(symbol, "15m", this.fetchImpl);
+    const y = await fetchYahoo(this.sourceSymbol(symbol), "15m", this.fetchImpl);
     if (y.bars.length) {
       this.intraday.set(symbol, { bars: y.bars, source: "yahoo", fetchedAt: Date.now() });
     }

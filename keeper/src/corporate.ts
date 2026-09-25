@@ -241,6 +241,16 @@ export interface CorporateOptions {
   feed: CorporateActionFeed;
   symbols: string[];
   applied: AppliedLog;
+  /**
+   * 24/7 markets and the keeper's session record. Their oracles are open
+   * whenever they can be priced, and the program applies an action only to a
+   * market that is not open, so each action on one closes it in the same
+   * transaction; the oracle keeper reopens it on the next fresh price.
+   */
+  roundTheClock?: {
+    twins: Map<string, string[]>;
+    sessions: Map<string, string>;
+  };
   now?: () => number;
 }
 
@@ -284,8 +294,26 @@ export async function corporateTick(options: CorporateOptions): Promise<{
     return { applied: done, deferred: ["feed unavailable"] };
   }
 
+  // An action on a listed stock applies to its 24/7 twins too: the xStock is
+  // the same share, and a split it skipped would read as a crash.
+  const twins = options.roundTheClock?.twins;
+  if (twins) {
+    actions = actions.flatMap((a) => [
+      a,
+      ...(twins.get(a.symbol.toUpperCase()) ?? []).map((twin) => ({
+        ...a,
+        id: `${a.id}:${twin}`,
+        symbol: twin,
+      })),
+    ]);
+  }
+
   for (const action of actions) {
     if (await applied.has(action.id)) continue;
+    const closeFirst = Boolean(
+      options.roundTheClock &&
+        [...(twins?.values() ?? [])].some((list) => list.includes(action.symbol)),
+    );
 
     const a = addressesFor(config.programId, action.symbol);
     const keys = [
@@ -299,6 +327,14 @@ export async function corporateTick(options: CorporateOptions): Promise<{
         isWritable: false,
       },
     ];
+    const close = closeFirst
+      ? [
+          ix(config.programId, "set_market_session", { session: { Closed: {} } }, [
+            { pubkey: config.payer.publicKey, isSigner: true, isWritable: false },
+            rw(a.oracle),
+          ]),
+        ]
+      : [];
     const memo = new TransactionInstruction({
       programId: MEMO_PROGRAM_ID,
       keys: [],
@@ -310,6 +346,7 @@ export async function corporateTick(options: CorporateOptions): Promise<{
         ? await send(
             config,
             [
+              ...close,
               ix(
                 config.programId,
                 "apply_corporate_action",
@@ -326,6 +363,7 @@ export async function corporateTick(options: CorporateOptions): Promise<{
         : await send(
             config,
             [
+              ...close,
               ix(
                 config.programId,
                 "apply_dividend",
@@ -340,6 +378,9 @@ export async function corporateTick(options: CorporateOptions): Promise<{
             `dividend ${action.symbol} ${action.perShare}`,
           );
 
+    if (outcome.ok && closeFirst) {
+      options.roundTheClock!.sessions.set(action.symbol, "Closed");
+    }
     if (outcome.ok) {
       // Record only after it lands. Recording first would skip a retry after a
       // dropped transaction and silently lose the action.

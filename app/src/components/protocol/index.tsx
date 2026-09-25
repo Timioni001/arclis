@@ -8,6 +8,7 @@
 import type { ReactNode } from "react";
 import type { MarketSession, Oracle } from "../../lib/protocol/types";
 import { SESSION_LABEL } from "../../lib/protocol/session";
+import { roundTheClock } from "../../lib/markets";
 import {
   StatusPill,
   Notice,
@@ -34,13 +35,34 @@ const SESSION_TONE: Record<MarketSession, Tone> = {
   Halted: "halted",
 };
 
-export function SessionBadge({ session }: { session: MarketSession }) {
+export function SessionBadge({
+  session,
+  symbol,
+}: {
+  session: MarketSession;
+  /** Pass it to mark a 24/7 market as one. */
+  symbol?: string;
+}) {
+  const allHours = symbol ? roundTheClock(symbol) : undefined;
   return (
-    <StatusPill tone={SESSION_TONE[session]}>
-      {SESSION_LABEL[session]}
-    </StatusPill>
+    <span className="session-badges">
+      <StatusPill tone={SESSION_TONE[session]}>
+        {SESSION_LABEL[session]}
+      </StatusPill>
+      {allHours && (
+        <span className="badge-lime" title="Trades around the clock">
+          24/7
+        </span>
+      )}
+    </span>
   );
 }
+
+/** Why a 24/7 market is not taking new positions, when it is closed. */
+export const ROUND_THE_CLOCK_CLOSED =
+  "Neither the US market nor the token's own market on Solana is giving a firm " +
+  "price right now, so new positions are paused until one does. You can still " +
+  "reduce or close what you hold.";
 
 /**
  * The closed/halted explanation.
@@ -50,6 +72,24 @@ export function SessionBadge({ session }: { session: MarketSession }) {
  * disabled button, not after a failed transaction.
  */
 export function SessionNotice({ oracle }: { oracle: Oracle }) {
+  const allHours = roundTheClock(oracle.symbol);
+  if (allHours && oracle.session === "Open") {
+    return (
+      <Notice tone="info" title="Trades around the clock">
+        While the US market is open, {oracle.symbol} follows{" "}
+        {allHours.underlying}. Nights, weekends and holidays it follows the
+        token&apos;s own market on Solana, priced from live Jupiter quotes. Up
+        to 5x leverage, half that of the hours-bound market.
+      </Notice>
+    );
+  }
+  if (allHours && oracle.session === "Closed") {
+    return (
+      <Notice tone="info" title={`${oracle.symbol} has no firm price right now`}>
+        {ROUND_THE_CLOCK_CLOSED}
+      </Notice>
+    );
+  }
   if (oracle.session === "Open") return null;
 
   if (oracle.session === "Closed") {

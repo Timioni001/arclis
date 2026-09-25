@@ -34,11 +34,15 @@ kill_timeout = "30s"
   # public devnet endpoint (see keeper/src/run.ts).
   PROGRAM_ID = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP"
   QUOTE_MINT = "8nMZjpyLpGGtnCkdCotT8jWUDUpSnJeVjeuazyYVvqGu"
-  MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ"
-  # One Finnhub quote per market per pass, and the free tier allows sixty a
-  # minute. Fifteen markets every twenty seconds is forty-five, which leaves
-  # room; every ten seconds would be ninety and get the feed rate limited. The
-  # program's staleness bound is sixty seconds, so twenty is still well inside.
+  MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ,MU,CRCL,LLY,JNJ,KO,MCD,COST,INTC,BA,SHOP,ARM,GME,RDDT,IONQ,GLD,AAPLx,NVDAx,TSLAx,SPYx,QQQx"
+  # Prices come from Alpaca's free market data (ALPACA_KEY_ID and
+  # ALPACA_SECRET_KEY, secrets), which quotes every market in one request.
+  # Finnhub (FINNHUB_API_KEY) then prices only what Alpaca could not, and the
+  # log names each symbol it does. Finnhub alone is one call per market at
+  # sixty a minute, which keeps only about eighteen markets fresh at this
+  # interval. Every twenty seconds is well inside the program's sixty-second
+  # staleness bound. The 24/7 markets (AAPLx and friends) price from Jupiter
+  # while the US market is shut: two quotes each per pass, keyless.
   PRICE_INTERVAL_MS = "20000"
   # The public devnet endpoint rate limits per IP, and with fifteen markets the
   # defaults (liquidation scan every 5s, funding crank every 60s) were enough

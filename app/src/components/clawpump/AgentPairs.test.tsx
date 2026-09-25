@@ -11,17 +11,22 @@ import { MARKETS } from "../../lib/markets";
 
 afterEach(cleanup);
 
+// 24/7 markets trade an xStock whose ClawPump pair is its underlying's, so
+// they add no pair of their own.
+const LISTED = MARKETS.filter((m) => m.schedule !== "24/7");
+
 describe("AgentPairs", () => {
   it("every Arclis market is a stock ClawPump can launch against", () => {
     // If this fails, a market was added that no agent could raise in.
     const pairs = new Set(STOCK_PAIRS.map((p) => p.symbol));
-    for (const m of MARKETS) expect(pairs.has(m.symbol)).toBe(true);
-    expect(STOCK_PAIRS.filter(hedgeable)).toHaveLength(MARKETS.length);
+    for (const m of LISTED) expect(pairs.has(m.symbol)).toBe(true);
+    for (const m of MARKETS) expect(pairs.has(m.underlying ?? m.symbol)).toBe(true);
+    expect(STOCK_PAIRS.filter(hedgeable)).toHaveLength(LISTED.length);
   });
 
   it("opens on the hedgeable stocks and widens to all of them", () => {
     render(<AgentPairs />);
-    expect(screen.getAllByText("Hedgeable")).toHaveLength(MARKETS.length);
+    expect(screen.getAllByText("Hedgeable")).toHaveLength(LISTED.length);
 
     fireEvent.click(screen.getByRole("tab", { name: "All stocks" }));
     expect(screen.getByText("Krispy Kreme")).toBeTruthy();

@@ -13,7 +13,7 @@
  */
 
 import * as m from "./math";
-import { MARKETS as LISTED } from "../markets";
+import { MARKETS as LISTED, roundTheClock } from "../markets";
 import type {
   ActivityEvent,
   Candle,
@@ -190,9 +190,11 @@ function buildMarket(seed: Seed, index: number): MarketView {
     vault: `vault-${seed.symbol}`,
     liquidityPool: `pool-${seed.symbol}`,
     paused: false,
-    maxLeverage: 10,
-    maintenanceMarginBps: 500,
-    initialMarginBps: 600,
+    // A 24/7 market is created with half the leverage and twice the
+    // maintenance margin; see scripts/seed-local.ts.
+    ...(roundTheClock(seed.symbol)
+      ? { maxLeverage: 5, maintenanceMarginBps: 1_000, initialMarginBps: 1_100 }
+      : { maxLeverage: 10, maintenanceMarginBps: 500, initialMarginBps: 600 }),
     takerFeeBps: 10,
     liquidationPenaltyBps: 500,
     fundingSensitivityBps: 100,
