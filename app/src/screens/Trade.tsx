@@ -7,6 +7,7 @@
  * liquidation, fee) is computed by the same maths the program runs.
  */
 import { roundTheClock } from "../lib/markets";
+import { MarketPicker } from "../components/protocol/MarketPicker";
 import { useMemo, useState } from "react";
 import type { MarketView, Position } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
@@ -101,8 +102,13 @@ export function Trade({
   session,
   onSignIn,
   onFilled,
+  markets = [],
+  onSelectMarket,
 }: {
   view: MarketView;
+  /** Every market, for the switcher in the header. */
+  markets?: MarketView[];
+  onSelectMarket?: (symbol: string) => void;
   position?: Position;
   corporateActions: CorporateAction[];
   now: number;
@@ -299,7 +305,15 @@ export function Trade({
                 flexWrap: "wrap",
               }}
             >
-              <h1 className="page-title">{oracle.symbol}</h1>
+              {onSelectMarket && markets.length > 1 ? (
+                <MarketPicker
+                  markets={markets}
+                  current={oracle.symbol}
+                  onSelect={onSelectMarket}
+                />
+              ) : (
+                <h1 className="page-title">{oracle.symbol}</h1>
+              )}
               <SessionBadge session={oracle.session} symbol={oracle.symbol} />
             </div>
             <div className="page-sub">{oracle.name}</div>

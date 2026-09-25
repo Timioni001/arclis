@@ -17,6 +17,7 @@ value of its runway steady.
 | Program (devnet) | [`BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP`](https://explorer.solana.com/address/BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP?cluster=devnet) |
 | Keeper | [arclis-keeper.fly.dev/health](https://arclis-keeper.fly.dev/health) |
 | Activity feed | [arclis-keeper.fly.dev/events](https://arclis-keeper.fly.dev/events) |
+| News | [arclis-keeper.fly.dev/news](https://arclis-keeper.fly.dev/news): stock and Solana headlines for the Overview, fetched with the keeper's Finnhub key every fifteen minutes |
 | Markets | 30 on US market hours: AAPL, NVDA, MSFT, TSLA, GOOGL, AMZN, META, AVGO, PLTR, AMD, COIN, HOOD, MSTR, SPY, QQQ, MU, CRCL, LLY, JNJ, KO, MCD, COST, INTC, BA, SHOP, ARM, GME, RDDT, IONQ, GLD. 5 around the clock: AAPLx, NVDAx, TSLAx, SPYx, QQQx |
 
 The deployment runs on Solana devnet with prices published every 20 seconds.

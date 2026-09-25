@@ -27,6 +27,7 @@ import type { PriceHistory } from "./price-history";
 import type { MarketData } from "./market-data";
 import type { FaucetHandler } from "./faucet";
 import type { EventIndexer } from "./indexer";
+import type { NewsSnapshot } from "./news";
 
 /** Consecutive failures tolerated before a task is called broken. */
 const FAILURE_BUDGET = 5;
@@ -167,6 +168,8 @@ export function startHealthServer(
   /** The test-token faucet, once it is ready; null while off. */
   faucet?: () => FaucetHandler | null,
   events?: EventIndexer,
+  /** Daily headlines for the Overview, once the first fetch lands. */
+  news?: () => NewsSnapshot | null,
 ): void {
   // A symbol from a URL, in the spelling the keeper uses (`nvdax` is `NVDAx`).
   const resolve = (symbol: string) =>
@@ -207,6 +210,13 @@ export function startHealthServer(
           log("error", "faucet failed", { message: String((e as Error)?.message ?? e) });
           json(500, { error: "The faucet failed. Try again later." }, 0);
         });
+      return;
+    }
+
+    // Stocks and Solana headlines. Refreshed every fifteen minutes, so a
+    // five-minute cache is plenty; an empty document until the first fetch.
+    if (url.pathname === "/news" && news) {
+      json(200, news() ?? { updatedAt: 0, stocks: [], solana: [] }, 300);
       return;
     }
 

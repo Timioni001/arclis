@@ -57,6 +57,7 @@ import { isCovered, KNOWN_THROUGH } from "./calendar";
 import { newHealth, startHealthServer, redactRpc } from "./health";
 import { createFaucet, type FaucetHandler } from "./faucet";
 import { EventIndexer } from "./indexer";
+import { News } from "./news";
 
 const env = process.env;
 
@@ -302,6 +303,19 @@ async function main() {
   // activity feed. See indexer.ts for why it polls markets, not the program.
   const indexer = new EventIndexer(config.connection, config.programId, SYMBOLS);
 
+  // Headlines for the Overview. Needs the Finnhub key the price fallback
+  // already uses; without it the section stays hidden.
+  const news = env.FINNHUB_API_KEY
+    ? new News(env.FINNHUB_API_KEY, fetch, (level, message, extra) =>
+        log(level, message, extra),
+      )
+    : null;
+  if (news) {
+    void news.refresh();
+    const newsTimer = setInterval(() => void news.refresh(), 15 * 60_000);
+    abort.signal.addEventListener("abort", () => clearInterval(newsTimer));
+  }
+
   const healthPort = Number(env.HEALTH_PORT ?? 0);
   if (healthPort > 0) {
     startHealthServer(
@@ -313,6 +327,7 @@ async function main() {
       { data: marketData, symbols: SYMBOLS, previousClose: state.previousClose },
       () => faucet,
       indexer,
+      () => news?.current() ?? null,
     );
   }
 

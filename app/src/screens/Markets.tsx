@@ -9,6 +9,8 @@
 import { useMemo, useState } from "react";
 import type { MarketView } from "../lib/protocol/types";
 import { roundTheClock } from "../lib/markets";
+import { useNews } from "../lib/news";
+import { NewsSection } from "../components/news/NewsSection";
 import * as m from "../lib/protocol/math";
 import {
   Card,
@@ -88,6 +90,7 @@ export function Markets({
     0n,
   );
   const openCount = markets.filter((mv) => mv.oracle.session === "Open").length;
+  const news = useNews();
 
   return (
     <div className="page">
@@ -166,49 +169,7 @@ export function Markets({
 
           <MarketList markets={markets} onOpen={onOpen} />
 
-          <Card
-            title="Why this is different"
-            note="What a generic perp venue gets wrong on equities"
-          >
-            <div className="why-grid">
-              <ListRow
-                icon={
-                  <Chip accent>
-                    <Icon name="clock" />
-                  </Chip>
-                }
-                title="A market calendar, on-chain"
-                sub="Closed means reduce-only, not shut down"
-              />
-              <ListRow
-                icon={
-                  <Chip>
-                    <Icon name="swap" />
-                  </Chip>
-                }
-                title="Corporate actions"
-                sub="A 4:1 split is not a 75% crash"
-              />
-              <ListRow
-                icon={
-                  <Chip>
-                    <Icon name="layers" />
-                  </Chip>
-                }
-                title="A funded counterparty"
-                sub="Winners are paid by the pool, not by other traders"
-              />
-              <ListRow
-                icon={
-                  <Chip>
-                    <Icon name="target" />
-                  </Chip>
-                }
-                title="Oracle bounds"
-                sub="Staleness, confidence and per-update deviation"
-              />
-            </div>
-          </Card>
+          <NewsSection feed={news} />
         </>
       )}
 

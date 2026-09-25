@@ -416,6 +416,8 @@ export function App({ source }: { source: DataSource }) {
                   requestSignIn("Sign in with a wallet to trade.")
                 }
                 onFilled={liveStatus.refresh}
+                markets={markets}
+                onSelectMarket={openMarket}
               />
             </Suspense>
           )}
