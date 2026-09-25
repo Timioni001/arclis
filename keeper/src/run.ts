@@ -201,6 +201,7 @@ async function main() {
 
   log("info", "starting", {
     rpc: redactRpc(RPC_URL),
+    readRpc: env.READ_RPC_URL ? redactRpc(env.READ_RPC_URL) : "same",
     programId: config.programId.toBase58(),
     keeper: config.payer.publicKey.toBase58(),
     symbols: SYMBOLS,
@@ -233,13 +234,25 @@ async function main() {
    * background: it is a few thousand transaction reads, and firing them all at
    * once is how a keeper gets rate limited off its own endpoint.
    */
+  /*
+   * Background reads (the chart backfill and the activity indexer) go through
+   * their own endpoint when READ_RPC_URL is set. They are thousands of
+   * transaction reads at startup, and on the same rate-limited endpoint as the
+   * price publisher they starved it: prices went past the program's
+   * sixty-second limit while history loaded. Split, a throttled read makes a
+   * chart fill in more slowly and never delays a price.
+   */
+  const readConnection = env.READ_RPC_URL
+    ? new Connection(env.READ_RPC_URL, "confirmed")
+    : config.connection;
+
   const history = new PriceHistory(Number(env.HISTORY_POINTS ?? 3000));
   void (async () => {
     for (const symbol of SYMBOLS) {
       if (abort.signal.aborted) return;
       try {
         const prints = await backfillSymbol(
-          config.connection,
+          readConnection,
           config.programId,
           addressesFor(config.programId, symbol).oracle,
           { target: history.capacity },
@@ -301,7 +314,7 @@ async function main() {
 
   // Trades, liquidations, LP flows and corporate actions, for the interface's
   // activity feed. See indexer.ts for why it polls markets, not the program.
-  const indexer = new EventIndexer(config.connection, config.programId, SYMBOLS);
+  const indexer = new EventIndexer(readConnection, config.programId, SYMBOLS);
 
   // Headlines for the Overview. Needs the Finnhub key the price fallback
   // already uses; without it the section stays hidden.
