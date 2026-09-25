@@ -69,8 +69,15 @@ export function OrderTicket({
   session,
   onSignIn,
   onFilled,
+  priceAgeSecs = 0,
 }: {
   symbol: string;
+  /**
+   * Seconds since the oracle last published. The program refuses a new
+   * position against a price over sixty seconds old; the interface reads the
+   * chain every thirty, so it warns at ninety to avoid crying wolf.
+   */
+  priceAgeSecs?: number;
   side: "long" | "short";
   preview: OrderPreview;
   poolLiquidity: bigint;
@@ -124,13 +131,21 @@ export function OrderTicket({
   const blocker = useMemo((): string | null => {
     if (!live) return "Demo data. Trading runs against the devnet deployment.";
     if (preview.size === 0n) return "Enter a size above zero.";
+    if (priceAgeSecs > 90) {
+      return `${symbol}'s price has not updated for ${Math.round(priceAgeSecs / 60) || 1} min, and the program only opens positions against a fresh one. It usually clears within a minute; if it does not, this market's price feed is down.`;
+    }
     if (poolLiquidity === 0n) {
       return "No liquidity backs this market yet, so an order cannot fill.";
     }
     if (preview.notional > poolLiquidity) {
       return `This order is larger than the ${usd(poolLiquidity)} of liquidity backing ${symbol}.`;
     }
-    if (address && canTrade(session) && lamports !== null && lamports < 5_000_000) {
+    if (
+      address &&
+      canTrade(session) &&
+      lamports !== null &&
+      lamports < 5_000_000
+    ) {
       return "This wallet has no devnet SOL for the network fee. Get some below, or from faucet.solana.com.";
     }
     if (address && canTrade(session) && balance !== null && balance < deposit) {
@@ -140,6 +155,7 @@ export function OrderTicket({
   }, [
     live,
     preview,
+    priceAgeSecs,
     poolLiquidity,
     symbol,
     address,

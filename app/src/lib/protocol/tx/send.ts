@@ -22,6 +22,7 @@ import {
   PublicKey,
   Transaction,
   TransactionInstruction,
+  VersionedTransaction,
   type SendOptions,
 } from "@solana/web3.js";
 import { errorMessage, errorName } from "../rpc/decode";
@@ -92,20 +93,39 @@ function decodeProgramError(
   // own sends people to a support channel with nothing to report.
   const text = haystack.toLowerCase();
   const known: [RegExp, string][] = [
-    [/insufficient lamports|insufficient funds for (rent|fee)/, "Your wallet has no devnet SOL to pay the network fee. Get some from the account panel or faucet.solana.com."],
-    [/insufficient funds/, "Your wallet does not hold enough test USDC for this deposit."],
+    [
+      /insufficient lamports|insufficient funds for (rent|fee)/,
+      "Your wallet has no devnet SOL to pay the network fee. Get some from the account panel or faucet.solana.com.",
+    ],
+    [
+      /insufficient funds/,
+      "Your wallet does not hold enough test USDC for this deposit.",
+    ],
     // A fee payer with zero SOL does not exist on chain, so simulation reports
     // AccountNotFound before any program runs. It is by far the commonest cause.
-    [/accountnotfound|could not find account/, "Your wallet has no devnet SOL to pay the network fee. Open your account (the address button, top right) to get some, or use faucet.solana.com."],
-    [/blockhashnotfound|blockhash not found/, "The network moved on before the check finished. Try again."],
+    [
+      /accountnotfound|could not find account/,
+      "Your wallet has no devnet SOL to pay the network fee. Open your account (the address button, top right) to get some, or use faucet.solana.com.",
+    ],
+    [
+      /blockhashnotfound|blockhash not found/,
+      "The network moved on before the check finished. Try again.",
+    ],
   ];
   for (const [re, message] of known) {
     if (re.test(text)) return { code: -1, name: "SystemError", message };
   }
-  const tail = logs.filter((l) => /program log|error/i.test(l)).slice(-2).join(" ");
+  const tail = logs
+    .filter((l) => /program log|error/i.test(l))
+    .slice(-2)
+    .join(" ");
   const detail = tail || (typeof err === "string" ? err : JSON.stringify(err));
   return detail
-    ? { code: -1, name: "SimulationFailed", message: `This transaction would fail: ${detail.slice(0, 220)}` }
+    ? {
+        code: -1,
+        name: "SimulationFailed",
+        message: `This transaction would fail: ${detail.slice(0, 220)}`,
+      }
     : null;
 }
 
@@ -165,11 +185,16 @@ export async function sendInstructions(
   } else {
     signature = await signAndSend(ctx, tx);
     confirmation = await connection
-      .confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed")
+      .confirmTransaction(
+        { signature, blockhash, lastValidBlockHeight },
+        "confirmed",
+      )
       .catch(async (e) => {
         // Expiry is not proof of failure: check before saying so.
-        const st = (await connection.getSignatureStatuses([signature])).value[0];
-        if (st && !st.err && st.confirmationStatus) return { value: { err: null } };
+        const st = (await connection.getSignatureStatuses([signature]))
+          .value[0];
+        if (st && !st.err && st.confirmationStatus)
+          return { value: { err: null } };
         throw expired(e);
       });
   }
@@ -196,7 +221,18 @@ export async function simulate(
   connection: Connection,
   tx: Transaction,
 ): Promise<string[]> {
-  const result = await connection.simulateTransaction(tx);
+  /*
+   * Checked against the cluster's own latest blockhash, not ours. The public
+   * devnet endpoint is load-balanced, and a simulation that lands on a node
+   * which has not yet seen the blockhash we just fetched fails with
+   * BlockhashNotFound: "the network moved on", for a transaction that was
+   * fine. The signed transaction still carries our blockhash; only the check
+   * swaps it.
+   */
+  const result = await connection.simulateTransaction(
+    new VersionedTransaction(tx.compileMessage()),
+    { sigVerify: false, replaceRecentBlockhash: true, commitment: "confirmed" },
+  );
   const logs = result.value.logs ?? [];
   if (result.value.err) {
     const decoded = decodeProgramError(result.value.err, logs);
@@ -212,7 +248,10 @@ export async function simulate(
  * Sign without broadcasting. Wallets that support it return signed bytes and
  * the app sends them to its own cluster; passkey accounts always do.
  */
-async function signOnly(ctx: SendContext, tx: Transaction): Promise<Uint8Array | null> {
+async function signOnly(
+  ctx: SendContext,
+  tx: Transaction,
+): Promise<Uint8Array | null> {
   const { session } = ctx;
   if (session.method === "wallet") {
     const wallet = connectedWallet();
@@ -255,14 +294,22 @@ export async function broadcastUntilConfirmed(
   await send();
   for (;;) {
     await new Promise((r) => setTimeout(r, 2000));
-    const status = (await connection.getSignatureStatuses([signature])).value[0];
+    const status = (await connection.getSignatureStatuses([signature]))
+      .value[0];
     if (status?.err) return { value: { err: status.err } };
-    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+    if (
+      status?.confirmationStatus === "confirmed" ||
+      status?.confirmationStatus === "finalized"
+    ) {
       return { value: { err: null } };
     }
     const height = await connection.getBlockHeight("confirmed").catch(() => 0);
     if (height > lastValidBlockHeight) {
-      const last = (await connection.getSignatureStatuses([signature], { searchTransactionHistory: true })).value[0];
+      const last = (
+        await connection.getSignatureStatuses([signature], {
+          searchTransactionHistory: true,
+        })
+      ).value[0];
       if (last && !last.err) return { value: { err: null } };
       throw expired();
     }

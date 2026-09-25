@@ -521,6 +521,7 @@ export function Trade({
                 side={side}
                 preview={preview}
                 poolLiquidity={pool.vaultBalance}
+                priceAgeSecs={now - oracle.lastUpdateTs}
                 session={session}
                 onSignIn={onSignIn}
                 onFilled={onFilled}
