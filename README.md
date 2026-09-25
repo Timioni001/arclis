@@ -139,6 +139,13 @@ An agent's lifecycle spans three systems:
    screen also lists launchable stocks and identifies the thirty Arclis can
    hedge.
 
+**Live launch.** The first Arclis agent was launched on mainnet through
+ClawPump with this tool: **Arclis Agent (ARCLIS)**, quoted in tokenized SPY
+with a 1% creator fee paid in SPY. Mint
+[`74f7U4HTbcE4JKcog5aEcL9WycCEs8KD5RrDaMDavjtS`](https://pump.fun/coin/74f7U4HTbcE4JKcog5aEcL9WycCEs8KD5RrDaMDavjtS),
+launch transaction
+[`3UgJRf…ShB6Eo`](https://solscan.io/tx/3UgJRfPVUqoMTNNWgvPX3oLxrZwA1SUoXSRyXGdi9qi3nC87hdkXQa2XqQwaLDLQ15JMexh4m9gCrgdACRShB6Eo).
+
 `src/dbc/` covers custom bonding-curve shapes, which Pump.fun launches do not
 support.
 
