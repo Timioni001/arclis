@@ -6,12 +6,12 @@
  * decides what you can actually do. A generic token dashboard would put volume
  * in that slot.
  */
+import { useMemo, useState } from "react";
 import type { MarketView } from "../lib/protocol/types";
+import { roundTheClock } from "../lib/markets";
 import * as m from "../lib/protocol/math";
 import {
-  BadgeLime,
   Card,
-  CardLink,
   Chip,
   Delta,
   Hero,
@@ -24,7 +24,7 @@ import {
 } from "../components/ui";
 import { SessionBadge } from "../components/protocol";
 import { Sparkline } from "../components/charts/PriceChart";
-import { bpsToPct, confidencePct, pct, toPrice, usd } from "../lib/format";
+import { bpsToPct, pct, toPrice, usd } from "../lib/format";
 import { PriceTicker } from "../components/ui/data";
 import { BrandMark, brandById } from "../components/ui/Brand";
 import { INSTRUCTION_COUNT } from "../idl/program-id";
@@ -46,7 +46,7 @@ import { INSTRUCTION_COUNT } from "../idl/program-id";
 const TESTS = {
   unit: 129,
   integration: 25,
-  interface: 237,
+  interface: 244,
   dbc: 37,
 };
 
@@ -88,9 +88,6 @@ export function Markets({
     0n,
   );
   const openCount = markets.filter((mv) => mv.oracle.session === "Open").length;
-  const movers = [...markets]
-    .sort((a, b) => Math.abs(b.changePct24h) - Math.abs(a.changePct24h))
-    .slice(0, 4);
 
   return (
     <div className="page">
@@ -114,249 +111,104 @@ export function Markets({
         <MarketsSkeleton />
       ) : (
         <>
-      <div className="grid grid-4">
-        <Card>
-          <Metric
-            label="Markets open"
-            value={`${openCount} / ${markets.length}`}
-            size="lg"
-          />
-          <div style={{ marginTop: "var(--space-3)" }}>
-            <SegBar
-              value={openCount}
-              max={markets.length}
-              segments={markets.length}
-              ariaLabel="Markets currently open"
-            />
-          </div>
-        </Card>
-        <Card>
-          <Metric
-            label="Total open interest"
-            value={usd(totalOi)}
-            size="lg"
-            sub="across all markets"
-          />
-        </Card>
-        <Card>
-          <Metric
-            label="Liquidity backing"
-            value={usd(totalLiquidity)}
-            size="lg"
-            sub="LP capital on the other side"
-          />
-        </Card>
-        <Card>
-          {/*
+          <div className="grid grid-4">
+            <Card>
+              <Metric
+                label="Markets open"
+                value={`${openCount} / ${markets.length}`}
+                size="lg"
+              />
+              <div style={{ marginTop: "var(--space-3)" }}>
+                <SegBar
+                  value={openCount}
+                  max={markets.length}
+                  segments={markets.length}
+                  ariaLabel="Markets currently open"
+                />
+              </div>
+            </Card>
+            <Card>
+              <Metric
+                label="Total open interest"
+                value={usd(totalOi)}
+                size="lg"
+                sub="across all markets"
+              />
+            </Card>
+            <Card>
+              <Metric
+                label="Liquidity backing"
+                value={usd(totalLiquidity)}
+                size="lg"
+                sub="LP capital on the other side"
+              />
+            </Card>
+            <Card>
+              {/*
             Counted, not asserted. This tile used to read "1 / AAPL 4:1 split,
             handled" as a hardcoded string, which was true of a test fixture
             and not of any running deployment.
           */}
-          <Metric
-            label="Corporate actions"
-            value={String(corporateActions)}
-            size="lg"
-            sub={
-              corporateActions > 0
-                ? "splits and dividends applied on-chain"
-                : "none since this deployment opened"
-            }
-          />
-        </Card>
-      </div>
-
-      <div className="split-2">
-        <Card
-          title="Biggest movers"
-          note="24 hours"
-          action={<CardLink>View all</CardLink>}
-        >
-          <div className="rows">
-            {movers.map((mv) => (
-              <ListRow
-                key={mv.oracle.symbol}
-                icon={
-                  <Chip accent={mv === movers[0]}>
-                    {mv.oracle.symbol.slice(0, 2)}
-                  </Chip>
+              <Metric
+                label="Corporate actions"
+                value={String(corporateActions)}
+                size="lg"
+                sub={
+                  corporateActions > 0
+                    ? "splits and dividends applied on-chain"
+                    : "none since this deployment opened"
                 }
-                title={mv.oracle.symbol}
-                sub={mv.oracle.name}
-                value={<PriceTicker value={toPrice(mv.oracle.price)} />}
-                meta={
-                  <Delta value={mv.changePct24h}>{pct(mv.changePct24h)}</Delta>
-                }
-                onClick={() => onOpen(mv.oracle.symbol)}
               />
-            ))}
-          </div>
-        </Card>
-
-        <Card
-          title="Why this is different"
-          note="What a generic perp venue gets wrong on equities"
-        >
-          <div className="rows">
-            <ListRow
-              icon={
-                <Chip accent>
-                  <Icon name="clock" />
-                </Chip>
-              }
-              title="A market calendar, on-chain"
-              sub="Closed means reduce-only, not shut down"
-            />
-            <ListRow
-              icon={
-                <Chip>
-                  <Icon name="swap" />
-                </Chip>
-              }
-              title="Corporate actions"
-              sub="A 4:1 split is not a 75% crash"
-            />
-            <ListRow
-              icon={
-                <Chip>
-                  <Icon name="layers" />
-                </Chip>
-              }
-              title="A funded counterparty"
-              sub="Winners are paid by the pool, not by other traders"
-            />
-            <ListRow
-              icon={
-                <Chip>
-                  <Icon name="target" />
-                </Chip>
-              }
-              title="Oracle bounds"
-              sub="Staleness, confidence and per-update deviation"
-            />
-          </div>
-        </Card>
-      </div>
-
-      <div
-        className="page-head"
-        id="market-grid"
-        style={{ marginTop: "var(--space-3)" }}
-      >
-        <div>
-          <h2 className="page-title">Markets</h2>
-          <p className="page-sub">
-            Oracle-priced perpetuals on tokenized equities.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-markets">
-        {markets.map((mv) => {
-          const { market, oracle } = mv;
-          const oi = m.notional(
-            market.openInterestLong + market.openInterestShort,
-            oracle.price,
-          );
-          const nav = m.poolNav(
-            mv.pool.vaultBalance,
-            m.netTraderPnl(
-              market.openInterestLong,
-              market.longEntryNotional,
-              market.openInterestShort,
-              market.shortEntryNotional,
-              oracle.price,
-            ),
-          );
-          const util = m.utilizationBps(
-            m.netExposureNotional(
-              market.openInterestLong,
-              market.openInterestShort,
-              oracle.price,
-            ),
-            nav,
-          );
-          const rate = m.fundingRateBps(
-            m.skewBps(market.openInterestLong, market.openInterestShort),
-            market.fundingSensitivityBps,
-            util ?? 0n,
-          );
-
-          return (
-            <Card
-              key={oracle.symbol}
-              className="card-interactive"
-              onClick={() => onOpen(oracle.symbol)}
-            >
-              <div className="card-head">
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "var(--space-3)",
-                  }}
-                >
-                  <Chip accent={oracle.session === "Open"}>
-                    {oracle.symbol.slice(0, 2)}
-                  </Chip>
-                  <div>
-                    <div className="card-title">{oracle.symbol}</div>
-                    <div className="card-note">{oracle.name}</div>
-                  </div>
-                </div>
-                <SessionBadge session={oracle.session} symbol={oracle.symbol} />
-              </div>
-
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "flex-end",
-                  justifyContent: "space-between",
-                  gap: "var(--space-3)",
-                }}
-              >
-                <Metric
-                  value={usd(oracle.price, { compact: false })}
-                  size="lg"
-                  sub={
-                    <Delta value={mv.changePct24h}>
-                      {pct(mv.changePct24h)} today
-                    </Delta>
-                  }
-                />
-                <Sparkline candles={mv.spark ?? mv.candles.slice(-40)} />
-              </div>
-
-              <div className="rows" style={{ marginTop: "var(--space-4)" }}>
-                <ListRow
-                  title="Open interest"
-                  sub={`Funding ${bpsToPct(rate, 3)} / 1h`}
-                  value={usd(oi)}
-                  meta={
-                    rate > 0n
-                      ? "longs pay"
-                      : rate < 0n
-                        ? "shorts pay"
-                        : "balanced"
-                  }
-                />
-                <ListRow
-                  title="Oracle confidence"
-                  sub={`24h volume ${usd(mv.volume24h)}`}
-                  value={
-                    <BadgeLime>
-                      {confidencePct(oracle.price, oracle.confidence).toFixed(
-                        1,
-                      )}
-                      %
-                    </BadgeLime>
-                  }
-                />
-              </div>
             </Card>
-          );
-        })}
-      </div>
+          </div>
 
+          <TodaysMovers markets={markets} onOpen={onOpen} />
+
+          <MarketList markets={markets} onOpen={onOpen} />
+
+          <Card
+            title="Why this is different"
+            note="What a generic perp venue gets wrong on equities"
+          >
+            <div className="why-grid">
+              <ListRow
+                icon={
+                  <Chip accent>
+                    <Icon name="clock" />
+                  </Chip>
+                }
+                title="A market calendar, on-chain"
+                sub="Closed means reduce-only, not shut down"
+              />
+              <ListRow
+                icon={
+                  <Chip>
+                    <Icon name="swap" />
+                  </Chip>
+                }
+                title="Corporate actions"
+                sub="A 4:1 split is not a 75% crash"
+              />
+              <ListRow
+                icon={
+                  <Chip>
+                    <Icon name="layers" />
+                  </Chip>
+                }
+                title="A funded counterparty"
+                sub="Winners are paid by the pool, not by other traders"
+              />
+              <ListRow
+                icon={
+                  <Chip>
+                    <Icon name="target" />
+                  </Chip>
+                }
+                title="Oracle bounds"
+                sub="Staleness, confidence and per-update deviation"
+              />
+            </div>
+          </Card>
         </>
       )}
 
@@ -438,30 +290,363 @@ function MarketsSkeleton() {
         ))}
       </div>
 
-      <div
-        className="grid grid-markets"
-        role="status"
-        aria-label="Loading markets from the chain"
-      >
-        {Array.from({ length: 6 }, (_, i) => (
-          <Card key={i}>
-            <div className="card-head">
-              <Skeleton width={120} height={20} />
-              <Skeleton width={64} height={20} radius="var(--radius-pill)" />
+      <Card>
+        <div role="status" aria-label="Loading markets from the chain">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="market-row" style={{ cursor: "default" }}>
+              <span className="mc-name">
+                <Skeleton width={140} height={18} />
+              </span>
+              <span className="mc-status">
+                <Skeleton width={64} height={20} radius="var(--radius-pill)" />
+              </span>
+              <span className="mc-spark">
+                <Skeleton width={90} height={18} />
+              </span>
+              <span className="mc-price">
+                <Skeleton width={70} height={16} />
+              </span>
+              <span className="mc-change">
+                <Skeleton width={50} height={16} />
+              </span>
+              <span className="mc-oi">
+                <Skeleton width={70} height={16} />
+              </span>
+              <span className="mc-funding">
+                <Skeleton width={50} height={16} />
+              </span>
             </div>
-            <Skeleton
-              width="55%"
-              height={30}
-              style={{ marginTop: "var(--space-4)" }}
-            />
-            <div style={{ marginTop: "var(--space-4)" }}>
-              <Skeleton height={12} style={{ marginBottom: 10 }} />
-              <Skeleton width="85%" height={12} style={{ marginBottom: 10 }} />
-              <Skeleton width="70%" height={12} />
-            </div>
-          </Card>
-        ))}
-      </div>
+          ))}
+        </div>
+      </Card>
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Today's movers
+// ---------------------------------------------------------------------------
+
+const MOVERS_SHOWN = 5;
+
+/**
+ * Gainers, losers and the most traded, side by side.
+ *
+ * With thirty-five markets a single "biggest movers" list of four hid which
+ * way anything moved. Split by direction, each list answers one question at a
+ * glance. The change is against the previous session's close, so the lists
+ * are about today, not a rolling window.
+ */
+function TodaysMovers({
+  markets,
+  onOpen,
+}: {
+  markets: MarketView[];
+  onOpen: (symbol: string) => void;
+}) {
+  const gainers = markets
+    .filter((mv) => mv.changePct24h > 0)
+    .sort((a, b) => b.changePct24h - a.changePct24h)
+    .slice(0, MOVERS_SHOWN);
+  const losers = markets
+    .filter((mv) => mv.changePct24h < 0)
+    .sort((a, b) => a.changePct24h - b.changePct24h)
+    .slice(0, MOVERS_SHOWN);
+  // Volume first; open interest breaks ties and carries a quiet day, when
+  // the day's volume is zero everywhere and would rank nothing.
+  const active = [...markets]
+    .sort(
+      (a, b) =>
+        Number(b.volume24h - a.volume24h) ||
+        Number(openInterest(b) - openInterest(a)),
+    )
+    .slice(0, MOVERS_SHOWN);
+
+  return (
+    <section aria-labelledby="movers-title">
+      <div className="section-head">
+        <h2 className="section-title" id="movers-title">
+          Today&apos;s movers
+        </h2>
+        <span className="section-note">Change since the previous close</span>
+      </div>
+      <div className="movers-grid">
+        <MoverList
+          title="Top gainers"
+          empty="Nothing is up since the last close."
+          rows={gainers}
+          onOpen={onOpen}
+          show="change"
+        />
+        <MoverList
+          title="Top losers"
+          empty="Nothing is down since the last close."
+          rows={losers}
+          onOpen={onOpen}
+          show="change"
+        />
+        <MoverList
+          title="Most traded"
+          empty="No trades yet today."
+          rows={active}
+          onOpen={onOpen}
+          show="volume"
+        />
+      </div>
+    </section>
+  );
+}
+
+function MoverList({
+  title,
+  empty,
+  rows,
+  onOpen,
+  show,
+}: {
+  title: string;
+  empty: string;
+  rows: MarketView[];
+  onOpen: (symbol: string) => void;
+  show: "change" | "volume";
+}) {
+  return (
+    <Card title={title}>
+      {rows.length === 0 ? (
+        <p className="metric-sub">{empty}</p>
+      ) : (
+        <div className="rows">
+          {rows.map((mv, i) => (
+            <ListRow
+              key={mv.oracle.symbol}
+              icon={<span className="mover-rank num">{i + 1}</span>}
+              title={
+                <span className="mover-symbol">
+                  {mv.oracle.symbol}
+                  {roundTheClock(mv.oracle.symbol) && (
+                    <span className="badge-lime mover-tag">24/7</span>
+                  )}
+                </span>
+              }
+              sub={mv.oracle.name}
+              value={<PriceTicker value={toPrice(mv.oracle.price)} />}
+              meta={
+                show === "change" ? (
+                  <Delta value={mv.changePct24h}>{pct(mv.changePct24h)}</Delta>
+                ) : mv.volume24h > 0n ? (
+                  `${usd(mv.volume24h)} vol`
+                ) : (
+                  `${usd(openInterest(mv))} OI`
+                )
+              }
+              onClick={() => onOpen(mv.oracle.symbol)}
+            />
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Every market, as a list
+// ---------------------------------------------------------------------------
+
+function openInterest(mv: MarketView): bigint {
+  return m.notional(
+    mv.market.openInterestLong + mv.market.openInterestShort,
+    mv.oracle.price,
+  );
+}
+
+function fundingRate(mv: MarketView): bigint {
+  const { market, oracle, pool } = mv;
+  const nav = m.poolNav(
+    pool.vaultBalance,
+    m.netTraderPnl(
+      market.openInterestLong,
+      market.longEntryNotional,
+      market.openInterestShort,
+      market.shortEntryNotional,
+      oracle.price,
+    ),
+  );
+  const util = m.utilizationBps(
+    m.netExposureNotional(
+      market.openInterestLong,
+      market.openInterestShort,
+      oracle.price,
+    ),
+    nav,
+  );
+  return m.fundingRateBps(
+    m.skewBps(market.openInterestLong, market.openInterestShort),
+    market.fundingSensitivityBps,
+    util ?? 0n,
+  );
+}
+
+const FILTERS = ["All", "Open now", "24/7"] as const;
+type Filter = (typeof FILTERS)[number];
+type SortKey = "move" | "gainers" | "losers" | "oi" | "az";
+
+/**
+ * All markets in one scannable list.
+ *
+ * Thirty-five cards was a page of scrolling where the one number people look
+ * for, today's change, sat in a different place on every card. A row per
+ * market lines the columns up, and search, a session filter and a sort make
+ * a long list short.
+ */
+function MarketList({
+  markets,
+  onOpen,
+}: {
+  markets: MarketView[];
+  onOpen: (symbol: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<Filter>("All");
+  const [sort, setSort] = useState<SortKey>("move");
+
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = markets.filter((mv) => {
+      if (filter === "Open now" && mv.oracle.session !== "Open") return false;
+      if (filter === "24/7" && !roundTheClock(mv.oracle.symbol)) return false;
+      if (!q) return true;
+      return (
+        mv.oracle.symbol.toLowerCase().includes(q) ||
+        mv.oracle.name.toLowerCase().includes(q)
+      );
+    });
+    const by: Record<SortKey, (a: MarketView, b: MarketView) => number> = {
+      move: (a, b) => Math.abs(b.changePct24h) - Math.abs(a.changePct24h),
+      gainers: (a, b) => b.changePct24h - a.changePct24h,
+      losers: (a, b) => a.changePct24h - b.changePct24h,
+      oi: (a, b) => Number(openInterest(b) - openInterest(a)),
+      az: (a, b) => a.oracle.symbol.localeCompare(b.oracle.symbol),
+    };
+    return list.sort(by[sort]);
+  }, [markets, query, filter, sort]);
+
+  const count = (f: Filter) =>
+    f === "All"
+      ? markets.length
+      : f === "Open now"
+        ? markets.filter((mv) => mv.oracle.session === "Open").length
+        : markets.filter((mv) => roundTheClock(mv.oracle.symbol)).length;
+
+  return (
+    <section aria-labelledby="market-grid-title" id="market-grid">
+      <div className="section-head">
+        <h2 className="section-title" id="market-grid-title">
+          All markets
+        </h2>
+        <span className="section-note">
+          Oracle-priced perpetuals on tokenized equities
+        </span>
+      </div>
+
+      <div className="market-tools">
+        <label className="registry-search">
+          <Icon name="search" size={17} />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search ticker or company"
+            aria-label="Search markets"
+          />
+        </label>
+        <div
+          className="registry-filter-group"
+          role="group"
+          aria-label="Filter markets"
+        >
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              className="registry-filter"
+              aria-pressed={filter === f}
+              onClick={() => setFilter(f)}
+            >
+              {f} <span className="filter-count">{count(f)}</span>
+            </button>
+          ))}
+        </div>
+        <label className="registry-sort">
+          <span className="sr-only">Sort markets</span>
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+          >
+            <option value="move">Biggest move</option>
+            <option value="gainers">Gainers first</option>
+            <option value="losers">Losers first</option>
+            <option value="oi">Open interest</option>
+            <option value="az">A to Z</option>
+          </select>
+        </label>
+      </div>
+
+      <Card className="market-table-card">
+        <div className="market-row market-row-head" aria-hidden="true">
+          <span className="mc-name">Market</span>
+          <span className="mc-status">Status</span>
+          <span className="mc-spark">7 days</span>
+          <span className="mc-price">Price</span>
+          <span className="mc-change">Today</span>
+          <span className="mc-oi">Open interest</span>
+          <span className="mc-funding">Funding / 1h</span>
+        </div>
+        {rows.length === 0 && (
+          <p className="metric-sub market-empty">
+            No market matches &ldquo;{query}&rdquo;.
+          </p>
+        )}
+        {rows.map((mv) => {
+          const rate = fundingRate(mv);
+          return (
+            <button
+              key={mv.oracle.symbol}
+              className="market-row"
+              onClick={() => onOpen(mv.oracle.symbol)}
+            >
+              <span className="mc-name">
+                <Chip small accent={mv.oracle.session === "Open"}>
+                  {mv.oracle.symbol.slice(0, 2)}
+                </Chip>
+                <span className="mc-name-text">
+                  <span className="mc-symbol">{mv.oracle.symbol}</span>
+                  <span className="mc-company">{mv.oracle.name}</span>
+                </span>
+              </span>
+              <span className="mc-status">
+                <SessionBadge
+                  session={mv.oracle.session}
+                  symbol={mv.oracle.symbol}
+                />
+              </span>
+              <span className="mc-spark">
+                <Sparkline
+                  candles={mv.spark ?? mv.candles.slice(-40)}
+                  width={96}
+                  height={26}
+                />
+              </span>
+              <span className="mc-price num">
+                {usd(mv.oracle.price, { compact: false })}
+              </span>
+              <span className="mc-change num">
+                <Delta value={mv.changePct24h}>{pct(mv.changePct24h)}</Delta>
+              </span>
+              <span className="mc-oi num">{usd(openInterest(mv))}</span>
+              <span className="mc-funding num">{bpsToPct(rate, 3)}</span>
+            </button>
+          );
+        })}
+      </Card>
+    </section>
   );
 }
