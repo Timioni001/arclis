@@ -11,6 +11,7 @@ import type { MarketView } from "../lib/protocol/types";
 import { roundTheClock } from "../lib/markets";
 import { useNews } from "../lib/news";
 import { NewsSection } from "../components/news/NewsSection";
+import { LiveAgentCard } from "../components/agent/LiveAgentCard";
 import * as m from "../lib/protocol/math";
 import {
   Card,
@@ -58,6 +59,7 @@ export function Markets({
   loading = false,
   onOpen,
   onExplore,
+  onTreasuries,
 }: {
   markets: MarketView[];
   /** How many splits or dividends this deployment has actually applied. */
@@ -75,6 +77,8 @@ export function Markets({
   onOpen: (symbol: string) => void;
   /** Hand the front page's primary call to action to the registry. */
   onExplore?: () => void;
+  /** Open the Treasuries screen, from the live agent card. */
+  onTreasuries?: () => void;
 }) {
   const totalOi = markets.reduce(
     (a, mv) =>
@@ -164,6 +168,8 @@ export function Markets({
               />
             </Card>
           </div>
+
+          <LiveAgentCard onTreasuries={onTreasuries} />
 
           <TodaysMovers markets={markets} onOpen={onOpen} />
 

@@ -387,6 +387,7 @@ export function App({ source }: { source: DataSource }) {
               loading={loadingFirstRead}
               onOpen={openMarket}
               onExplore={() => setTab("Registry")}
+              onTreasuries={() => setTab("Treasuries")}
             />
           )}
 
