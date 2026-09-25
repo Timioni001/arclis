@@ -17,7 +17,7 @@ vi.mock("./chain", () => ({
   send: vi.fn(async (_config: unknown, _ixs: unknown, label: string) => {
     sent.push(label);
     const hit = Object.keys(reject).find((k) => label.startsWith(k));
-    return hit ? { ok: false, error: reject[hit] } : { ok: true, signature: "sig" };
+    return hit ? { ok: false, error: reject[hit], rejected: true } : { ok: true, signature: "sig" };
   }),
 }));
 
@@ -278,6 +278,60 @@ describe("the keeper opening and closing a 24/7 market", () => {
       "update_price_oracle NVDAx",
       "set_market_session NVDAx -> Open",
     ]);
+  });
+});
+
+describe("batched price updates", () => {
+  const config = {
+    connection: {} as never,
+    payer: Keypair.generate(),
+    programId: new PublicKey((idl as { address: string }).address),
+    log: () => {},
+  };
+  // A Wednesday, 11 a.m. New York: the exchange is open.
+  const OPEN = Math.floor(Date.UTC(2026, 8, 23, 15, 0, 0) / 1000);
+  const syms = ["AAPL", "NVDA", "MSFT", "TSLA", "GOOGL", "AMZN", "META", "AVGO", "PLTR", "AMD"];
+
+  beforeEach(() => {
+    sent.length = 0;
+    reject = {};
+  });
+
+  it("sends ten markets' prices in two transactions, not ten", async () => {
+    const state = newKeeperState();
+    for (const s of syms) state.sessions.set(s, "Open");
+    const r = await keeperTick({
+      config,
+      feed: { name: "t", quote: async () => syms.map((s) => quote(s, 100, OPEN)) },
+      symbols: syms,
+      state,
+      now: () => OPEN,
+    });
+    const prices = sent.filter((l) => l.startsWith("update_price_oracle"));
+    expect(prices).toHaveLength(2);
+    expect(prices[0].split(" ")[1].split(",")).toHaveLength(8);
+    expect(r.published.sort()).toEqual([...syms].sort());
+  });
+
+  it("falls back to one market at a time when the program rejects a batch", async () => {
+    const state = newKeeperState();
+    for (const s of syms.slice(0, 3)) state.sessions.set(s, "Open");
+    reject = { "update_price_oracle AAPL,NVDA,MSFT": "OracleDeviationTooLarge", "update_price_oracle NVDA": "OracleDeviationTooLarge" };
+    const r = await keeperTick({
+      config,
+      feed: { name: "t", quote: async () => syms.slice(0, 3).map((s) => quote(s, 100, OPEN)) },
+      symbols: syms.slice(0, 3),
+      state,
+      now: () => OPEN,
+    });
+    expect(sent).toEqual([
+      "update_price_oracle AAPL,NVDA,MSFT",
+      "update_price_oracle AAPL",
+      "update_price_oracle NVDA",
+      "update_price_oracle MSFT",
+    ]);
+    expect(r.published).toEqual(["AAPL", "MSFT"]);
+    expect(r.skipped).toContain("NVDA");
   });
 });
 

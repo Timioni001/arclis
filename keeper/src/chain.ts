@@ -116,6 +116,8 @@ export interface SendOutcome {
   error?: string;
   /** True when the rejection is an expected "not yet" rather than a fault. */
   benign?: boolean;
+  /** The program rejected it, as opposed to a transport failure. */
+  rejected?: boolean;
 }
 
 /**
@@ -150,7 +152,7 @@ export async function send(
         if (!benign) {
           config.log("warn", `${label} rejected`, { error: name });
         }
-        return { ok: false, error: name, benign };
+        return { ok: false, error: name, benign, rejected: true };
       }
 
       const message = String((err as Error)?.message ?? err);

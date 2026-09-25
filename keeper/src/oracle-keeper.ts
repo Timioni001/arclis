@@ -151,6 +151,12 @@ export function newKeeperState(): KeeperState {
  */
 export const NO_PRICE_GRACE_SECS = 45;
 
+/**
+ * Price updates per transaction. Eight fit comfortably in a transaction's
+ * size and compute limits, and cut the keeper's request rate by eight.
+ */
+export const PRICE_BATCH = 8;
+
 export interface KeeperOptions {
   config: ChainConfig;
   feed: PriceFeed;
@@ -168,6 +174,8 @@ export interface KeeperOptions {
    * calendar says. See `round-the-clock.ts`.
    */
   alwaysOpen?: Set<string>;
+  /** Price updates per transaction. Default `PRICE_BATCH`. */
+  batchSize?: number;
   /** Overridable for tests. */
   now?: () => number;
 }
@@ -231,185 +239,204 @@ export async function keeperTick(options: KeeperOptions): Promise<{
     }
   }
 
-  for (const symbol of symbols) {
-    const oracle = oraclePda(config.programId, symbol);
+  const signer = {
+    pubkey: config.payer.publicKey,
+    isSigner: true,
+    isWritable: false,
+  };
+  const priceIx = (oracle: PublicKey, price: bigint, confidence: bigint) =>
+    ix(
+      config.programId,
+      "update_price_oracle",
+      {
+        price: new BN(price.toString()),
+        confidence: new BN(confidence.toString()),
+      },
+      [signer, { pubkey: oracle, isSigner: false, isWritable: true }],
+    );
+
+  interface Plan {
+    symbol: string;
+    oracle: PublicKey;
+    quote: Quote | undefined;
+    roundTheClock: boolean;
+    target: MarketSession;
+    opening: boolean;
+  }
+
+  // A 24/7 market is open while its price on chain is fresh and closed once
+  // nothing has landed for the grace period, whether the quote was missing
+  // or the program refused it. A single missed tick changes nothing.
+  const roundTheClockTarget = (symbol: string): MarketSession =>
+    now - (state.lastQuoteAt.get(symbol) ?? 0) <= NO_PRICE_GRACE_SECS
+      ? "Open"
+      : "Closed";
+
+  const plans: Plan[] = symbols.map((symbol) => {
     const quote = bySymbol.get(symbol.toUpperCase());
-
     const roundTheClock = options.alwaysOpen?.has(symbol.toUpperCase()) ?? false;
-
     // A halt from the exchange outranks the clock. This is the one way
     // `Halted` ever reaches the chain, and it is data, not a timer.
-    //
-    // A 24/7 market is open while its price on chain is fresh and closed once
-    // nothing has landed for the grace period, whether the quote was missing
-    // or the program refused it. A single missed tick changes nothing.
-    const roundTheClockTarget = (): MarketSession =>
-      now - (state.lastQuoteAt.get(symbol) ?? 0) <= NO_PRICE_GRACE_SECS
-        ? "Open"
-        : "Closed";
-    let target: MarketSession = quote?.halted
+    const target: MarketSession = quote?.halted
       ? "Halted"
       : roundTheClock
-        ? roundTheClockTarget()
+        ? roundTheClockTarget(symbol)
         : clockSession;
-    // A 24/7 market reopens on a fresh price, so it publishes the price
-    // first: the program refuses to open against a mark older than sixty
-    // seconds, and its last mark is from before the gap.
-    const opening =
-      !roundTheClock && target === "Open" && state.sessions.get(symbol) !== "Open";
-
-    const writeSession = async () => {
-      if (state.sessions.get(symbol) === target) return;
-      const outcome = await send(
-        config,
-        [
-          ix(
-            config.programId,
-            "set_market_session",
-            { session: sessionArg(target) },
-            [
-              {
-                pubkey: config.payer.publicKey,
-                isSigner: true,
-                isWritable: false,
-              },
-              { pubkey: oracle, isSigner: false, isWritable: true },
-            ],
-          ),
-        ],
-        `set_market_session ${symbol} -> ${target}`,
-      );
-      if (outcome.ok) {
-        state.sessions.set(symbol, target);
-        sessionsChanged.push(`${symbol}:${target}`);
-        config.log("info", `session ${symbol} -> ${target}`, {
-          signature: outcome.signature,
-        });
-      }
+    return {
+      symbol,
+      oracle: oraclePda(config.programId, symbol),
+      quote,
+      roundTheClock,
+      target,
+      // A 24/7 market reopens on a fresh price, so it publishes the price
+      // first: the program refuses to open against a mark older than sixty
+      // seconds, and its last mark is from before the gap.
+      opening:
+        !roundTheClock &&
+        target === "Open" &&
+        state.sessions.get(symbol) !== "Open",
     };
+  });
 
-    // Opening: session first, so the stale close is never usable under a live
-    // session's strict budget.
-    if (opening) await writeSession();
-
-    if (!quote) {
-      skipped.push(symbol);
-    } else if (state.printedAt.get(symbol) === quote.printedAt) {
-      // The same trade. Republishing would reset the on-chain timestamp and
-      // launder a stale print into a fresh one.
-      skipped.push(symbol);
-    } else {
-      const outcome = await send(
-        config,
-        [
-          ix(
-            config.programId,
-            "update_price_oracle",
-            {
-              price: new BN(quote.price.toString()),
-              confidence: new BN(quote.confidence.toString()),
-            },
-            [
-              {
-                pubkey: config.payer.publicKey,
-                isSigner: true,
-                isWritable: false,
-              },
-              { pubkey: oracle, isSigner: false, isWritable: true },
-            ],
-          ),
-        ],
-        `update_price_oracle ${symbol}`,
-      );
-
-      if (outcome.ok) {
-        state.printedAt.set(symbol, quote.printedAt);
-        state.lastQuoteAt.set(symbol, now);
-        published.push(symbol);
-        prints.push({ symbol, price: quote.price });
-      } else if (outcome.error === "OracleDeviationTooLarge") {
-        // The program's own circuit breaker fired. This is the correct
-        // outcome for a bad tick and the wrong one for an oracle that has
-        // simply been off while the market moved, and only a human can tell
-        // those apart - so catching up is opt-in, and loud either way.
-        if (!options.catchUp) {
-          config.log(
-            "error",
-            `${symbol} moved more than the deviation cap allows`,
-            {
-              price: quote.price.toString(),
-              hint: "verify against a second source, then set ORACLE_CATCHUP=yes to walk it in steps",
-            },
-          );
-          skipped.push(symbol);
-        } else {
-          // Read the price actually on-chain - the step has to be measured
-          // from it, and this is the only path that needs it, so the normal
-          // case pays nothing for the extra call.
-          const info = await config.connection.getAccountInfo(oracle);
-          if (!info) {
-            skipped.push(symbol);
-          } else {
-            const current = BigInt(
-              (
-                coder.accounts.decode("PriceOracle", info.data) as {
-                  price: { toString(): string };
-                }
-              ).price.toString(),
-            );
-            const step = cappedStep(current, quote.price);
-            const stepped = await send(
-              config,
-              [
-                ix(
-                  config.programId,
-                  "update_price_oracle",
-                  {
-                    price: new BN(step.toString()),
-                    confidence: new BN(quote.confidence.toString()),
-                  },
-                  [
-                    {
-                      pubkey: config.payer.publicKey,
-                      isSigner: true,
-                      isWritable: false,
-                    },
-                    { pubkey: oracle, isSigner: false, isWritable: true },
-                  ],
-                ),
-              ],
-              `update_price_oracle ${symbol} (catching up)`,
-            );
-            config.log("warn", `${symbol} catching up in capped steps`, {
-              from: current.toString(),
-              to: step.toString(),
-              target: quote.price.toString(),
-              arrived: step === quote.price,
-              ok: stepped.ok,
-            });
-            // Deliberately not recording `printedAt`: this is not the print,
-            // it is a step toward it. Recording it would make the next tick
-            // treat the real price as already published and stop the walk one
-            // step short, forever.
-            if (stepped.ok && step === quote.price) {
-              state.printedAt.set(symbol, quote.printedAt);
-              state.lastQuoteAt.set(symbol, now);
-              published.push(symbol);
-              prints.push({ symbol, price: quote.price });
-            } else {
-              skipped.push(symbol);
-            }
-          }
-        }
-      } else {
-        skipped.push(symbol);
-      }
+  const writeSession = async (p: Plan) => {
+    if (state.sessions.get(p.symbol) === p.target) return;
+    const outcome = await send(
+      config,
+      [
+        ix(
+          config.programId,
+          "set_market_session",
+          { session: sessionArg(p.target) },
+          [signer, { pubkey: p.oracle, isSigner: false, isWritable: true }],
+        ),
+      ],
+      `set_market_session ${p.symbol} -> ${p.target}`,
+    );
+    if (outcome.ok) {
+      state.sessions.set(p.symbol, p.target);
+      sessionsChanged.push(`${p.symbol}:${p.target}`);
+      config.log("info", `session ${p.symbol} -> ${p.target}`, {
+        signature: outcome.signature,
+      });
     }
+  };
 
-    // Closing (and every other transition): price first, session after, so the
-    // final print is the one standing when the session flips.
-    if (roundTheClock && !quote?.halted) target = roundTheClockTarget();
-    if (!opening) await writeSession();
+  const landed = (p: Plan, quote: Quote) => {
+    state.printedAt.set(p.symbol, quote.printedAt);
+    state.lastQuoteAt.set(p.symbol, now);
+    published.push(p.symbol);
+    prints.push({ symbol: p.symbol, price: quote.price });
+  };
+
+  /** One market's price on its own, with the capped catch-up on a rejection. */
+  const publishOne = async (p: Plan, quote: Quote) => {
+    const outcome = await send(
+      config,
+      [priceIx(p.oracle, quote.price, quote.confidence)],
+      `update_price_oracle ${p.symbol}`,
+    );
+    if (outcome.ok) {
+      landed(p, quote);
+      return;
+    }
+    if (outcome.error !== "OracleDeviationTooLarge") {
+      skipped.push(p.symbol);
+      return;
+    }
+    // The program's own circuit breaker fired. This is the correct outcome
+    // for a bad tick and the wrong one for an oracle that has simply been
+    // off while the market moved, and only a human can tell those apart - so
+    // catching up is opt-in, and loud either way.
+    if (!options.catchUp) {
+      config.log("error", `${p.symbol} moved more than the deviation cap allows`, {
+        price: quote.price.toString(),
+        hint: "verify against a second source, then set ORACLE_CATCHUP=yes to walk it in steps",
+      });
+      skipped.push(p.symbol);
+      return;
+    }
+    // Read the price actually on-chain: the step has to be measured from it,
+    // and this is the only path that needs it.
+    const info = await config.connection.getAccountInfo(p.oracle);
+    if (!info) {
+      skipped.push(p.symbol);
+      return;
+    }
+    const current = BigInt(
+      (
+        coder.accounts.decode("PriceOracle", info.data) as {
+          price: { toString(): string };
+        }
+      ).price.toString(),
+    );
+    const step = cappedStep(current, quote.price);
+    const stepped = await send(
+      config,
+      [priceIx(p.oracle, step, quote.confidence)],
+      `update_price_oracle ${p.symbol} (catching up)`,
+    );
+    config.log("warn", `${p.symbol} catching up in capped steps`, {
+      from: current.toString(),
+      to: step.toString(),
+      target: quote.price.toString(),
+      arrived: step === quote.price,
+      ok: stepped.ok,
+    });
+    // Not recording `printedAt` for a step: it is not the print, and
+    // recording it would stop the walk one step short, forever.
+    if (stepped.ok && step === quote.price) landed(p, quote);
+    else skipped.push(p.symbol);
+  };
+
+  // 1. Opening: session first, so the stale close is never usable under a
+  //    live session's strict budget.
+  for (const p of plans) if (p.opening) await writeSession(p);
+
+  // 2. Prices, several markets per transaction.
+  //
+  //    One transaction per market was a request storm at thirty-five markets:
+  //    every send is a blockhash fetch, the send and a confirmation poll, and
+  //    a rate-limited RPC then throttled prices past the program's sixty-second
+  //    staleness limit. Batching cuts that by the batch size. A batch the
+  //    program rejects (one market's jump over the deviation cap fails all of
+  //    them) falls back to one market at a time, which is where the rare
+  //    per-market handling lives.
+  const fresh: { p: Plan; quote: Quote }[] = [];
+  for (const p of plans) {
+    if (!p.quote) skipped.push(p.symbol);
+    // The same trade. Republishing would reset the on-chain timestamp and
+    // launder a stale print into a fresh one.
+    else if (state.printedAt.get(p.symbol) === p.quote.printedAt) skipped.push(p.symbol);
+    else fresh.push({ p, quote: p.quote });
+  }
+  const batchSize = Math.max(1, options.batchSize ?? PRICE_BATCH);
+  for (let i = 0; i < fresh.length; i += batchSize) {
+    const batch = fresh.slice(i, i + batchSize);
+    if (batch.length === 1) {
+      await publishOne(batch[0].p, batch[0].quote);
+      continue;
+    }
+    const outcome = await send(
+      config,
+      batch.map(({ p, quote }) => priceIx(p.oracle, quote.price, quote.confidence)),
+      `update_price_oracle ${batch.map(({ p }) => p.symbol).join(",")}`,
+    );
+    if (outcome.ok) {
+      for (const { p, quote } of batch) landed(p, quote);
+    } else if (outcome.rejected) {
+      for (const { p, quote } of batch) await publishOne(p, quote);
+    } else {
+      // Transport failure after retries: the next tick tries again, and the
+      // staleness rules on chain cover the gap.
+      for (const { p } of batch) skipped.push(p.symbol);
+    }
+  }
+
+  // 3. Every other transition: price first, session after, so the final
+  //    print is the one standing when the session flips.
+  for (const p of plans) {
+    if (p.roundTheClock && !p.quote?.halted) p.target = roundTheClockTarget(p.symbol);
+    if (!p.opening) await writeSession(p);
   }
 
   return { published, prints, sessionsChanged, skipped };
