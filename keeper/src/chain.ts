@@ -16,6 +16,7 @@ import {
   TransactionInstruction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
+import { utils } from "@coral-xyz/anchor";
 import { readFileSync } from "node:fs";
 import idl from "../../idl/arclis.json";
 
@@ -135,8 +136,8 @@ export async function send(
   attempts = 3,
 ): Promise<SendOutcome> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
+    const tx = new Transaction().add(...instructions);
     try {
-      const tx = new Transaction().add(...instructions);
       const signature = await sendAndConfirmTransaction(
         config.connection,
         tx,
@@ -156,6 +157,19 @@ export async function send(
       }
 
       const message = String((err as Error)?.message ?? err);
+
+      // The previous attempt landed and only its confirmation was lost; the
+      // retry was the same transaction and the cluster refused the duplicate.
+      // That is success, and reporting it as failure left prices that were on
+      // chain looking unpublished.
+      if (/already been processed/i.test(message)) {
+        const sig = tx.signatures[0]?.signature;
+        return {
+          ok: true,
+          signature: sig ? utils.bytes.bs58.encode(sig) : undefined,
+        };
+      }
+
       const expired = /blockhash not found|block height exceeded/i.test(
         message,
       );
