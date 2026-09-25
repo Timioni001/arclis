@@ -39,11 +39,26 @@ const STEPS = [
 ];
 
 const READING = [
-  ["Stock holdings", "The tokenized shares in the treasury, and their dollar value."],
-  ["Perp position", "The short on the matching perpetual that offsets the stock."],
-  ["Net delta", "How much price exposure is left after the hedge. Near zero means the budget no longer moves with the stock."],
-  ["Drift from target", "How far the hedge is from where it should be. The dial shows WITHIN TOLERANCE, or REBALANCE DUE once it leaves the band."],
-  ["Hedged NAV vs If unhedged", "What the treasury is worth with the hedge, beside what it would be worth holding the stock alone."],
+  [
+    "Stock holdings",
+    "The tokenized shares in the treasury, and their dollar value.",
+  ],
+  [
+    "Perp position",
+    "The short on the matching perpetual that offsets the stock.",
+  ],
+  [
+    "Net delta",
+    "How much price exposure is left after the hedge. Near zero means the budget no longer moves with the stock.",
+  ],
+  [
+    "Drift from target",
+    "How far the hedge is from where it should be. The dial shows WITHIN TOLERANCE, or REBALANCE DUE once it leaves the band.",
+  ],
+  [
+    "Hedged NAV vs If unhedged",
+    "What the treasury is worth with the hedge, beside what it would be worth holding the stock alone.",
+  ],
   ["Funding carry", "What holding the short costs or earns over time."],
 ];
 
@@ -107,16 +122,10 @@ export function TreasuryGuide() {
 
         <h3 className="guide-h">Opening one</h3>
         <p className="guide-note">
-          <b>Agents:</b> launch against one of the stocks marked{" "}
-          <em>Hedgeable</em> below, then deposit the stock into a treasury.
-          <br />
-          <b>Operators:</b> <code>npm run seed:treasury -- --url &lt;rpc&gt;</code>{" "}
-          opens a complete devnet treasury: agent mint, stock deposit, hedge
-          margin and the first rebalance.
-        </p>
-        <p className="guide-note guide-muted">
-          ClawPump launches run on Solana mainnet; the treasury program is on
-          devnet for now, so the two are not yet linked end to end.
+          Use <b>Open a treasury</b> below. Connect a wallet, get test USDC from
+          your account panel, then approve three steps: create the agent token
+          and its stock, open the treasury with the stock in it, and post margin
+          to open the hedge. The last step needs the US market open.
         </p>
       </div>
     </details>

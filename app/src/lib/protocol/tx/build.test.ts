@@ -16,6 +16,13 @@ import idl from "../../../idl/arclis.json";
 import {
   cancelWithdrawLiquidity,
   closePosition,
+  defundTreasuryHedge,
+  depositStock,
+  fundTreasuryHedge,
+  initializeTreasury,
+  rebalanceHedge,
+  setTreasuryPolicy,
+  treasuryAddresses,
   crankFunding,
   createMarket,
   depositCollateral,
@@ -252,5 +259,43 @@ describe("instruction data", () => {
     // Reinterpret the unsigned bits as a signed 64-bit integer.
     const signed = value >= 1n << 63n ? value - (1n << 64n) : value;
     expect(signed).toBe(-5_000_000n);
+  });
+});
+
+describe("agent treasury builders", () => {
+  const AGENT = new PublicKey("11111111111111111111111111111115");
+  const a = treasuryAddresses(PROGRAM_ID, SYMBOL, AGENT);
+
+  it("match the IDL", () => {
+    expectMatchesIdl(
+      "initialize_treasury",
+      initializeTreasury(PROGRAM_ID, OWNER, a, AGENT, MINT, 9000, 250),
+    );
+    expectMatchesIdl(
+      "set_treasury_policy",
+      setTreasuryPolicy(PROGRAM_ID, OWNER, a.treasury, 9000, 250, true, 1n),
+    );
+    expectMatchesIdl(
+      "deposit_stock",
+      depositStock(PROGRAM_ID, OWNER, a, TOKEN_ACCOUNT, 1n),
+    );
+    expectMatchesIdl(
+      "fund_treasury_hedge",
+      fundTreasuryHedge(PROGRAM_ID, OWNER, a, TOKEN_ACCOUNT, 1n),
+    );
+    expectMatchesIdl(
+      "defund_treasury_hedge",
+      defundTreasuryHedge(PROGRAM_ID, OWNER, a, TOKEN_ACCOUNT, 1n),
+    );
+    expectMatchesIdl("rebalance_hedge", rebalanceHedge(PROGRAM_ID, OWNER, a));
+  });
+
+  it("derives the treasury's position from the treasury, not the signer", () => {
+    const built = fundTreasuryHedge(PROGRAM_ID, OWNER, a, TOKEN_ACCOUNT, 1n);
+    const [position] = PublicKey.findProgramAddressSync(
+      [Buffer.from("position"), a.treasury.toBuffer(), a.market.toBuffer()],
+      PROGRAM_ID,
+    );
+    expect(built.keys[5].pubkey.equals(position)).toBe(true);
   });
 });

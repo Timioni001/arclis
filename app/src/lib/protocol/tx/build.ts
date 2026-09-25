@@ -28,6 +28,8 @@ import {
   globalConfigPda,
   lpPositionPda,
   marketAddresses,
+  METADATA_PROGRAM_ID,
+  metadataPda,
   positionPda,
   type MarketAddresses,
 } from "../rpc/pdas";
@@ -392,4 +394,223 @@ export function createMarket(
       ro(SYSVAR_RENT_PUBKEY),
     ],
   );
+}
+
+// ---------------------------------------------------------------------------
+// Agent treasuries
+// ---------------------------------------------------------------------------
+
+export interface TreasuryAddresses extends MarketAddresses {
+  config: PublicKey;
+  treasury: PublicKey;
+  stockVault: PublicKey;
+  /** The treasury's own perp position, owned by the treasury PDA. */
+  position: PublicKey;
+}
+
+export function treasuryAddresses(
+  programId: PublicKey,
+  symbol: string,
+  agentMint: PublicKey,
+): TreasuryAddresses {
+  const m = marketAddresses(programId, symbol);
+  const treasury = PublicKey.findProgramAddressSync(
+    [Buffer.from("treasury"), agentMint.toBuffer()],
+    programId,
+  )[0];
+  const stockVault = PublicKey.findProgramAddressSync(
+    [Buffer.from("treasury_stock"), treasury.toBuffer()],
+    programId,
+  )[0];
+  return {
+    ...m,
+    config: globalConfigPda(programId),
+    treasury,
+    stockVault,
+    position: positionPda(programId, treasury, m.market),
+  };
+}
+
+export function initializeTreasury(
+  programId: PublicKey,
+  authority: PublicKey,
+  a: TreasuryAddresses,
+  agentMint: PublicKey,
+  stockMint: PublicKey,
+  hedgeRatioBps: number,
+  toleranceBps: number,
+): TransactionInstruction {
+  return ix(
+    programId,
+    "initialize_treasury",
+    { hedge_ratio_bps: hedgeRatioBps, rebalance_tolerance_bps: toleranceBps },
+    [
+      signer(authority, true),
+      ro(a.config),
+      ro(agentMint),
+      ro(stockMint),
+      ro(a.market),
+      rw(a.treasury),
+      rw(a.stockVault),
+      ro(TOKEN_PROGRAM_ID),
+      ro(SystemProgram.programId),
+      ro(SYSVAR_RENT_PUBKEY),
+    ],
+  );
+}
+
+export function setTreasuryPolicy(
+  programId: PublicKey,
+  authority: PublicKey,
+  treasury: PublicKey,
+  hedgeRatioBps: number,
+  toleranceBps: number,
+  hedgingEnabled: boolean,
+  tokensOutstanding: bigint,
+): TransactionInstruction {
+  return ix(
+    programId,
+    "set_treasury_policy",
+    {
+      hedge_ratio_bps: hedgeRatioBps,
+      rebalance_tolerance_bps: toleranceBps,
+      hedging_enabled: hedgingEnabled,
+      tokens_outstanding: new BN(tokensOutstanding.toString()),
+    },
+    [signer(authority), rw(treasury)],
+  );
+}
+
+export function depositStock(
+  programId: PublicKey,
+  authority: PublicKey,
+  a: TreasuryAddresses,
+  authorityStockAccount: PublicKey,
+  amount: bigint,
+): TransactionInstruction {
+  return ix(programId, "deposit_stock", { amount: new BN(amount.toString()) }, [
+    signer(authority),
+    ro(a.config),
+    rw(a.treasury),
+    rw(a.stockVault),
+    rw(authorityStockAccount),
+    ro(TOKEN_PROGRAM_ID),
+  ]);
+}
+
+function hedgeMarginKeys(
+  authority: PublicKey,
+  a: TreasuryAddresses,
+  authorityQuoteAccount: PublicKey,
+): AccountMeta[] {
+  return [
+    signer(authority, true),
+    ro(a.config),
+    ro(a.treasury),
+    rw(a.market),
+    ro(a.oracle),
+    rw(a.position),
+    rw(authorityQuoteAccount),
+    rw(a.marketVault),
+    rw(a.pool),
+    rw(a.poolVault),
+    ro(TOKEN_PROGRAM_ID),
+    ro(SystemProgram.programId),
+  ];
+}
+
+export function fundTreasuryHedge(
+  programId: PublicKey,
+  authority: PublicKey,
+  a: TreasuryAddresses,
+  authorityQuoteAccount: PublicKey,
+  amount: bigint,
+): TransactionInstruction {
+  return ix(
+    programId,
+    "fund_treasury_hedge",
+    { amount: new BN(amount.toString()) },
+    hedgeMarginKeys(authority, a, authorityQuoteAccount),
+  );
+}
+
+export function defundTreasuryHedge(
+  programId: PublicKey,
+  authority: PublicKey,
+  a: TreasuryAddresses,
+  authorityQuoteAccount: PublicKey,
+  amount: bigint,
+): TransactionInstruction {
+  return ix(
+    programId,
+    "defund_treasury_hedge",
+    { amount: new BN(amount.toString()) },
+    hedgeMarginKeys(authority, a, authorityQuoteAccount),
+  );
+}
+
+export function rebalanceHedge(
+  programId: PublicKey,
+  cranker: PublicKey,
+  a: TreasuryAddresses,
+): TransactionInstruction {
+  return ix(programId, "rebalance_hedge", {}, [
+    signer(cranker),
+    ro(a.config),
+    rw(a.treasury),
+    rw(a.market),
+    ro(a.oracle),
+    rw(a.position),
+    rw(a.pool),
+    rw(a.poolVault),
+    rw(a.marketVault),
+    ro(TOKEN_PROGRAM_ID),
+  ]);
+}
+
+/**
+ * Metaplex `CreateMetadataAccountV3`, so a new agent shows by its name.
+ *
+ * The interface reads an agent's name from its token metadata, the same place
+ * a ClawPump-launched agent's name lives. Hand-built for the same reason as in
+ * `scripts/seed-treasury.ts`: one discriminator byte and three Borsh strings do
+ * not justify the Metaplex SDK in the browser bundle.
+ */
+export function createTokenMetadata(
+  mint: PublicKey,
+  authority: PublicKey,
+  name: string,
+  symbol: string,
+): TransactionInstruction {
+  const str = (s: string) => {
+    const bytes = Buffer.from(s, "utf8");
+    const len = Buffer.alloc(4);
+    len.writeUInt32LE(bytes.length, 0);
+    return Buffer.concat([len, bytes]);
+  };
+  const data = Buffer.concat([
+    Buffer.from([33]), // CreateMetadataAccountV3
+    str(name),
+    str(symbol),
+    str(""), // uri
+    Buffer.from([0, 0]), // seller_fee_basis_points
+    Buffer.from([0]), // creators: None
+    Buffer.from([0]), // collection: None
+    Buffer.from([0]), // uses: None
+    Buffer.from([1]), // is_mutable
+    Buffer.from([0]), // collection_details: None
+  ]);
+  return new TransactionInstruction({
+    programId: METADATA_PROGRAM_ID,
+    keys: [
+      rw(metadataPda(mint)),
+      ro(mint),
+      signer(authority), // mint authority
+      signer(authority, true), // payer
+      ro(authority), // update authority
+      ro(SystemProgram.programId),
+      ro(SYSVAR_RENT_PUBKEY),
+    ],
+    data,
+  });
 }

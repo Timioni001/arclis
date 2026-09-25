@@ -10,10 +10,16 @@
  * of bug that simply cannot happen if nobody is allowed to supply one.
  */
 
-import { Connection, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import {
+  createAssociatedTokenAccountIdempotentInstruction,
   createAssociatedTokenAccountInstruction,
+  createInitializeMint2Instruction,
+  createMintToInstruction,
   getAssociatedTokenAddressSync,
+  getMinimumBalanceForRentExemptMint,
+  MINT_SIZE,
+  TOKEN_PROGRAM_ID,
 } from "@solana/spl-token";
 import type { TransactionInstruction } from "@solana/web3.js";
 import type { Session } from "../../auth/session";
@@ -203,6 +209,222 @@ export async function depositInsurance(
       amount,
     ),
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// Agent treasuries
+// ---------------------------------------------------------------------------
+
+/** Every token the treasury flow creates uses the protocol's 1e6 scale. */
+const DECIMALS = 6;
+
+/**
+ * Create the agent's token and the stock it raised, in one transaction.
+ *
+ * On mainnet the agent token comes from its ClawPump launch and the stock is a
+ * real tokenized share. Devnet has neither, so this creates both: an agent mint
+ * named through token metadata, and a stand-in stock mint of which `stockQty`
+ * is minted to the caller. It is the same compromise `scripts/seed-treasury.ts`
+ * makes, and the interface says so wherever this is offered.
+ */
+export async function createTreasuryMints(
+  ctx: ActionContext,
+  args: {
+    agentMint: Keypair;
+    stockMint: Keypair;
+    agentName: string;
+    agentTicker: string;
+    stockQty: bigint;
+  },
+): Promise<SendResult> {
+  const me = owner(ctx);
+  if (args.stockQty <= 0n) {
+    throw new TransactionError("Enter a stock amount above zero.");
+  }
+  const rent = await getMinimumBalanceForRentExemptMint(ctx.connection);
+  const newMint = (mint: PublicKey) => [
+    SystemProgram.createAccount({
+      fromPubkey: me,
+      newAccountPubkey: mint,
+      lamports: rent,
+      space: MINT_SIZE,
+      programId: TOKEN_PROGRAM_ID,
+    }),
+    createInitializeMint2Instruction(mint, DECIMALS, me, null),
+  ];
+  const stockAta = getAssociatedTokenAddressSync(
+    args.stockMint.publicKey,
+    me,
+    true,
+  );
+  return sendInstructions(
+    {
+      connection: ctx.connection,
+      session: ctx.session,
+      extraSigners: [args.agentMint, args.stockMint],
+    },
+    [
+      ...newMint(args.agentMint.publicKey),
+      build.createTokenMetadata(
+        args.agentMint.publicKey,
+        me,
+        args.agentName,
+        args.agentTicker,
+      ),
+      ...newMint(args.stockMint.publicKey),
+      createAssociatedTokenAccountIdempotentInstruction(
+        me,
+        stockAta,
+        me,
+        args.stockMint.publicKey,
+      ),
+      createMintToInstruction(
+        args.stockMint.publicKey,
+        stockAta,
+        me,
+        args.stockQty,
+      ),
+    ],
+  );
+}
+
+/**
+ * Open the treasury, set its policy and move the stock in.
+ *
+ * Three instructions, one approval: a treasury that exists but holds nothing
+ * is a half-finished state with no reason to be visible to anyone.
+ */
+export async function openTreasury(
+  ctx: ActionContext,
+  args: {
+    agentMint: PublicKey;
+    stockMint: PublicKey;
+    stockQty: bigint;
+    tokensOutstanding: bigint;
+    hedgeRatioBps: number;
+    toleranceBps: number;
+  },
+): Promise<SendResult> {
+  const me = owner(ctx);
+  const a = build.treasuryAddresses(ctx.programId, ctx.symbol, args.agentMint);
+  const stockAta = getAssociatedTokenAddressSync(args.stockMint, me, true);
+  return send(ctx, [
+    build.initializeTreasury(
+      ctx.programId,
+      me,
+      a,
+      args.agentMint,
+      args.stockMint,
+      args.hedgeRatioBps,
+      args.toleranceBps,
+    ),
+    build.setTreasuryPolicy(
+      ctx.programId,
+      me,
+      a.treasury,
+      args.hedgeRatioBps,
+      args.toleranceBps,
+      true,
+      args.tokensOutstanding,
+    ),
+    build.depositStock(ctx.programId, me, a, stockAta, args.stockQty),
+  ]);
+}
+
+/**
+ * Post margin behind the hedge and open it, in one transaction.
+ *
+ * Margin alone leaves an unhedged treasury with idle collateral, which reads as
+ * the feature not working. Rebalancing in the same transaction means the user
+ * either ends with a live short or keeps their margin.
+ */
+export async function fundAndHedge(
+  ctx: ActionContext,
+  agentMint: PublicKey,
+  margin: bigint,
+): Promise<SendResult> {
+  if (margin <= 0n) throw new TransactionError("Enter a margin above zero.");
+  const me = owner(ctx);
+  const a = build.treasuryAddresses(ctx.programId, ctx.symbol, agentMint);
+  return send(ctx, [
+    build.fundTreasuryHedge(ctx.programId, me, a, ata(ctx), margin),
+    build.rebalanceHedge(ctx.programId, me, a),
+  ]);
+}
+
+export async function addHedgeMargin(
+  ctx: ActionContext,
+  agentMint: PublicKey,
+  amount: bigint,
+): Promise<SendResult> {
+  if (amount <= 0n) throw new TransactionError("Enter an amount above zero.");
+  const a = build.treasuryAddresses(ctx.programId, ctx.symbol, agentMint);
+  return send(ctx, [
+    build.fundTreasuryHedge(ctx.programId, owner(ctx), a, ata(ctx), amount),
+  ]);
+}
+
+export async function withdrawHedgeMargin(
+  ctx: ActionContext,
+  agentMint: PublicKey,
+  amount: bigint,
+): Promise<SendResult> {
+  if (amount <= 0n) throw new TransactionError("Enter an amount above zero.");
+  const a = build.treasuryAddresses(ctx.programId, ctx.symbol, agentMint);
+  return send(
+    ctx,
+    await withAtaIfMissing(ctx, [
+      build.defundTreasuryHedge(ctx.programId, owner(ctx), a, ata(ctx), amount),
+    ]),
+  );
+}
+
+/** Permissionless: anyone can bring any treasury back to its target. */
+export async function rebalanceTreasury(
+  ctx: ActionContext,
+  agentMint: PublicKey,
+): Promise<SendResult> {
+  const a = build.treasuryAddresses(ctx.programId, ctx.symbol, agentMint);
+  return send(ctx, [build.rebalanceHedge(ctx.programId, owner(ctx), a)]);
+}
+
+/**
+ * Deposit more stock, minting it first when the caller controls the mint.
+ *
+ * A treasury opened here holds a devnet stand-in stock whose mint authority is
+ * its creator, so "add stock" mints and deposits. For any other stock the
+ * shares must already be in the caller's wallet.
+ */
+export async function addTreasuryStock(
+  ctx: ActionContext,
+  agentMint: PublicKey,
+  stockMint: PublicKey,
+  amount: bigint,
+): Promise<SendResult> {
+  if (amount <= 0n) throw new TransactionError("Enter an amount above zero.");
+  const me = owner(ctx);
+  const a = build.treasuryAddresses(ctx.programId, ctx.symbol, agentMint);
+  const stockAta = getAssociatedTokenAddressSync(stockMint, me, true);
+  const ixs: TransactionInstruction[] = [];
+  const info = await ctx.connection.getAccountInfo(stockMint);
+  // Mint layout: COption tag (u32) then the authority at bytes 4..36.
+  const mintAuthority =
+    info && info.data.length >= 36 && info.data.readUInt32LE(0) === 1
+      ? new PublicKey(info.data.subarray(4, 36))
+      : null;
+  if (mintAuthority?.equals(me)) {
+    ixs.push(
+      createAssociatedTokenAccountIdempotentInstruction(
+        me,
+        stockAta,
+        me,
+        stockMint,
+      ),
+      createMintToInstruction(stockMint, stockAta, me, amount),
+    );
+  }
+  ixs.push(build.depositStock(ctx.programId, me, a, stockAta, amount));
+  return send(ctx, ixs);
 }
 
 export { TransactionError, type SendResult };

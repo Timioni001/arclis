@@ -456,6 +456,11 @@ export function App({ source }: { source: DataSource }) {
               positionFor={(t) => source.treasuryPosition(t)}
               now={now}
               loading={loadingFirstRead}
+              session={session}
+              onSignIn={() =>
+                requestSignIn("Sign in with a wallet to open a treasury.")
+              }
+              onDone={liveStatus.refresh}
             />
           )}
         </main>

@@ -40,6 +40,5 @@ describe("AgentPairs", () => {
   it("offers no launch button, because a launch needs a key this page must not hold", () => {
     render(<AgentPairs />);
     expect(screen.queryByRole("button", { name: /launch/i })).toBeNull();
-    expect(screen.getByText(/never touches this page/i)).toBeTruthy();
   });
 });

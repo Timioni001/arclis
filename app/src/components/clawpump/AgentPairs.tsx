@@ -18,7 +18,6 @@ import { useMemo, useState } from "react";
 import { Card } from "../ui";
 import {
   CREATOR_FEE_BPS,
-  PAIRS_SNAPSHOT,
   STOCK_PAIRS,
   hedgeable,
   mintUrl,
@@ -113,12 +112,6 @@ export function AgentPairs() {
         </ul>
       )}
 
-      <p className="card-note pair-foot">
-        Pairs as listed by ClawPump on {PAIRS_SNAPSHOT}. Launching needs a
-        ClawPump key, which never touches this page: operators launch with{" "}
-        <code>npm run clawpump -- launch</code>. Pump.fun launches are on
-        Solana mainnet.
-      </p>
     </Card>
   );
 }

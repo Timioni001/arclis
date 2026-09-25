@@ -18,6 +18,7 @@
 
 import {
   Connection,
+  Keypair,
   PublicKey,
   Transaction,
   TransactionInstruction,
@@ -114,6 +115,11 @@ export interface SendContext {
   /** Skip the pre-flight simulation. Only for a caller that already ran one. */
   skipSimulation?: boolean;
   sendOptions?: SendOptions;
+  /**
+   * Keypairs that must co-sign, such as a mint being created in the same
+   * transaction. They sign first; the wallet adds the fee payer's signature.
+   */
+  extraSigners?: Keypair[];
 }
 
 /**
@@ -139,6 +145,7 @@ export async function sendInstructions(
     await connection.getLatestBlockhash("confirmed");
   tx.recentBlockhash = blockhash;
   tx.feePayer = payer;
+  if (ctx.extraSigners?.length) tx.partialSign(...ctx.extraSigners);
 
   if (!ctx.skipSimulation) {
     await simulate(connection, tx);
