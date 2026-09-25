@@ -127,9 +127,17 @@ An agent's lifecycle spans three systems:
    `rebalance_hedge` maintains a short in the matching perpetual. Rebalancing
    is permissionless; the keeper runs it every five minutes, so the hedge does
    not depend on the agent's own infrastructure.
-3. **Monitoring.** The Treasuries screen lists launchable stocks, identifies
-   the thirty Arclis can hedge, and shows each on-chain treasury with its
-   hedge, drift from target and NAV per token.
+3. **From the browser.** The Treasuries screen's **Open a treasury** flow
+   takes a connected wallet through the whole lifecycle in three approvals:
+   create the agent token and its stock, open the treasury with the stock
+   deposited, then post margin and open the hedge. Progress is read back from
+   the chain, so a reload resumes at the right step. On devnet the stock is a
+   stand-in token for the real tokenized share.
+4. **Monitoring and control.** Each treasury card shows the hedge, drift from
+   target and NAV per token. Anyone can trigger a rebalance; the treasury's
+   owner can add or withdraw margin and add stock from the same card. The
+   screen also lists launchable stocks and identifies the thirty Arclis can
+   hedge.
 
 `src/dbc/` covers custom bonding-curve shapes, which Pump.fun launches do not
 support.
@@ -162,6 +170,18 @@ Two sign-in methods share one session model (`app/src/lib/auth/`):
   under a secret derived from the device's platform authenticator. There is no
   seed phrase, no password and no server-side account.
 
+### Interface
+
+- **Overview.** Today's movers (top gainers, top losers, most traded, against
+  the previous close), then every market in one list with search, Open now
+  and 24/7 filters, sorting, and a page at a time on a phone. Below it, daily
+  stock and Solana headlines with a running ticker, fetched by the keeper and
+  served at `/news`.
+- **Trade.** The market name in the header is a switcher: click it or press
+  `/`, type a ticker or company, and press Enter.
+- **Account.** The wallet chip opens balances for test USDC and devnet SOL,
+  the faucet, and sign-out.
+
 ### Transactions
 
 Every action that moves funds (opening, closing, withdrawing collateral,
@@ -181,6 +201,11 @@ Charts combine three series, each covering a different span:
 | Oracle prints | Every price the keeper publishes, recorded by the keeper and read live from the chain | About one trading day |
 | Intraday bars | 15-minute bars for the underlying stock, from Yahoo Finance | Last month |
 | Daily bars | Daily bars for the underlying stock, from Yahoo Finance with Stooq as fallback | Full listing history |
+
+Live prices come from Alpaca's market data, which quotes every market in
+one request; Finnhub prices anything Alpaca could not, within its free-tier
+limit. A 24/7 market follows its listed stock while the US market is open and
+the xStock's own Solana market, through live Jupiter quotes, otherwise.
 
 Each timeframe (1H, 4H, 1D, 1W, 1M, 1Y, 5Y, ALL) draws from the finest series
 that covers it, resampled to a readable bar width, and the newest bar always
@@ -263,11 +288,12 @@ interface.
 |---|---|---|
 | Program unit tests | `cargo test --lib` | 129 passing |
 | Integration (local validator) | `npm run test:integration` | 25 passing |
-| Interface | `npm run app:test` | 237 passing |
-| Keeper, pipeline, ClawPump | `npm run keeper:test` | 202 passing |
+| Interface | `npm run app:test` | 248 passing |
+| Keeper, pipeline, ClawPump | `npm run keeper:test` | 219 passing |
 | Meteora DBC tooling | `npm run test:dbc` | 37 passing |
 
-630 tests in total. CI runs formatting, Clippy, unit tests, the DBC suite, a
+646 distinct tests (the keeper command also runs the interface's 12 keeper
+client tests). CI runs formatting, Clippy, unit tests, the DBC suite, a
 lockfile audit against the platform-tools compiler, and the full Anchor build
 and integration suite.
 
@@ -292,8 +318,9 @@ and integration suite.
 These remain, and each needs more than a code change in this repository:
 
 - **Oracle trust.** Prices come from a single keeper key, bounded by
-  staleness, confidence and deviation checks. Pyth equity feeds would remove
-  this trust assumption; it is the first item on the roadmap.
+  staleness, confidence and deviation checks. A decentralised equity price
+  feed would remove this trust assumption; it is the first item on the
+  roadmap.
 - **24/7 pricing.** Overnight, a 24/7 market is only as good as the xStock's
   Solana liquidity. The spread limit, the 10% per-update cap and the lower
   leverage bound the damage a thin or pushed book can do; they do not make a
@@ -311,12 +338,13 @@ These remain, and each needs more than a code change in this repository:
 
 ## Roadmap
 
-1. Pyth price feeds in place of the keeper oracle authority.
+1. A decentralised price feed in place of the keeper oracle authority.
 2. Third-party security audit.
 3. Mainnet deployment of the treasury program, so ClawPump-launched agents can
    be hedged end to end.
 4. Volume and P&L history on top of the event indexer.
-5. More markets, following the Registry's coverage.
+5. More markets, including more 24/7 xStock markets, following the
+   Registry's coverage.
 
 ## Further reading
 
