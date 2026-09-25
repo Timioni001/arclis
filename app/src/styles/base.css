@@ -3565,3 +3565,9 @@ button.market-row:focus-visible {
     animation: none;
   }
 }
+
+/* The price row's age once it passes the program's sixty-second budget. */
+.oracle-age-late {
+  color: var(--warn, #b45309);
+  font-weight: 600;
+}

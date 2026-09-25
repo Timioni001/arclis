@@ -157,6 +157,17 @@ export const NO_PRICE_GRACE_SECS = 45;
  */
 export const PRICE_BATCH = 8;
 
+/**
+ * Just under the program's 1000 bps per-update cap: its check floors, so a
+ * move computed at exactly the cap can land a basis point over it.
+ */
+const SAFE_DEVIATION_BPS = 990n;
+
+function deviationBps(from: bigint, to: bigint): bigint {
+  const delta = to > from ? to - from : from - to;
+  return (delta * BPS) / from;
+}
+
 export interface KeeperOptions {
   config: ChainConfig;
   feed: PriceFeed;
@@ -176,6 +187,11 @@ export interface KeeperOptions {
   alwaysOpen?: Set<string>;
   /** Price updates per transaction. Default `PRICE_BATCH`. */
   batchSize?: number;
+  /**
+   * The prices on chain now, one per oracle, null where unknown. Default: one
+   * `getMultipleAccountsInfo` for every oracle. Overridable for tests.
+   */
+  readPrices?: (oracles: PublicKey[]) => Promise<(bigint | null)[]>;
   /** Overridable for tests. */
   now?: () => number;
 }
@@ -238,6 +254,26 @@ export async function keeperTick(options: KeeperOptions): Promise<{
       state.previousClose.set(q.symbol.toUpperCase(), q.previousClose);
     }
   }
+
+  const readPrices =
+    options.readPrices ??
+    (async (oracles: PublicKey[]) => {
+      const infos = await config.connection.getMultipleAccountsInfo(oracles);
+      return infos.map((info) => {
+        if (!info) return null;
+        try {
+          return BigInt(
+            (
+              coder.accounts.decode("PriceOracle", info.data) as {
+                price: { toString(): string };
+              }
+            ).price.toString(),
+          );
+        } catch {
+          return null;
+        }
+      });
+    });
 
   const signer = {
     pubkey: config.payer.publicKey,
@@ -328,25 +364,12 @@ export async function keeperTick(options: KeeperOptions): Promise<{
     prints.push({ symbol: p.symbol, price: quote.price });
   };
 
-  /** One market's price on its own, with the capped catch-up on a rejection. */
-  const publishOne = async (p: Plan, quote: Quote) => {
-    const outcome = await send(
-      config,
-      [priceIx(p.oracle, quote.price, quote.confidence)],
-      `update_price_oracle ${p.symbol}`,
-    );
-    if (outcome.ok) {
-      landed(p, quote);
-      return;
-    }
-    if (outcome.error !== "OracleDeviationTooLarge") {
-      skipped.push(p.symbol);
-      return;
-    }
-    // The program's own circuit breaker fired. This is the correct outcome
-    // for a bad tick and the wrong one for an oracle that has simply been
-    // off while the market moved, and only a human can tell those apart - so
-    // catching up is opt-in, and loud either way.
+  /**
+   * Walk a market that moved past the deviation cap toward its real price,
+   * one legal step per tick. Opt-in: the same rejection means "the feed is
+   * lying" and "the chain is behind", and only a person knows which.
+   */
+  const catchUp = async (p: Plan, quote: Quote, current: bigint) => {
     if (!options.catchUp) {
       config.log("error", `${p.symbol} moved more than the deviation cap allows`, {
         price: quote.price.toString(),
@@ -355,20 +378,6 @@ export async function keeperTick(options: KeeperOptions): Promise<{
       skipped.push(p.symbol);
       return;
     }
-    // Read the price actually on-chain: the step has to be measured from it,
-    // and this is the only path that needs it.
-    const info = await config.connection.getAccountInfo(p.oracle);
-    if (!info) {
-      skipped.push(p.symbol);
-      return;
-    }
-    const current = BigInt(
-      (
-        coder.accounts.decode("PriceOracle", info.data) as {
-          price: { toString(): string };
-        }
-      ).price.toString(),
-    );
     const step = cappedStep(current, quote.price);
     const stepped = await send(
       config,
@@ -386,6 +395,34 @@ export async function keeperTick(options: KeeperOptions): Promise<{
     // recording it would stop the walk one step short, forever.
     if (stepped.ok && step === quote.price) landed(p, quote);
     else skipped.push(p.symbol);
+  };
+
+  /** One market's price on its own; a deviation rejection goes to catch-up. */
+  const publishOne = async (p: Plan, quote: Quote) => {
+    const outcome = await send(
+      config,
+      [priceIx(p.oracle, quote.price, quote.confidence)],
+      `update_price_oracle ${p.symbol}`,
+    );
+    if (outcome.ok) {
+      landed(p, quote);
+      return;
+    }
+    if (outcome.error !== "OracleDeviationTooLarge") {
+      skipped.push(p.symbol);
+      return;
+    }
+    if (!options.catchUp) {
+      await catchUp(p, quote, 0n); // logs the refusal and skips; reads nothing
+      return;
+    }
+    // The step has to be measured from the price actually on chain.
+    const [current] = await readPrices([p.oracle]).catch(() => [null]);
+    if (current === null || current === undefined) {
+      skipped.push(p.symbol);
+      return;
+    }
+    await catchUp(p, quote, current);
   };
 
   // 1. Opening: session first, so the stale close is never usable under a
@@ -409,9 +446,37 @@ export async function keeperTick(options: KeeperOptions): Promise<{
     else if (state.printedAt.get(p.symbol) === p.quote.printedAt) skipped.push(p.symbol);
     else fresh.push({ p, quote: p.quote });
   }
+  // Which of these would the program refuse? One read covers every oracle.
+  // A market that jumped past the deviation cap would fail any batch it rode
+  // in, and a failed batch falls back to one send per market: with a few such
+  // markets that turned every tick into dozens of sends, and prices across the
+  // whole book went stale waiting behind them. So they are set aside and
+  // handled after every other market is published.
+  let current: (bigint | null)[] = fresh.map(() => null);
+  try {
+    current = await readPrices(fresh.map(({ p }) => p.oracle));
+  } catch {
+    /* unknown: everything is batched, and a rejected batch still falls back */
+  }
+  const batchable: typeof fresh = [];
+  const jumped: { p: Plan; quote: Quote; current: bigint }[] = [];
+  fresh.forEach((f, i) => {
+    const onChain = current[i];
+    if (
+      onChain !== null &&
+      onChain !== undefined &&
+      onChain > 0n &&
+      deviationBps(onChain, f.quote.price) > SAFE_DEVIATION_BPS
+    ) {
+      jumped.push({ ...f, current: onChain });
+    } else {
+      batchable.push(f);
+    }
+  });
+
   const batchSize = Math.max(1, options.batchSize ?? PRICE_BATCH);
-  for (let i = 0; i < fresh.length; i += batchSize) {
-    const batch = fresh.slice(i, i + batchSize);
+  for (let i = 0; i < batchable.length; i += batchSize) {
+    const batch = batchable.slice(i, i + batchSize);
     if (batch.length === 1) {
       await publishOne(batch[0].p, batch[0].quote);
       continue;
@@ -431,6 +496,9 @@ export async function keeperTick(options: KeeperOptions): Promise<{
       for (const { p } of batch) skipped.push(p.symbol);
     }
   }
+
+  // Only now the markets that moved past the cap, so they never delay the rest.
+  for (const j of jumped) await catchUp(j.p, j.quote, j.current);
 
   // 3. Every other transition: price first, session after, so the final
   //    print is the one standing when the session flips.

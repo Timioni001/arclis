@@ -8,6 +8,7 @@
  */
 import { roundTheClock } from "../lib/markets";
 import { MarketPicker } from "../components/protocol/MarketPicker";
+import { useLiveOracle } from "../lib/protocol/liveOracle";
 import { useMemo, useState } from "react";
 import type { MarketView, Position } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
@@ -117,7 +118,10 @@ export function Trade({
   onSignIn: () => void;
   onFilled?: () => void;
 }) {
-  const { market, oracle, pool } = view;
+  const { market, pool } = view;
+  // The traded market's price, re-read every ten seconds rather than with
+  // the rest of the book every thirty. See liveOracle.ts.
+  const oracle = useLiveOracle(view.oracle);
   const [side, setSide] = useState<"long" | "short">("long");
   const [sizeInput, setSizeInput] = useState("2");
   const [lev, setLev] = useState(5);

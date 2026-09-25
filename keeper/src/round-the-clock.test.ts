@@ -313,6 +313,27 @@ describe("batched price updates", () => {
     expect(r.published.sort()).toEqual([...syms].sort());
   });
 
+  it("keeps a market that jumped past the cap out of the batch, and handles it last", async () => {
+    const state = newKeeperState();
+    for (const s of syms.slice(0, 3)) state.sessions.set(s, "Open");
+    const r = await keeperTick({
+      config,
+      feed: { name: "t", quote: async () => syms.slice(0, 3).map((s) => quote(s, 100, OPEN)) },
+      symbols: syms.slice(0, 3),
+      state,
+      catchUp: true,
+      now: () => OPEN,
+      // On chain: AAPL and MSFT near $100, NVDA still at a $60 seed.
+      readPrices: async (oracles) =>
+        oracles.map((_, i) => [99_000_000n, 60_000_000n, 101_000_000n][i] ?? null),
+    });
+    expect(sent).toEqual([
+      "update_price_oracle AAPL,MSFT",
+      "update_price_oracle NVDA (catching up)",
+    ]);
+    expect(r.published.sort()).toEqual(["AAPL", "MSFT"]);
+  });
+
   it("falls back to one market at a time when the program rejects a batch", async () => {
     const state = newKeeperState();
     for (const s of syms.slice(0, 3)) state.sessions.set(s, "Open");

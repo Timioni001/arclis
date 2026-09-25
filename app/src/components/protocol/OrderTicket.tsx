@@ -74,8 +74,8 @@ export function OrderTicket({
   symbol: string;
   /**
    * Seconds since the oracle last published. The program refuses a new
-   * position against a price over sixty seconds old; the interface reads the
-   * chain every thirty, so it warns at ninety to avoid crying wolf.
+   * position against a price over sixty seconds old, and the Trade page
+   * re-reads this market's oracle every ten, so the same line applies here.
    */
   priceAgeSecs?: number;
   side: "long" | "short";
@@ -131,8 +131,8 @@ export function OrderTicket({
   const blocker = useMemo((): string | null => {
     if (!live) return "Demo data. Trading runs against the devnet deployment.";
     if (preview.size === 0n) return "Enter a size above zero.";
-    if (priceAgeSecs > 90) {
-      return `${symbol}'s price has not updated for ${Math.round(priceAgeSecs / 60) || 1} min, and the program only opens positions against a fresh one. It usually clears within a minute; if it does not, this market's price feed is down.`;
+    if (priceAgeSecs > 60) {
+      return `Waiting for a fresh ${symbol} price. New positions need one under a minute old; this usually clears in a few seconds.`;
     }
     if (poolLiquidity === 0n) {
       return "No liquidity backs this market yet, so an order cannot fill.";

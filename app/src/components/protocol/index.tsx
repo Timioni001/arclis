@@ -85,7 +85,10 @@ export function SessionNotice({ oracle }: { oracle: Oracle }) {
   }
   if (allHours && oracle.session === "Closed") {
     return (
-      <Notice tone="info" title={`${oracle.symbol} has no firm price right now`}>
+      <Notice
+        tone="info"
+        title={`${oracle.symbol} has no firm price right now`}
+      >
         {ROUND_THE_CLOCK_CLOSED}
       </Notice>
     );
@@ -126,33 +129,28 @@ export function SessionNotice({ oracle }: { oracle: Oracle }) {
 
 export function OracleStatus({ oracle, now }: { oracle: Oracle; now: number }) {
   const age = now - oracle.lastUpdateTs;
-  const stale = oracle.session === "Open" && age > 60;
+  // Past the program's sixty-second budget for new risk. Said quietly on the
+  // price row: the order ticket is where it changes what a person can do, and
+  // it says so there.
+  const late = oracle.session === "Open" && age > 60;
   const conf = confidencePct(oracle.price, oracle.confidence);
 
   return (
-    <div>
-      <div className="row-item" style={{ background: "var(--surface-sunken)" }}>
-        <Chip small>
-          <Icon name="target" size={15} />
-        </Chip>
-        <div className="row-main">
-          <div className="row-title num">
-            {usd(oracle.price, { compact: false })}
-          </div>
-          <div className="row-sub">
-            Oracle · {conf.toFixed(1)}% confidence ·{" "}
-            {ago(oracle.lastUpdateTs, now)}
-          </div>
+    <div className="row-item" style={{ background: "var(--surface-sunken)" }}>
+      <Chip small>
+        <Icon name="target" size={15} />
+      </Chip>
+      <div className="row-main">
+        <div className="row-title num">
+          {usd(oracle.price, { compact: false })}
+        </div>
+        <div className="row-sub">
+          Oracle · {conf.toFixed(1)}% confidence ·{" "}
+          <span className={late ? "oracle-age-late" : undefined}>
+            {late ? "updating" : ago(oracle.lastUpdateTs, now)}
+          </span>
         </div>
       </div>
-      {stale && (
-        <div style={{ marginTop: "var(--space-2)" }}>
-          <Notice tone="warning" title="Oracle update delayed">
-            Last update {ago(oracle.lastUpdateTs, now)}. Trading is restricted
-            until a fresh price lands.
-          </Notice>
-        </div>
-      )}
     </div>
   );
 }
