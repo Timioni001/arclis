@@ -18,7 +18,7 @@ value of its runway steady.
 | Keeper | [arclis-keeper.fly.dev/health](https://arclis-keeper.fly.dev/health) |
 | Activity feed | [arclis-keeper.fly.dev/events](https://arclis-keeper.fly.dev/events) |
 | News | [arclis-keeper.fly.dev/news](https://arclis-keeper.fly.dev/news): stock and Solana headlines for the Overview, fetched with the keeper's Finnhub key every fifteen minutes |
-| Markets | 30 on US market hours: AAPL, NVDA, MSFT, TSLA, GOOGL, AMZN, META, AVGO, PLTR, AMD, COIN, HOOD, MSTR, SPY, QQQ, MU, CRCL, LLY, JNJ, KO, MCD, COST, INTC, BA, SHOP, ARM, GME, RDDT, IONQ, GLD. 5 around the clock: AAPLx, NVDAx, TSLAx, SPYx, QQQx |
+| Markets | 30 on US market hours: AAPL, NVDA, MSFT, TSLA, GOOGL, AMZN, META, AVGO, PLTR, AMD, COIN, HOOD, MSTR, SPY, QQQ, MU, CRCL, LLY, JNJ, KO, MCD, COST, INTC, BA, SHOP, ARM, GME, RDDT, IONQ, GLD. 20 around the clock: AAPLx, NVDAx, TSLAx, SPYx, QQQx, MSTRx, COINx, HOODx, PLTRx, MSFTx, GOOGLx, METAx, AMZNx, AVGOx, CRCLx, GLDx, MCDx, KOx, GMEx, DFDVx |
 
 The deployment runs on Solana devnet with prices published every 20 seconds.
 The Registry needs no wallet. To trade or provide liquidity, connect a devnet
@@ -91,13 +91,15 @@ Equity behaviour is enforced on chain:
   migration.
 - **Price safety.** Oracle updates are bounded by staleness, confidence and a
   per-update deviation cap of 10%.
-- **24/7 markets.** AAPLx, NVDAx, TSLAx, SPYx and QQQx trade around the clock
-  on the xStock itself. While the US market is open they follow the listed
-  stock; nights, weekends and holidays they follow the xStock's own market on
-  Solana, priced from two live Jupiter quotes (the mid is the price, half the
-  spread is the confidence). When neither source gives a firm price, or the
-  round trip costs more than 3%, the keeper closes the market: exits stay
-  open, new risk waits. They carry 5x leverage and a 10% maintenance margin,
+- **24/7 markets.** Twenty xStock markets, from AAPLx and NVDAx to KOx,
+  GMEx and DFDVx, trade around the clock on the xStock itself. While the US
+  market is open they follow the listed stock; nights, weekends and holidays
+  they follow the xStock's own market on Solana: one Jupiter price request
+  for all twenty, each checked against a live buy and sell quote (the price
+  must sit inside the quoted band, and half the spread is the confidence).
+  When neither source gives a firm price, or the round trip costs more than
+  3%, the keeper closes the market: exits stay open, new risk waits. An
+  hours-bound market that is closed links straight to its 24/7 twin. They carry 5x leverage and a 10% maintenance margin,
   half and double the hours-bound markets. The program needs no special case:
   a market's session is whatever its oracle says.
 - **Funding.** Accrues on skew and pool utilisation, cranked permissionlessly.
@@ -295,11 +297,11 @@ interface.
 |---|---|---|
 | Program unit tests | `cargo test --lib` | 129 passing |
 | Integration (local validator) | `npm run test:integration` | 25 passing |
-| Interface | `npm run app:test` | 248 passing |
-| Keeper, pipeline, ClawPump | `npm run keeper:test` | 219 passing |
+| Interface | `npm run app:test` | 251 passing |
+| Keeper, pipeline, ClawPump | `npm run keeper:test` | 224 passing |
 | Meteora DBC tooling | `npm run test:dbc` | 37 passing |
 
-646 distinct tests (the keeper command also runs the interface's 12 keeper
+654 distinct tests (the keeper command also runs the interface's 12 keeper
 client tests). CI runs formatting, Clippy, unit tests, the DBC suite, a
 lockfile audit against the platform-tools compiler, and the full Anchor build
 and integration suite.
@@ -350,8 +352,7 @@ These remain, and each needs more than a code change in this repository:
 3. Mainnet deployment of the treasury program, so ClawPump-launched agents can
    be hedged end to end.
 4. Volume and P&L history on top of the event indexer.
-5. More markets, including more 24/7 xStock markets, following the
-   Registry's coverage.
+5. More markets, 24/7 and hours-bound, following the Registry's coverage.
 
 ## Further reading
 

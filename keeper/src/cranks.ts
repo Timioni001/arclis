@@ -110,7 +110,44 @@ export async function crankFunding(
   const cranked: string[] = [];
   const notDue: string[] = [];
 
-  for (const symbol of symbols) {
+  /*
+   * Which markets are due, from one read. Funding accrues hourly and this
+   * runs every few minutes, so nearly every attempt used to be a send the
+   * program refused with FundingNotDue: with fifty markets, a hundred wasted
+   * requests a pass against the endpoint the price publisher needs. A market
+   * whose account cannot be read is tried anyway; the program is the judge.
+   */
+  const now = Math.floor(Date.now() / 1000);
+  let due = symbols;
+  try {
+    const markets = symbols.map((s) => addressesFor(config.programId, s).market);
+    const infos: (import("@solana/web3.js").AccountInfo<Buffer> | null)[] = [];
+    for (let i = 0; i < markets.length; i += 100) {
+      infos.push(...(await config.connection.getMultipleAccountsInfo(markets.slice(i, i + 100))));
+    }
+    due = symbols.filter((symbol, i) => {
+      const info = infos[i];
+      if (!info) return true;
+      try {
+        const m = coder.accounts.decode("Market", info.data) as {
+          last_funding_ts: { toString(): string };
+          funding_interval_secs: { toString(): string };
+        };
+        const next = Number(m.last_funding_ts.toString()) + Number(m.funding_interval_secs.toString());
+        if (now < next) {
+          notDue.push(symbol);
+          return false;
+        }
+        return true;
+      } catch {
+        return true;
+      }
+    });
+  } catch {
+    /* read failed: try them all, as before */
+  }
+
+  for (const symbol of due) {
     const a = addressesFor(config.programId, symbol);
     const outcome = await send(
       config,
