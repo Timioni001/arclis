@@ -317,3 +317,27 @@ describe("reading the book from the keeper", () => {
     }
   });
 });
+
+describe("overlapping refreshes", () => {
+  it("share one read, so an older answer can never land after a newer one", async () => {
+    const { connection } = fakeConnection();
+    const c = connection as unknown as { getMultipleAccountsInfo: ReturnType<typeof vi.fn> };
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => (release = r));
+    const real = c.getMultipleAccountsInfo.getMockImplementation()!;
+    c.getMultipleAccountsInfo.mockImplementation(async (keys: PublicKey[]) => {
+      await gate; // a slow network: the page's next tick fires first
+      return real(keys);
+    });
+    const src = source(connection);
+    const first = src.refresh();
+    const second = src.refresh();
+    release();
+    await Promise.all([first, second]);
+    expect(c.getMultipleAccountsInfo).toHaveBeenCalledTimes(1);
+
+    // Once it has landed, the next refresh reads again.
+    await src.refresh();
+    expect(c.getMultipleAccountsInfo).toHaveBeenCalledTimes(2);
+  });
+});

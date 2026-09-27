@@ -181,6 +181,19 @@ async function withBusyRetry<T>(
  * trader nothing they could act on. Load errors are retried briefly and then
  * reported as what they are: the network was busy and nothing happened.
  */
+/**
+ * A read made before anything is signed, retried like the send path's own
+ * reads, and failing the same way: a busy network says so, in words.
+ */
+export async function readBeforeSend<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await withBusyRetry(read);
+  } catch (e) {
+    if (isBusy(e)) throw new TransactionError(BUSY, { name: "NetworkBusy" });
+    throw e;
+  }
+}
+
 export async function sendInstructions(
   ctx: SendContext,
   instructions: TransactionInstruction[],

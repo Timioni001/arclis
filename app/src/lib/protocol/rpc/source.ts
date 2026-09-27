@@ -352,7 +352,21 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
     return ((Number(now) - from) / from) * 100;
   }
 
-  async function refresh(): Promise<void> {
+  /*
+   * One read at a time. The page refreshes on a timer whether or not the last
+   * read finished, and on a slow network two reads in flight can land out of
+   * order, drawing a newer price and then the older one. A refresh asked for
+   * while one is running shares it.
+   */
+  let inFlight: Promise<void> | null = null;
+  function refresh(): Promise<void> {
+    inFlight ??= readBook().finally(() => {
+      inFlight = null;
+    });
+    return inFlight;
+  }
+
+  async function readBook(): Promise<void> {
     try {
       const derived = options.symbols.map((symbol) => ({
         symbol,

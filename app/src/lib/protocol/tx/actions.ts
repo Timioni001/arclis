@@ -23,7 +23,12 @@ import {
 } from "@solana/spl-token";
 import type { TransactionInstruction } from "@solana/web3.js";
 import type { Session } from "../../auth/session";
-import { sendInstructions, TransactionError, type SendResult } from "./send";
+import {
+  readBeforeSend,
+  sendInstructions,
+  TransactionError,
+  type SendResult,
+} from "./send";
 import * as build from "./build";
 
 export interface ActionContext {
@@ -62,7 +67,7 @@ async function withAtaIfMissing(
   instructions: TransactionInstruction[],
 ): Promise<TransactionInstruction[]> {
   const address = ata(ctx);
-  const info = await ctx.connection.getAccountInfo(address);
+  const info = await readBeforeSend(() => ctx.connection.getAccountInfo(address));
   if (info) return instructions;
   return [
     createAssociatedTokenAccountInstruction(

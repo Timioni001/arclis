@@ -161,6 +161,7 @@ export function OrderTicket({
     address,
     session,
     balance,
+    lamports,
     deposit,
   ]);
 
