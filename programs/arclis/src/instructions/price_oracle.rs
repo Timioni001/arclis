@@ -126,8 +126,13 @@ pub fn set_market_session(ctx: Context<SetMarketSession>, session: MarketSession
         );
     }
 
+    // The timestamp marks a change of session, not a call. Funding counts
+    // from when an open market opened (see `funding::accrual_start`), so a
+    // repeated `Open` from a restarted keeper must not move it.
+    if session != previous {
+        oracle.session_updated_ts = now;
+    }
     oracle.session = session;
-    oracle.session_updated_ts = now;
 
     emit!(SessionChanged {
         oracle: oracle.key(),

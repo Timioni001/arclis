@@ -41,6 +41,8 @@ pub struct PriceOracle {
     /// usable for an asset that does not trade around the clock - see
     /// [`crate::math::session`].
     pub session: MarketSession,
+    /// When `session` last changed. Not moved by setting the same session
+    /// again: an open market's funding counts from here.
     pub session_updated_ts: i64,
 
     /// Cumulative shares-per-original-share since inception, at

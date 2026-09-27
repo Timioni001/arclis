@@ -80,6 +80,23 @@ pub fn funding_rate_bps(
     ))
 }
 
+/// Where a funding crank starts counting from.
+///
+/// Funding accrues only while the venue is open (see
+/// [`crate::math::session::funding_accrues`]), but `last_funding_ts` cannot
+/// move while it is shut: the crank refuses to run then. Counting from it
+/// alone charged every closed hour at the next open, all at once and at the
+/// open's skew: seventeen intervals overnight, sixty-five over a weekend.
+/// `opened_at` is when the market last changed session, which for a market
+/// that is open now is when it opened, so the clock restarts there.
+///
+/// This forgives at most the part of one interval that was open before the
+/// close, never charges for time the market was shut, and changes nothing for
+/// a market that stayed open.
+pub fn accrual_start(last_funding_ts: i64, opened_at: i64) -> i64 {
+    last_funding_ts.max(opened_at)
+}
+
 /// How many whole funding intervals a crank should settle.
 ///
 /// Capped at [`MAX_FUNDING_INTERVALS_PER_CRANK`]. A market nobody cranked over
@@ -135,6 +152,41 @@ pub fn funding_index_delta(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const HOUR: i64 = 3_600;
+
+    #[test]
+    fn a_market_that_stayed_open_counts_from_its_last_crank() {
+        // Opened at 09:30, cranked at 13:00: the open is long past.
+        let opened = 0;
+        let last = 3 * HOUR + 30 * 60;
+        assert_eq!(accrual_start(last, opened), last);
+    }
+
+    #[test]
+    fn a_weekend_is_not_charged_at_the_open() {
+        // Last crank Friday 15:30; the market closed at 16:00 and reopened
+        // Monday 09:30, 65.5 hours later.
+        let friday = 0;
+        let monday_open = friday + 66 * HOUR;
+        let start = accrual_start(friday, monday_open);
+        assert_eq!(start, monday_open);
+        // At 09:35 not even one interval has run, so nothing is due...
+        assert_eq!(
+            intervals_elapsed(monday_open + 5 * 60 - start, HOUR).unwrap(),
+            0
+        );
+        // ...where counting from Friday charged the 24-interval maximum.
+        assert_eq!(
+            intervals_elapsed(monday_open + 5 * 60 - friday, HOUR).unwrap(),
+            MAX_FUNDING_INTERVALS_PER_CRANK
+        );
+        // An hour after the open, exactly one interval is due.
+        assert_eq!(
+            intervals_elapsed(monday_open + HOUR - start, HOUR).unwrap(),
+            1
+        );
+    }
 
     const P100: u64 = 100 * PRICE_SCALE as u64;
 

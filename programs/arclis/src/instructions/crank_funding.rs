@@ -69,11 +69,13 @@ pub fn handler(ctx: Context<CrankFunding>) -> Result<()> {
         funding_accrues(ctx.accounts.oracle.session),
         ArclisError::SessionNotOpen
     );
+    let opened_at = ctx.accounts.oracle.session_updated_ts;
     let market = &mut ctx.accounts.market;
 
-    let elapsed = now
-        .checked_sub(market.last_funding_ts)
-        .ok_or(ArclisError::MathOverflow)?;
+    // Count from the later of the last crank and the last open, so hours the
+    // market spent shut are never charged at the next open.
+    let start = funding::accrual_start(market.last_funding_ts, opened_at);
+    let elapsed = now.checked_sub(start).ok_or(ArclisError::MathOverflow)?;
     require!(
         elapsed >= market.funding_interval_secs,
         ArclisError::FundingNotDue
@@ -108,8 +110,7 @@ pub fn handler(ctx: Context<CrankFunding>) -> Result<()> {
         .map_err(|_| ArclisError::MathOverflow)?
         .checked_mul(market.funding_interval_secs)
         .ok_or(ArclisError::MathOverflow)?;
-    market.last_funding_ts = market
-        .last_funding_ts
+    market.last_funding_ts = start
         .checked_add(consumed)
         .ok_or(ArclisError::MathOverflow)?;
 
