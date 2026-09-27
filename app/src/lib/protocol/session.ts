@@ -72,17 +72,3 @@ export function fundingAccrues(session: MarketSession): boolean {
   return session === "Open";
 }
 
-/**
- * Why idle collateral cannot be withdrawn right now, or null when it can.
- *
- * The program treats a withdrawal as increasing risk, whatever is still
- * open, so it follows the same session rule as a new position. Said here in
- * words about the money, because "cannot increase risk" reads as nonsense to
- * someone who holds no position.
- */
-export function withdrawBlocker(session: MarketSession, symbol: string): string | null {
-  if (sessionAllows(session, "IncreaseRisk").allowed) return null;
-  return session === "Halted"
-    ? `${symbol} is halted. Withdrawals reopen when trading resumes; your collateral stays in the market's vault.`
-    : `Withdrawals reopen when ${symbol} opens. Your collateral stays in the market's vault until then.`;
-}

@@ -12,7 +12,7 @@ import { useLiveOracle } from "../lib/protocol/liveOracle";
 import { useMemo, useState } from "react";
 import type { MarketView, Position } from "../lib/protocol/types";
 import * as m from "../lib/protocol/math";
-import { sessionAllows, withdrawBlocker } from "../lib/protocol/session";
+import { sessionAllows } from "../lib/protocol/session";
 import {
   Button,
   Card,
@@ -582,7 +582,6 @@ export function Trade({
                     symbol={oracle.symbol}
                     session={session}
                     onDone={onFilled}
-                    blocker={withdrawBlocker(oracle.session, oracle.symbol)}
                     doneText="Collateral returned to your wallet."
                     action={(ctx) => withdrawCollateral(ctx, pos.collateral)}
                   >

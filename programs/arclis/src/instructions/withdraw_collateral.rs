@@ -4,7 +4,7 @@ use anchor_spl::token::{self, Token, TokenAccount, Transfer};
 use crate::errors::ArclisError;
 use crate::events::CollateralWithdrawn;
 use crate::instructions::guards::{require_tradable, sync_and_settle};
-use crate::math::session::PriceUse;
+use crate::math::session::withdrawal_price_use;
 use crate::state::{GlobalConfig, LiquidityPool, Market, Position, PriceOracle};
 
 #[derive(Accounts)]
@@ -63,12 +63,6 @@ pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
     require!(amount > 0, ArclisError::InsufficientCollateral);
 
     let now = Clock::get()?.unix_timestamp;
-    // Withdrawing collateral raises leverage on whatever is still open, so it
-    // counts as increasing risk and is refused while the venue is shut.
-    let mark_price = ctx
-        .accounts
-        .oracle
-        .validated_price(now, PriceUse::IncreaseRisk)?;
     let funding_index = ctx.accounts.market.cumulative_funding_index;
 
     // Normalise and settle before valuing anything, so the margin check below
@@ -85,6 +79,15 @@ pub fn handler(ctx: Context<WithdrawCollateral>, amount: u64) -> Result<()> {
         &ctx.accounts.token_program,
         &oracle_key,
     )?;
+
+    // Withdrawing collateral raises leverage on whatever is still open, so it
+    // counts as increasing risk and is refused while the venue is shut. A flat
+    // position has nothing open: its collateral leaves at any hour.
+    let mark_price = match withdrawal_price_use(ctx.accounts.position.is_flat()) {
+        Some(use_) => ctx.accounts.oracle.validated_price(now, use_)?,
+        // Never read: `debit_collateral` values only a position that is open.
+        None => 0,
+    };
     let margin_ratio_bps_after = debit_collateral(
         &mut ctx.accounts.position,
         &ctx.accounts.market,

@@ -4,7 +4,7 @@
  * because a mismatch shows a button the program will refuse.
  */
 import { describe, expect, it } from "vitest";
-import { fundingAccrues, sessionAllows, withdrawBlocker } from "./session";
+import { fundingAccrues, sessionAllows } from "./session";
 
 describe("sessionAllows", () => {
   it("allows both directions while open", () => {
@@ -41,11 +41,3 @@ describe("sessionAllows", () => {
   });
 });
 
-describe("withdrawBlocker", () => {
-  it("allows a withdrawal only while the market is open, as the program does", () => {
-    expect(withdrawBlocker("Open", "AAPL")).toBeNull();
-    expect(withdrawBlocker("Closed", "AAPL")).toMatch(/reopen when AAPL opens/);
-    expect(withdrawBlocker("PreOpen", "AAPL")).toMatch(/reopen when AAPL opens/);
-    expect(withdrawBlocker("Halted", "AAPL")).toMatch(/halted/);
-  });
-});

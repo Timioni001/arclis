@@ -54,6 +54,21 @@ pub enum PriceUse {
     ReduceRisk,
 }
 
+/// What a collateral withdrawal needs from the oracle, if anything.
+///
+/// Withdrawing from an open position raises its leverage, so it is an
+/// increase in risk and follows that rule. A flat position has no exposure
+/// for a price to value: its collateral is simply the trader's money. Asking
+/// for a live price there locked idle collateral in the vault every night and
+/// weekend for no reason the protocol could state.
+pub fn withdrawal_price_use(position_is_flat: bool) -> Option<PriceUse> {
+    if position_is_flat {
+        None
+    } else {
+        Some(PriceUse::IncreaseRisk)
+    }
+}
+
 /// How stale a price may be, for this session and this intent.
 ///
 /// Returns `None` when the price may not be used at all.
@@ -119,6 +134,14 @@ pub fn funding_accrues(session: MarketSession) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn idle_collateral_needs_no_price_but_margin_behind_a_position_does() {
+        assert_eq!(withdrawal_price_use(true), None);
+        assert_eq!(withdrawal_price_use(false), Some(PriceUse::IncreaseRisk));
+        // And that use is refused while the market is shut, as before.
+        assert!(check_session(MarketSession::Closed, PriceUse::IncreaseRisk, 30).is_err());
+    }
 
     const MINUTE: i64 = 60;
     const DAY: i64 = 86_400;
