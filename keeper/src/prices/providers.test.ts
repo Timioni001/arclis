@@ -28,13 +28,53 @@ describe("alpacaFeed", () => {
       };
     });
     const quotes = await feed.quote(["AAPL", "NVDA", "BRK.B"]);
-    expect(urls).toHaveLength(1);
-    expect(urls[0]).toContain("symbols=AAPL,NVDA,BRK.B");
-    expect(urls[0]).toContain("feed=iex");
+    // Two batched requests, whatever the number of symbols: trades and quotes.
+    expect(urls).toHaveLength(2);
+    for (const u of urls) {
+      expect(u).toContain("symbols=AAPL,NVDA,BRK.B");
+      expect(u).toContain("feed=iex");
+    }
     expect(quotes.map((q) => q.symbol)).toEqual(["AAPL", "BRK.B"]);
     expect(quotes[0].price).toBe(254_200_000n);
     expect(quotes[0].printedAt).toBe(Date.parse("2026-09-25T19:59:58Z") / 1000);
     expect(quotes[0].halted).toBe(false);
+  });
+
+  describe("a quiet stock", () => {
+    // IEX carries a small share of US volume: a quieter name can go more than
+    // a minute without a trade there, while its bid and ask keep updating.
+    const book = (quote: Record<string, unknown> | null, quotesFail = false) =>
+      alpacaFeed("id", "secret", "iex", async (url) => {
+        if (url.includes("/quotes/latest")) {
+          if (quotesFail) throw new Error("500 Internal Server Error");
+          return { quotes: quote ? { IONQ: quote } : {} };
+        }
+        return { trades: { IONQ: { p: 40.0, t: "2026-09-25T15:00:00Z" } } };
+      });
+
+    it("is priced from its live bid and ask when they are newer than its last trade", async () => {
+      const [q] = await book({ bp: 40.1, ap: 40.14, t: "2026-09-25T15:02:30Z" }).quote(["IONQ"]);
+      expect(Number(q.price) / 1e6).toBeCloseTo(40.12);
+      expect(q.printedAt).toBe(Date.parse("2026-09-25T15:02:30Z") / 1000);
+      expect(Number(q.confidence) / 1e6).toBeCloseTo(0.02); // half the spread
+    });
+
+    it("keeps the trade when the quote is older", async () => {
+      const [q] = await book({ bp: 39.9, ap: 39.94, t: "2026-09-25T14:59:00Z" }).quote(["IONQ"]);
+      expect(q.price).toBe(40_000_000n);
+    });
+
+    it("keeps the trade when the quote is one-sided or too wide to be a price", async () => {
+      const [oneSided] = await book({ bp: 0, ap: 40.2, t: "2026-09-25T15:02:30Z" }).quote(["IONQ"]);
+      expect(oneSided.price).toBe(40_000_000n);
+      const [wide] = await book({ bp: 39, ap: 41, t: "2026-09-25T15:02:30Z" }).quote(["IONQ"]);
+      expect(wide.price).toBe(40_000_000n);
+    });
+
+    it("still prices from trades when the quotes request fails", async () => {
+      const [q] = await book(null, true).quote(["IONQ"]);
+      expect(q.price).toBe(40_000_000n);
+    });
   });
 
   it("fails loudly on an HTTP error, so the fallback can take over", async () => {

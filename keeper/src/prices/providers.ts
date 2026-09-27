@@ -143,34 +143,80 @@ export function alpacaFeed(
   dataFeed: "iex" | "sip" = "iex",
   fetchJson: (url: string, headers: Record<string, string>) => Promise<unknown> = getJson,
 ): PriceFeed {
+  const headers = { "APCA-API-KEY-ID": keyId, "APCA-API-SECRET-KEY": secret };
+  const url = (kind: "trades" | "quotes", symbols: string[]) =>
+    `https://data.alpaca.markets/v2/stocks/${kind}/latest?symbols=${symbols
+      .map(encodeURIComponent)
+      .join(",")}&feed=${dataFeed}`;
+
   return {
     name: "alpaca",
     async quote(symbols) {
-      const payload = (await fetchJson(
-        `https://data.alpaca.markets/v2/stocks/trades/latest?symbols=${symbols
-          .map(encodeURIComponent)
-          .join(",")}&feed=${dataFeed}`,
-        { "APCA-API-KEY-ID": keyId, "APCA-API-SECRET-KEY": secret },
-      )) as { trades?: Record<string, any> };
+      /*
+       * Latest trades and latest quotes, each one request for every symbol.
+       *
+       * The free IEX feed carries a small share of US volume, so a quieter
+       * name can go more than a minute without a trade there while its bid
+       * and ask keep moving. The keeper will not republish an unchanged
+       * print, so on trades alone such a market went stale mid-session and
+       * refused new positions. A two-sided quote newer than the last trade is
+       * a genuine, newer observation of the price: its midpoint is used, with
+       * half the spread as the confidence. Trades still come first when they
+       * are the newer, and a failed quotes request costs nothing but that.
+       */
+      const [tradesPayload, quotesPayload] = await Promise.all([
+        fetchJson(url("trades", symbols), headers) as Promise<{ trades?: Record<string, any> }>,
+        (fetchJson(url("quotes", symbols), headers) as Promise<{ quotes?: Record<string, any> }>).catch(
+          () => ({ quotes: {} }),
+        ),
+      ]);
+      const book: Record<string, any> = quotesPayload?.quotes ?? {};
 
       const out: Quote[] = [];
-      for (const [symbol, trade] of Object.entries(payload.trades ?? {})) {
+      for (const [symbol, trade] of Object.entries(tradesPayload.trades ?? {})) {
         const price = Number(trade?.p);
         if (!Number.isFinite(price) || price <= 0) continue;
+        const tradeAt = Math.floor(Date.parse(String(trade?.t ?? "")) / 1000) || 0;
+        const halted = Array.isArray(trade?.c) && trade.c.includes("H");
+
+        const mid = quoteMid(book[symbol]);
+        if (mid && mid.at > tradeAt) {
+          out.push({
+            symbol: symbol.toUpperCase(),
+            price: toFixed(mid.price),
+            confidence: toFixed(mid.halfSpread),
+            printedAt: mid.at,
+            halted,
+          });
+          continue;
+        }
         out.push({
           symbol: symbol.toUpperCase(),
           price: toFixed(price),
           confidence: confidenceFromPct(price, 0.05),
-          printedAt:
-            Math.floor(Date.parse(String(trade?.t ?? "")) / 1000) ||
-            Math.floor(Date.now() / 1000),
-          // Alpaca encodes halts in the trade condition codes.
-          halted: Array.isArray(trade?.c) && trade.c.includes("H"),
+          printedAt: tradeAt || Math.floor(Date.now() / 1000),
+          halted,
         });
       }
       return out;
     },
   };
+}
+
+/** A quote this wide is not a price; the last trade is the better answer. */
+const MAX_QUOTE_SPREAD_PCT = 1;
+
+/** The midpoint of a two-sided, reasonably tight quote, or null. */
+function quoteMid(
+  q: Record<string, any> | undefined,
+): { price: number; halfSpread: number; at: number } | null {
+  const bid = Number(q?.bp);
+  const ask = Number(q?.ap);
+  const at = Math.floor(Date.parse(String(q?.t ?? "")) / 1000);
+  if (!(bid > 0) || !(ask >= bid) || !Number.isFinite(at)) return null;
+  const mid = (bid + ask) / 2;
+  if (((ask - bid) / mid) * 100 > MAX_QUOTE_SPREAD_PCT) return null;
+  return { price: mid, halfSpread: (ask - bid) / 2, at };
 }
 
 // ---------------------------------------------------------------------------

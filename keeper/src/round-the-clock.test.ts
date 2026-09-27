@@ -33,7 +33,7 @@ import { keeperTick, newKeeperState, NO_PRICE_GRACE_SECS } from "./oracle-keeper
 import type { PriceFeed, Quote } from "./prices/types";
 
 describe("Alpaca", () => {
-  it("prices every symbol in one request on the free IEX feed", async () => {
+  it("prices every symbol in one batched pair of requests on the free IEX feed", async () => {
     const urls: string[] = [];
     const feed = alpacaFeed("key", "secret", "iex", async (url, headers) => {
       urls.push(url);
@@ -47,9 +47,14 @@ describe("Alpaca", () => {
       };
     });
     const quotes = await feed.quote(["AAPL", "NVDA", "MSFT"]);
-    expect(urls).toHaveLength(1);
-    expect(urls[0]).toContain("symbols=AAPL,NVDA,MSFT");
-    expect(urls[0]).toContain("feed=iex");
+    // Latest trades and latest quotes, each for every symbol at once.
+    expect(urls).toHaveLength(2);
+    expect(urls.some((u) => u.includes("/trades/latest"))).toBe(true);
+    expect(urls.some((u) => u.includes("/quotes/latest"))).toBe(true);
+    for (const u of urls) {
+      expect(u).toContain("symbols=AAPL,NVDA,MSFT");
+      expect(u).toContain("feed=iex");
+    }
     expect(quotes.map((q) => q.symbol)).toEqual(["AAPL", "NVDA"]);
     expect(quotes[0].price).toBe(228_500_000n);
     // The venue's timestamp, never the fetch time.
