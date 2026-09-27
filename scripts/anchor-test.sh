@@ -148,6 +148,16 @@ step "4/6  Checking the test runner"
 command -v yarn >/dev/null || ok "yarn not installed (Anchor.toml uses npx, so that is fine)"
 ok "ts-mocha available"
 
+# Node 22.18 and later load .ts files natively ("type stripping") before
+# ts-mocha's loader sees them, and as ES modules: the suite then dies on its
+# first line with "Named export 'BN' not found" in @coral-xyz/anchor. Turn it
+# off where it exists. Node 20, which CI uses, rejects the flag outright, so
+# it is set only when this Node accepts it.
+if node --no-experimental-strip-types -e 0 >/dev/null 2>&1; then
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--no-experimental-strip-types"
+  ok "Node $(node --version): native TypeScript loading off for the suite"
+fi
+
 # --- 5. clear the way for the validator ------------------------------------
 
 step "5/6  Preparing the local validator"
