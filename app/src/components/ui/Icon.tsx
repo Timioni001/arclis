@@ -32,6 +32,9 @@ export type IconName =
   | "shield"
   | "droplet"
   | "chart"
+  | "expand"
+  | "collapse"
+  | "reset"
   | "check"
   | "alert";
 
@@ -114,6 +117,9 @@ const PATHS: Record<IconName, JSX.Element> = {
   shield: <path d="M12 3.5 5 6.5v5c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9v-5l-7-3Z" />,
   droplet: <path d="M12 3.5s6 6 6 9.5a6 6 0 0 1-12 0c0-3.5 6-9.5 6-9.5Z" />,
   chart: <path d="M4 19h16M7 16V9M12 16V5M17 16v-4" />,
+  expand: <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />,
+  collapse: <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />,
+  reset: <path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3M4.5 4.5v3.8h3.8" />,
   check: <path d="M5 12.5 10 17.5 19.5 7" />,
   alert: (
     <>

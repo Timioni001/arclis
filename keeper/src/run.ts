@@ -54,7 +54,7 @@ import {
   roundTheClockFeed,
 } from "./round-the-clock";
 import { isCovered, KNOWN_THROUGH } from "./calendar";
-import { newHealth, startHealthServer, redactRpc } from "./health";
+import { newHealth, startHealthServer, redactRpc, resolveRpcUrl } from "./health";
 import { createFaucet, type FaucetHandler } from "./faucet";
 import { EventIndexer } from "./indexer";
 import { News } from "./news";
@@ -65,9 +65,11 @@ const env = process.env;
 // Unset in fly.toml so a dedicated endpoint can be supplied as a secret
 // (its URL carries an API key). In a container with no RPC_URL there is no
 // local validator to talk to, so the fallback there is public devnet.
-const RPC_URL =
-  env.RPC_URL ??
-  (env.FLY_APP_NAME ? "https://api.devnet.solana.com" : "http://127.0.0.1:8899");
+const RPC = resolveRpcUrl(
+  env.RPC_URL,
+  env.FLY_APP_NAME ? "https://api.devnet.solana.com" : "http://127.0.0.1:8899",
+);
+const RPC_URL = RPC.url;
 // Listed tickers are upper case; a 24/7 market keeps its xStock spelling
 // (`NVDAx`), whatever case the environment variable used.
 const SYMBOLS = (env.MARKETS ?? "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ")
@@ -197,6 +199,7 @@ async function main() {
     log,
   };
 
+  if (RPC.problem) log("error", RPC.problem);
   log("info", "starting", {
     rpc: redactRpc(RPC_URL),
     readRpc: env.READ_RPC_URL ? redactRpc(env.READ_RPC_URL) : "same",

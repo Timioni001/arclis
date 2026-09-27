@@ -288,6 +288,25 @@ export function Trade({
       : canIncrease.reason
     : null;
 
+  // The chart type and timeframe, in the card header and again when the
+  // chart is expanded to the full screen.
+  const chartControls = (
+    <div className="chart-controls">
+      <Segmented
+        options={["candles", "area"] as const}
+        value={chartMode}
+        onChange={setChartMode}
+        label="Chart type"
+      />
+      <Segmented
+        options={TIMEFRAMES}
+        value={tf}
+        onChange={setTf}
+        label="Timeframe"
+      />
+    </div>
+  );
+
   return (
     <div className="page">
       <button
@@ -417,28 +436,15 @@ export function Trade({
       <div className="trade-layout">
         <Card
           title="Price"
-          action={
-            <div className="chart-controls">
-              <Segmented
-                options={["candles", "area"] as const}
-                value={chartMode}
-                onChange={setChartMode}
-                label="Chart type"
-              />
-              <Segmented
-                options={TIMEFRAMES}
-                value={tf}
-                onChange={setTf}
-                label="Timeframe"
-              />
-            </div>
-          }
+          action={chartControls}
         >
           <PriceChart
             candles={candles}
             markers={markers}
             events={events}
             mode={chartMode}
+            title={`${oracle.symbol} · ${oracle.name}`}
+            controls={chartControls}
           />
           {/*
             Said plainly rather than left for the reader to infer from an axis.

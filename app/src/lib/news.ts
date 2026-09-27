@@ -70,26 +70,65 @@ export function parseFeed(body: unknown): NewsFeed | null {
   return feed.stocks.length || feed.solana.length ? feed : null;
 }
 
-/** Headlines, re-read every ten minutes; null until there are any. */
+const CACHE_KEY = "arclis-news-v1";
+/** Older than this, a saved copy is yesterday's news and not shown. */
+const CACHE_MAX_AGE_SECS = 36 * 3_600;
+
+/**
+ * The last headlines this browser saw, if recent enough.
+ *
+ * Only a convenience: the keeper serves the headlines, and when it was down
+ * the section vanished from the Overview with no word as to why. A saved copy
+ * keeps it on the page through an outage. Storage can be missing or refuse
+ * (private windows, blocked site data), which reads as no copy.
+ */
+export function readCachedNews(now = Date.now() / 1000): NewsFeed | null {
+  try {
+    const parsed = parseFeed(JSON.parse(localStorage.getItem(CACHE_KEY) ?? "null"));
+    return parsed && now - parsed.updatedAt <= CACHE_MAX_AGE_SECS ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function cacheNews(feed: NewsFeed): void {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(feed));
+  } catch {
+    /* no storage: the next visit simply waits for the keeper */
+  }
+}
+
+/**
+ * Headlines: the saved copy at once, then the keeper's, re-read every ten
+ * minutes; every minute while the keeper has not answered yet.
+ */
 export function useNews(): NewsFeed | null {
-  const [feed, setFeed] = useState<NewsFeed | null>(null);
+  const [feed, setFeed] = useState<NewsFeed | null>(() =>
+    KEEPER_URL ? readCachedNews() : null,
+  );
   useEffect(() => {
     // Headlines are not chain data, so a demo build shows them too.
     if (!KEEPER_URL) return;
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const load = () =>
       fetch(`${KEEPER_URL}/news`)
         .then((r) => (r.ok ? r.json() : null))
-        .then((body) => {
-          const parsed = parseFeed(body);
-          if (!cancelled && parsed) setFeed(parsed);
-        })
-        .catch(() => {});
+        .then((body) => parseFeed(body))
+        .catch(() => null)
+        .then((parsed) => {
+          if (cancelled) return;
+          if (parsed) {
+            setFeed(parsed);
+            cacheNews(parsed);
+          }
+          timer = setTimeout(load, parsed ? 10 * 60_000 : 60_000);
+        });
     void load();
-    const id = setInterval(load, 10 * 60_000);
     return () => {
       cancelled = true;
-      clearInterval(id);
+      clearTimeout(timer);
     };
   }, []);
   return feed;

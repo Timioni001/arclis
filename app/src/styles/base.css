@@ -2319,7 +2319,7 @@ input[type="range"]::-moz-range-thumb {
   display: flex;
   align-items: flex-end;
   gap: 6px;
-  height: 260px;
+  min-height: 240px;
   padding: var(--space-4) 0;
 }
 
@@ -2518,6 +2518,141 @@ input[type="range"]::-moz-range-thumb {
   width: 100%;
   min-width: 0;
   overflow: hidden;
+}
+
+/* Height from the screen rather than a fixed 320px: tall enough to read on a
+   desktop, and on a phone a share of the screen whichever way it is held. A
+   phone on its side is about 390px tall, so there the chart takes most of it
+   and the page scrolls to the ticket below. */
+.chart-fluid {
+  height: clamp(240px, 46vh, 460px);
+}
+@media (orientation: landscape) and (max-height: 540px) {
+  .chart-fluid {
+    height: max(200px, calc(100dvh - 88px));
+  }
+}
+
+.chart-frame {
+  position: relative;
+  min-width: 0;
+}
+.chart-stage {
+  position: relative;
+  min-width: 0;
+}
+
+/* The row above the plot: the readout on the left, the tools on the right.
+   In the flow rather than over the plot, so a readout that wraps on a narrow
+   phone pushes the plot down instead of covering its top. */
+.chart-bar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 32px;
+  margin-bottom: 4px;
+}
+
+/* Open, high, low, close of the bar under the crosshair, or the latest bar.
+   Never takes a click. */
+.chart-legend {
+  flex: 1;
+  min-width: 0;
+  padding-top: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.chart-legend b {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.chart-legend [data-tone="up"] {
+  color: var(--positive);
+}
+.chart-legend [data-tone="down"] {
+  color: var(--negative);
+}
+@media (max-width: 480px) {
+  /* Narrow screens: the time drops out before the prices wrap into the plot. */
+  .chart-legend-time {
+    display: none;
+  }
+}
+
+.chart-tools {
+  flex: none;
+  display: flex;
+  gap: 4px;
+}
+.chart-tool {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.chart-tool:hover {
+  color: var(--text-primary);
+  background: var(--surface-muted);
+}
+.chart-tool:focus-visible {
+  outline: 2px solid var(--text-primary);
+  outline-offset: 2px;
+}
+/* Full screen: the chart over the whole viewport, clear of notches and the
+   home indicator, in either orientation. */
+.chart-frame[data-full] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: var(--surface);
+}
+.chart-frame[data-full] .chart-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.chart-frame[data-full] .chart-live {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+.chart-full-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.chart-full-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  color: var(--text-primary);
+}
+/* A phone on its side has height to spare for the plot, not for chrome. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .chart-full-title {
+    font-size: 15px;
+  }
+  .chart-frame[data-full] {
+    gap: 4px;
+  }
 }
 
 .faucet {

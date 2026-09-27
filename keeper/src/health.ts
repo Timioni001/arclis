@@ -324,6 +324,39 @@ export function startHealthServer(
  * configured. Everything the keeper reports now goes through this, and the
  * full URL is used only to open the connection.
  */
+/**
+ * The endpoint to use, from what the environment supplied.
+ *
+ * An unusable RPC_URL (empty, a stray space, a URL pasted without its
+ * scheme) used to throw inside the Connection constructor at startup. The
+ * process then exited before its health server was up, the host restarted
+ * it, and it failed the same way: prices, news, charts, the faucet and the
+ * interface's book all went dark at once over one bad secret. Such a value
+ * now falls back to `fallback`, with `problem` saying why, so the keeper
+ * stays up on a slower endpoint and the reason is in the first log line.
+ */
+export function resolveRpcUrl(
+  value: string | undefined,
+  fallback: string,
+): { url: string; problem: string | null } {
+  if (value === undefined) return { url: fallback, problem: null };
+  const trimmed = value.trim();
+  try {
+    const u = new URL(trimmed);
+    if (u.protocol === "https:" || u.protocol === "http:") {
+      return { url: trimmed, problem: null };
+    }
+  } catch {
+    /* reported below */
+  }
+  return {
+    url: fallback,
+    problem: trimmed
+      ? `RPC_URL is not an http(s) URL (starts "${trimmed.slice(0, 12)}..."); using ${fallback}`
+      : `RPC_URL is set but empty; using ${fallback}`,
+  };
+}
+
 export function redactRpc(url: string): string {
   try {
     const u = new URL(url);

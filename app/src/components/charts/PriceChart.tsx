@@ -20,7 +20,7 @@
  * Times are shown in the viewer's own timezone. The library works in UTC
  * seconds; the formatters below convert for display only.
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AreaSeries,
   CandlestickSeries,
@@ -32,11 +32,13 @@ import {
   createChart,
   createSeriesMarkers,
   type IChartApi,
+  type MouseEventParams,
   type ISeriesApi,
   type SeriesType,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
+import { Icon } from "../ui";
 import type { Candle } from "../../lib/protocol/types";
 import { usd } from "../../lib/format";
 
@@ -146,11 +148,20 @@ export function tickLabel(t: Time, kind: TickMarkType): string {
     case TickMarkType.Year:
       return String(d.getFullYear());
     case TickMarkType.Month:
-      return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+      return d.toLocaleDateString(undefined, {
+        month: "short",
+        year: "2-digit",
+      });
     case TickMarkType.DayOfMonth:
-      return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      return d.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+      });
     default:
-      return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString(undefined, {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
   }
 }
 
@@ -181,14 +192,27 @@ export function PriceChart({
   markers = [],
   events = [],
   mode = "candles",
-  height = 320,
+  height,
+  title,
+  controls,
 }: {
   candles: Candle[];
   markers?: PriceMarker[];
   events?: EventMarker[];
   mode?: "candles" | "area";
+  /**
+   * A fixed height in pixels. Without one the chart takes its height from
+   * the screen (see `.chart-fluid`), which is what lets it work on a phone
+   * held either way up.
+   */
   height?: number;
+  /** Shown above the chart when it is expanded to the full screen. */
+  title?: string;
+  /** The page's own chart controls (type, timeframe), repeated full screen. */
+  controls?: ReactNode;
 }) {
+  const [full, setFull] = useState(false);
+  const [hover, setHover] = useState<Readout | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<SeriesType> | null>(null);
@@ -229,11 +253,16 @@ export function PriceChart({
           fontFamily: "inherit",
           attributionLogo: false,
         },
+        // Horizontal rules only: price levels are what a reader lines up
+        // against; vertical rules add ink without adding a reading.
         grid: {
-          vertLines: { color: colors.grid },
+          vertLines: { visible: false },
           horzLines: { color: colors.grid },
         },
-        rightPriceScale: { borderVisible: false },
+        rightPriceScale: {
+          borderVisible: false,
+          scaleMargins: { top: 0.12, bottom: 0.12 },
+        },
         timeScale: {
           borderVisible: false,
           timeVisible: true,
@@ -244,7 +273,8 @@ export function PriceChart({
         crosshair: { mode: CrosshairMode.Normal },
         localization: {
           timeFormatter: (t: Time) => crosshairLabel(t, intradayRef.current),
-          priceFormatter: (p: number) => usd(BigInt(Math.round(p * 1e6)), { compact: false }),
+          priceFormatter: (p: number) =>
+            usd(BigInt(Math.round(p * 1e6)), { compact: false }),
         },
         // Vertical drags scroll the page on a phone rather than the chart,
         // which is what a reader scrolling past it expects.
@@ -262,12 +292,21 @@ export function PriceChart({
       const c = palette();
       api.applyOptions({
         layout: { textColor: c.text },
-        grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+        grid: { horzLines: { color: c.grid } },
       });
       series.current?.applyOptions(
         seriesMode.current === "area"
-          ? { lineColor: c.line, topColor: `${c.line}55`, bottomColor: `${c.line}05` }
-          : { upColor: c.up, downColor: c.down, wickUpColor: c.up, wickDownColor: c.down },
+          ? {
+              lineColor: c.line,
+              topColor: `${c.line}55`,
+              bottomColor: `${c.line}05`,
+            }
+          : {
+              upColor: c.up,
+              downColor: c.down,
+              wickUpColor: c.up,
+              wickDownColor: c.down,
+            },
       );
     });
     observer.observe(document.documentElement, {
@@ -357,7 +396,12 @@ export function PriceChart({
         lastValueVisible: false,
         priceLineVisible: false,
       });
-      api.priceScale("volume").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      api
+        .priceScale("volume")
+        .applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+      api
+        .priceScale("right")
+        .applyOptions({ scaleMargins: { top: 0.12, bottom: 0.2 } });
       volume.current.setData(
         candles.map((c) => ({
           time: c.t as UTCTimestamp,
@@ -399,6 +443,13 @@ export function PriceChart({
         .filter((m): m is NonNullable<typeof m> => m !== null),
     );
 
+    // The readout above the plot follows the crosshair, bar by bar.
+    const onMove = (param: MouseEventParams) => {
+      const d = param.time !== undefined ? param.seriesData.get(s) : undefined;
+      setHover(d ? readoutOf(d, param.time as number) : null);
+    };
+    api.subscribeCrosshairMove(onMove);
+
     // Fit on first draw and when the window changes (a new first bar); leave
     // the reader's pan and zoom alone on a live update.
     const first = candles[0]?.t ?? null;
@@ -411,6 +462,7 @@ export function PriceChart({
       // On unmount the chart effect's cleanup has already removed the chart,
       // and with it everything drawn on it; there is nothing left to detach.
       try {
+        api.unsubscribeCrosshairMove(onMove);
         for (const l of lines) s.removePriceLine(l);
         eventMarkers.detach();
       } catch {
@@ -419,11 +471,40 @@ export function PriceChart({
     };
   }, [candles, markers, events, mode, drawable, hasVolume, intraday]);
 
+  // Full screen: the page behind stops scrolling, a drag on the plot moves it
+  // both ways (on the page a vertical drag scrolls the page instead), and
+  // Escape comes back.
+  useEffect(() => {
+    chart.current?.applyOptions({ handleScroll: { vertTouchDrag: full } });
+    if (!full) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setFull(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [full]);
+
+  const resetView = () => {
+    const api = chart.current;
+    if (!api) return;
+    api.timeScale().fitContent();
+    api.priceScale("right").applyOptions({ autoScale: true });
+  };
+
+  const sized = (className: string) => ({
+    className: height ? className : `${className} chart-fluid`,
+    style: height ? { height } : undefined,
+  });
+
   if (!candles.length) {
     return (
       <div
-        className="skeleton-chart"
-        style={{ height }}
+        {...sized("skeleton-chart")}
         role="status"
         aria-label="Loading price history"
       >
@@ -448,7 +529,7 @@ export function PriceChart({
   if (!drawable) {
     const only = candles[candles.length - 1];
     return (
-      <div className="chart-sparse" style={{ height }}>
+      <div {...sized("chart-sparse")}>
         <div className="chart-sparse-price">
           {usd(only.c, { compact: false, dp: 2 })}
         </div>
@@ -468,15 +549,120 @@ export function PriceChart({
   }
 
   const last = candles[candles.length - 1];
+  const shown: Readout = hover ?? {
+    t: last.t,
+    o: px(last.o),
+    h: px(last.h),
+    l: px(last.l),
+    c: px(last.c),
+  };
+  const change = shown.o ? ((shown.c - shown.o) / shown.o) * 100 : 0;
+  const money = (v: number) => usd(v, { compact: false });
+
   return (
     <div
-      ref={box}
-      className="chart-live"
-      style={{ height }}
-      role="img"
-      aria-label={`Price chart, ${candles.length} bars, last ${usd(last.c, { compact: false })}`}
-    />
+      className="chart-frame"
+      data-full={full || undefined}
+      role={full ? "dialog" : undefined}
+      aria-modal={full || undefined}
+      aria-label={full ? `${title ?? "Price"} chart, full screen` : undefined}
+    >
+      {full && (
+        <div className="chart-full-head">
+          {title && <strong className="chart-full-title">{title}</strong>}
+          {controls && <div className="chart-controls">{controls}</div>}
+        </div>
+      )}
+      <div className="chart-stage">
+        <div className="chart-bar">
+          <div className="chart-legend num" aria-hidden="true">
+            {mode === "candles" && shown.h !== undefined ? (
+              <>
+                <span>
+                  O <b>{money(shown.o)}</b>
+                </span>
+                <span>
+                  H <b>{money(shown.h)}</b>
+                </span>
+                <span>
+                  L <b>{money(shown.l!)}</b>
+                </span>
+                <span>
+                  C <b>{money(shown.c)}</b>
+                </span>
+              </>
+            ) : (
+              <span>
+                <b>{money(shown.c)}</b>
+              </span>
+            )}
+            {mode === "candles" && (
+              <span
+                data-tone={change > 0 ? "up" : change < 0 ? "down" : undefined}
+              >
+                {change > 0 ? "+" : ""}
+                {change.toFixed(2)}%
+              </span>
+            )}
+            <span className="chart-legend-time">
+              {crosshairLabel(shown.t as Time, intraday)}
+            </span>
+          </div>
+          <div className="chart-tools">
+            <button
+              type="button"
+              className="chart-tool"
+              onClick={resetView}
+              aria-label="Reset the chart view"
+              title="Reset view"
+            >
+              <Icon name="reset" size={16} />
+            </button>
+            <button
+              type="button"
+              className="chart-tool"
+              onClick={() => setFull((f) => !f)}
+              aria-label={
+                full ? "Leave full screen" : "Expand the chart to full screen"
+              }
+              aria-pressed={full}
+              title={full ? "Exit full screen (Esc)" : "Full screen"}
+            >
+              <Icon name={full ? "collapse" : "expand"} size={16} />
+            </button>
+          </div>
+        </div>
+        <div
+          ref={box}
+          className={height ? "chart-live" : "chart-live chart-fluid"}
+          style={height && !full ? { height } : undefined}
+          role="img"
+          aria-label={`Price chart, ${candles.length} bars, last ${usd(last.c, { compact: false })}`}
+        />
+      </div>
+    </div>
   );
+}
+
+/** One bar as the readout shows it, in dollars. */
+interface Readout {
+  t: number;
+  o: number;
+  h?: number;
+  l?: number;
+  c: number;
+}
+
+function readoutOf(d: object, t: number): Readout | null {
+  if ("close" in d) {
+    const b = d as { open: number; high: number; low: number; close: number };
+    return { t, o: b.open, h: b.high, l: b.low, c: b.close };
+  }
+  if ("value" in d) {
+    const v = (d as { value: number }).value;
+    return { t, o: v, c: v };
+  }
+  return null;
 }
 
 export function Sparkline({

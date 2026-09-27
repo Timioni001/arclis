@@ -11,7 +11,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { newHealth, redactRpc } from "./health";
+import { newHealth, redactRpc, resolveRpcUrl } from "./health";
 
 const META = {
   rpc: "https://api.devnet.solana.com",
@@ -149,3 +149,32 @@ describe("redactRpc", () => {
     expect(redactRpc("https://api.devnet.solana.com")).toBe("https://api.devnet.solana.com");
   });
 });
+
+describe("resolveRpcUrl", () => {
+  const FALLBACK = "https://api.devnet.solana.com";
+
+  it("uses a good endpoint as given, trimmed", () => {
+    expect(resolveRpcUrl(" https://solana-devnet.g.alchemy.com/v2/k \n", FALLBACK)).toEqual({
+      url: "https://solana-devnet.g.alchemy.com/v2/k",
+      problem: null,
+    });
+  });
+
+  it("falls back quietly when nothing is set", () => {
+    expect(resolveRpcUrl(undefined, FALLBACK)).toEqual({ url: FALLBACK, problem: null });
+  });
+
+  it("falls back, and says why, rather than crash on a bad secret", () => {
+    for (const bad of ["", "   ", "solana-devnet.g.alchemy.com/v2/k", "wss://x"]) {
+      const r = resolveRpcUrl(bad, FALLBACK);
+      expect(r.url).toBe(FALLBACK);
+      expect(r.problem).toMatch(/RPC_URL/);
+    }
+  });
+
+  it("never puts the whole secret in the reason", () => {
+    const r = resolveRpcUrl("solana-devnet.g.alchemy.com/v2/SECRETKEY123", FALLBACK);
+    expect(r.problem).not.toContain("SECRETKEY123");
+  });
+});
+

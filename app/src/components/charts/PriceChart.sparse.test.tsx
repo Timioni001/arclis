@@ -10,7 +10,7 @@
  * market that has not traded.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 vi.hoisted(() => {
   const g = globalThis as unknown as { matchMedia: unknown };
@@ -88,3 +88,40 @@ describe("with enough history", () => {
     expect(screen.queryByText(/published so far/)).toBeNull();
   });
 });
+
+describe("the chart's tools", () => {
+  const candles = Array.from({ length: 12 }, (_, i) =>
+    candle(1_790_000_000 + i * 60, 338_000_000 + i * 10_000),
+  );
+
+  it("reads out the latest bar before anything is hovered", () => {
+    const { container } = render(<PriceChart candles={candles} />);
+    expect(container.querySelector(".chart-legend")!.textContent).toMatch(/C \$338\.11/);
+  });
+
+  it("expands to the full screen with the page's controls, and Escape comes back", () => {
+    const { container } = render(
+      <PriceChart candles={candles} title="AAPL · Apple Inc." controls={<button>1D</button>} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Expand the chart to full screen" }));
+    expect(container.querySelector(".chart-frame[data-full]")).toBeTruthy();
+    expect(screen.getByRole("dialog").textContent).toMatch(/AAPL · Apple Inc\./);
+    expect(screen.getByRole("button", { name: "1D" })).toBeTruthy();
+    expect(document.body.style.overflow).toBe("hidden");
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(container.querySelector(".chart-frame[data-full]")).toBeNull();
+    expect(document.body.style.overflow).toBe("");
+  });
+
+  it("takes its height from the screen unless given one", () => {
+    const fluid = render(<PriceChart candles={candles} />);
+    expect(fluid.container.querySelector(".chart-live")!.className).toContain("chart-fluid");
+    cleanup();
+    const fixed = render(<PriceChart candles={candles} height={240} />);
+    const box = fixed.container.querySelector(".chart-live") as HTMLElement;
+    expect(box.className).not.toContain("chart-fluid");
+    expect(box.style.height).toBe("240px");
+  });
+});
+
