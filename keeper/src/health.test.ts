@@ -41,6 +41,16 @@ describe("a market that is closed", () => {
     expect(h.report().ok).toBe(true);
   });
 
+  it("says why a 24/7 market is closed, from whoever knows", () => {
+    const h = healthy();
+    let reasons = { KOx: "waiting for its first spread check" };
+    h.attach("xstockUnpriced", () => reasons);
+    expect(h.report().xstockUnpriced).toEqual({ KOx: "waiting for its first spread check" });
+    // Read on every request, not copied once.
+    reasons = {};
+    expect(h.report().xstockUnpriced).toEqual({});
+  });
+
   it("still reports when the last print was, for a human", () => {
     const h = healthy();
     h.published(["AAPL"], 1_700_000_000);

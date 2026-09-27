@@ -188,6 +188,68 @@ describe("Jupiter at twenty markets", () => {
         url.includes("/price/v3") ? { MINT0: { usdPrice: 150 } } : quoteJson(url),
     });
     expect(await feed.quote(["S0x"])).toEqual([]);
+    expect(feed.unpriced()).toEqual({
+      at: 5,
+      markets: { S0x: expect.stringMatching(/^price 150\.00 outside the checked market/) },
+    });
+  });
+
+  it("accepts a deep book's price that drifted a little since its check", async () => {
+    // $1,000 buys 5 shares and 5 shares sell for $999.90: a 1 bp round trip.
+    // The price API reads 0.3% higher, well inside how far a stock moves
+    // between checks, and a band as narrow as the spread would refuse it.
+    const feed = jupiterXStockFeed([sources[0]], {
+      now: () => 5,
+      fetchJson: async (url) =>
+        url.includes("/price/v3")
+          ? { MINT0: { usdPrice: 200.6 } }
+          : url.includes(`inputMint=${USDC_MINT}`)
+            ? { outAmount: String(5 * 1e8) }
+            : { outAmount: String(999.9 * 1e6) },
+    });
+    const [q] = await feed.quote(["S0x"]);
+    expect(Number(q.price) / 1e6).toBeCloseTo(200.6);
+    // Confidence stays the measured half-spread, not the tolerance.
+    expect(Number(q.confidence) / 1e6).toBeLessThan(0.02);
+    expect(feed.unpriced().markets).toEqual({});
+  });
+
+  it("says why each market it could not price is closed", async () => {
+    const thin = { symbol: "THINx", mint: "THIN", decimals: 8 };
+    const noRoute = { symbol: "NOROUTEx", mint: "NOROUTE", decimals: 8 };
+    const unlisted = { symbol: "UNLISTEDx", mint: "UNLISTED", decimals: 8 };
+    let t = 5;
+    const feed = jupiterXStockFeed([thin, noRoute, unlisted, sources[0]], {
+      now: () => t,
+      fetchJson: async (url) => {
+        if (url.includes("/price/v3")) return { THIN: { usdPrice: 190 } };
+        if (url.includes("NOROUTE")) return { error: "no route" };
+        if (url.includes("outputMint=THIN") || url.includes("inputMint=THIN")) {
+          return url.includes(`inputMint=${USDC_MINT}`)
+            ? { outAmount: String(5 * 1e8) }
+            : { outAmount: String(900 * 1e6) }; // a 10% round trip
+        }
+        return quoteJson(url);
+      },
+    });
+    const all = ["THINx", "NOROUTEx", "UNLISTEDx", "S0x"];
+    // Three checks a tick, so the fourth market has not been looked at yet.
+    // A market the price API does not list is priced from its own check on
+    // the tick that check is taken.
+    await feed.quote(all);
+    expect(feed.unpriced().markets).toEqual({
+      THINx: expect.stringMatching(/over the 300 bps limit/),
+      NOROUTEx: "no Jupiter route to buy",
+      S0x: "waiting for its first spread check",
+    });
+    // One tick later it has only the price API to go on, which has nothing.
+    t += 20;
+    await feed.quote(all);
+    expect(feed.unpriced().markets).toEqual({
+      THINx: expect.stringMatching(/over the 300 bps limit/),
+      NOROUTEx: "no Jupiter route to buy",
+      UNLISTEDx: "no price from the Jupiter price API",
+    });
   });
 });
 

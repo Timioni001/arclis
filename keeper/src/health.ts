@@ -66,6 +66,8 @@ export interface Health {
   reporter(name: string): (outcome: { ok: boolean; error?: string }) => void;
   /** Record a successful publish, for the humans reading the endpoint. */
   published(symbols: string[], at?: number): void;
+  /** Add a named section to the report, read fresh on every request. */
+  attach(name: string, read: () => unknown): void;
   report(now?: number): {
     ok: boolean;
     [key: string]: unknown;
@@ -75,6 +77,7 @@ export interface Health {
 export function newHealth(meta: HealthMeta, startedAt = Date.now()): Health {
   const tasks = new Map<string, Task>();
   const lastPublished = new Map<string, number>();
+  const sections = new Map<string, () => unknown>();
 
   function stalled(task: Task, now: number): boolean {
     const budget = Math.max(MIN_STALL_MS, task.intervalMs * STALL_INTERVALS);
@@ -113,6 +116,10 @@ export function newHealth(meta: HealthMeta, startedAt = Date.now()): Health {
       for (const symbol of symbols) lastPublished.set(symbol, at);
     },
 
+    attach(name, read) {
+      sections.set(name, read);
+    },
+
     report(now = Date.now()) {
       const detail: Record<string, unknown> = {};
       let ok = true;
@@ -141,6 +148,7 @@ export function newHealth(meta: HealthMeta, startedAt = Date.now()): Health {
         // Reported, never judged: see the note at the top of this file about
         // why a closed market must not look like a failure.
         lastPublishedAt: Object.fromEntries(lastPublished),
+        ...Object.fromEntries([...sections].map(([name, read]) => [name, read()])),
       };
     },
   };

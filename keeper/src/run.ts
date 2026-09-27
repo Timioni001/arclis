@@ -47,7 +47,7 @@ import {
 } from "./prices/providers";
 import type { PriceFeed } from "./prices/types";
 import { withFallback } from "./prices/fallback";
-import { jupiterXStockFeed } from "./prices/jupiter";
+import { jupiterXStockFeed, type ExplainedFeed } from "./prices/jupiter";
 import {
   ROUND_THE_CLOCK,
   canonicalSymbol,
@@ -94,14 +94,11 @@ const SIMULATED_SEEDS: Record<string, number> = {
   GOOGL: 247.1,
 };
 
-function pickFeed(log: ChainConfig["log"]): PriceFeed {
+function pickFeed(log: ChainConfig["log"]): { feed: PriceFeed; xstocks?: ExplainedFeed } {
   const stocks = pickStockFeed(log);
-  if (TWINS.length === 0) return stocks;
-  return roundTheClockFeed(
-    stocks,
-    jupiterXStockFeed(TWINS, { apiKey: env.JUPITER_API_KEY }),
-    TWINS,
-  );
+  if (TWINS.length === 0) return { feed: stocks };
+  const xstocks = jupiterXStockFeed(TWINS, { apiKey: env.JUPITER_API_KEY });
+  return { feed: roundTheClockFeed(stocks, xstocks, TWINS), xstocks };
 }
 
 /** Finnhub symbols per pass that fit in its sixty calls a minute, with room. */
@@ -208,7 +205,7 @@ async function main() {
     symbols: SYMBOLS,
   });
 
-  const feed = pickFeed(log);
+  const { feed, xstocks } = pickFeed(log);
   const state = newKeeperState();
   const abort = new AbortController();
 
@@ -228,6 +225,8 @@ async function main() {
     symbols: SYMBOLS,
     feed: feed.name,
   });
+  // Why a 24/7 market is closed overnight, so nobody has to guess from logs.
+  if (xstocks) health.attach("xstockUnpriced", () => xstocks.unpriced());
   /*
    * Price history for the interface's charts. Recorded as the keeper
    * publishes, and backfilled from the chain once at startup so a restart does

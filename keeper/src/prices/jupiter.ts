@@ -109,6 +109,18 @@ interface SpreadCheck {
   spreadBps: number;
   /** Unix seconds. */
   at: number;
+  /** Why the check has no spread, when it has none. */
+  error?: string;
+}
+
+/** A 24/7 feed that can say why a market it was asked for is not priced. */
+export interface ExplainedFeed extends PriceFeed {
+  /**
+   * Why each market the last off-hours quote left unpriced, and when that
+   * was (unix seconds; 0 before the first). While the US market is open the
+   * 24/7 markets follow their stock and this is not consulted.
+   */
+  unpriced(): { at: number; markets: Record<string, string> };
 }
 
 /**
@@ -137,8 +149,15 @@ export function jupiterXStockFeed(
     recheckSecs?: number;
     /** A check older than this no longer counts. */
     maxCheckAgeSecs?: number;
+    /**
+     * The least the price may sit outside the checked bid and ask, in basis
+     * points of the mid. A deep book quotes a spread of a few basis points,
+     * and a band that narrow refuses the price API's number for drifting
+     * less than the market moves between checks.
+     */
+    minBandBps?: number;
   } = {},
-): PriceFeed {
+): ExplainedFeed {
   const baseUrl =
     options.baseUrl ??
     (options.apiKey ? "https://api.jup.ag" : "https://lite-api.jup.ag");
@@ -150,17 +169,20 @@ export function jupiterXStockFeed(
   const checksPerTick = options.checksPerTick ?? 3;
   const recheckSecs = options.recheckSecs ?? 180;
   const maxCheckAgeSecs = options.maxCheckAgeSecs ?? 600;
+  const minBandBps = options.minBandBps ?? 100;
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const fetchJson = options.fetchJson ?? getJson;
   const bySymbol = new Map(sources.map((s) => [s.symbol.toUpperCase(), s]));
   const checks = new Map<string, SpreadCheck>();
+  let reasons: { at: number; markets: Record<string, string> } = { at: 0, markets: {} };
 
   const quoteUrl = (inputMint: string, outputMint: string, amount: bigint) =>
     `${baseUrl}/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}` +
     `&amount=${amount}&slippageBps=50&restrictIntermediateTokens=true`;
 
   async function checkSpread(source: XStockSource, at: number): Promise<SpreadCheck> {
-    const failed = { bid: 0, ask: 0, mid: 0, spreadBps: Infinity, at };
+    const failed = (error: string): SpreadCheck =>
+      ({ bid: 0, ask: 0, mid: 0, spreadBps: Infinity, at, error });
     const unit = 10 ** source.decimals;
     const buy = parseOutAmount(
       await fetchJson(
@@ -168,13 +190,13 @@ export function jupiterXStockFeed(
         headers,
       ),
     );
-    if (!buy) return failed;
+    if (!buy) return failed("no Jupiter route to buy");
     const shares = Number(buy) / unit;
     // Sell back the same number of shares, so both legs are the same size.
     const sell = parseOutAmount(await fetchJson(quoteUrl(source.mint, USDC_MINT, buy), headers));
-    if (!sell) return failed;
+    if (!sell) return failed("no Jupiter route to sell");
     const m = midFromQuotes(clipUsd, shares, shares, Number(sell) / 10 ** USDC_DECIMALS);
-    if (!m) return failed;
+    if (!m) return failed("quotes gave no usable mid");
     return {
       bid: m.mid - m.halfSpread,
       ask: m.mid + m.halfSpread,
@@ -186,6 +208,7 @@ export function jupiterXStockFeed(
 
   return {
     name: "jupiter",
+    unpriced: () => reasons,
     async quote(symbols) {
       const wanted = symbols
         .map((s) => bySymbol.get(s.toUpperCase()))
@@ -207,40 +230,68 @@ export function jupiterXStockFeed(
           due.map(async (s) =>
             checks.set(
               s.symbol,
-              await checkSpread(s, t).catch(() => ({
-                bid: 0,
-                ask: 0,
-                mid: 0,
-                spreadBps: Infinity,
-                at: t,
-              })),
+              await checkSpread(s, t).catch(
+                (e): SpreadCheck => ({
+                  bid: 0,
+                  ask: 0,
+                  mid: 0,
+                  spreadBps: Infinity,
+                  at: t,
+                  error: `quote request failed: ${String(e).slice(0, 120)}`,
+                }),
+              ),
             ),
           ),
         ),
       ]);
 
       const out: Quote[] = [];
+      const why: Record<string, string> = {};
       for (const s of wanted) {
         const c = checks.get(s.symbol);
-        if (!c || t - c.at > maxCheckAgeSecs || !(c.spreadBps <= maxSpreadBps)) continue;
+        if (!c) {
+          why[s.symbol] = "waiting for its first spread check";
+          continue;
+        }
+        if (c.error) {
+          why[s.symbol] = c.error;
+          continue;
+        }
+        if (t - c.at > maxCheckAgeSecs) {
+          why[s.symbol] = `last spread check is ${t - c.at}s old`;
+          continue;
+        }
+        if (!(c.spreadBps <= maxSpreadBps)) {
+          why[s.symbol] =
+            `round trip costs ${Math.round(c.spreadBps)} bps, over the ${maxSpreadBps} bps limit`;
+          continue;
+        }
         // The price API's number, or the check's own mid if it was just taken
         // and the price request failed.
         const price = priced.get(s.mint) ?? (c.at === t ? c.mid : undefined);
-        if (price === undefined) continue;
-        const width = c.ask - c.bid;
-        if (price < c.bid - width || price > c.ask + width) continue;
+        if (price === undefined) {
+          why[s.symbol] = "no price from the Jupiter price API";
+          continue;
+        }
+        const width = Math.max(c.ask - c.bid, (c.mid * minBandBps) / 10_000);
+        if (price < c.bid - width || price > c.ask + width) {
+          why[s.symbol] =
+            `price ${price.toFixed(2)} outside the checked market ${c.bid.toFixed(2)}-${c.ask.toFixed(2)}`;
+          continue;
+        }
         try {
           out.push({
             symbol: s.symbol,
             price: toFixed(price),
-            confidence: toFixed(width / 2),
+            confidence: toFixed((c.ask - c.bid) / 2),
             printedAt: t,
             halted: false,
           });
         } catch {
-          /* an unusable number is no price */
+          why[s.symbol] = "unusable number from Jupiter";
         }
       }
+      reasons = { at: t, markets: why };
       return out;
     },
   };
