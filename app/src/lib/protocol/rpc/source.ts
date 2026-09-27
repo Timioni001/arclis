@@ -113,6 +113,51 @@ export interface RpcSourceOptions {
   /** Company names by ticker, resolved off-chain. */
   names?: Record<string, string>;
   connection?: Connection;
+  /**
+   * The keeper's `/snapshot`, when there is one. The book is then read from
+   * it instead of from the RPC, and the browser stops rebuilding price
+   * history from transactions (the keeper serves that too). See
+   * keeper/src/snapshot.ts for why.
+   */
+  snapshotUrl?: string;
+}
+
+/** Raw accounts from the keeper, decoded to what `getMultiple` returns. */
+interface KeeperBook {
+  accounts: Map<string, { data: Buffer } | null>;
+  treasuries: { pubkey: PublicKey; account: { data: Buffer } }[];
+}
+
+/** A snapshot older than this is not used: the RPC is asked instead. */
+const SNAPSHOT_MAX_AGE_SECS = 60;
+
+async function fetchKeeperBook(url: string): Promise<KeeperBook | null> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(5_000) });
+  if (!res.ok) return null;
+  const body = (await res.json()) as {
+    fetchedAt?: number;
+    accounts?: Record<string, string | null>;
+    treasuries?: { pubkey: string; data: string }[];
+  };
+  const age = Math.floor(Date.now() / 1000) - Number(body.fetchedAt ?? 0);
+  if (!body.accounts || age > SNAPSHOT_MAX_AGE_SECS) return null;
+  const accounts = new Map<string, { data: Buffer } | null>();
+  for (const [k, v] of Object.entries(body.accounts)) {
+    accounts.set(k, v === null ? null : { data: Buffer.from(v, "base64") });
+  }
+  const treasuries = (body.treasuries ?? []).flatMap((t) => {
+    try {
+      return [
+        {
+          pubkey: new PublicKey(t.pubkey),
+          account: { data: Buffer.from(t.data, "base64") },
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+  return { accounts, treasuries };
 }
 
 export function rpcSource(options: RpcSourceOptions): LiveDataSource {
@@ -215,17 +260,21 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
    */
   const TREASURY_DISCRIMINATOR = accountDiscriminator("AgentTreasury");
 
-  async function scanTreasuries(): Promise<void> {
-    const accounts = await connection.getProgramAccounts(options.programId, {
-      filters: [
-        {
-          memcmp: {
-            offset: 0,
-            bytes: encodeBase58(Uint8Array.from(TREASURY_DISCRIMINATOR)),
+  async function scanTreasuries(
+    fromKeeper?: KeeperBook["treasuries"],
+  ): Promise<void> {
+    const accounts =
+      fromKeeper ??
+      (await connection.getProgramAccounts(options.programId, {
+        filters: [
+          {
+            memcmp: {
+              offset: 0,
+              bytes: encodeBase58(Uint8Array.from(TREASURY_DISCRIMINATOR)),
+            },
           },
-        },
-      ],
-    });
+        ],
+      }));
 
     const decoded = accounts.flatMap(({ pubkey, account }) => {
       try {
@@ -330,24 +379,51 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
       const dueForScan = refreshes % TREASURY_RESCAN_EVERY === 0;
       refreshes += 1;
 
-      // The backfill is started but not awaited: with fifteen markets it runs
-      // for seconds, and the account read must not wait for it. Its results
-      // land in `history` and appear on the next refresh.
-      void backfill(
-        derived.map((d) => ({ key: d.oracle, id: d.oracle.toBase58() })),
-      );
+      // The keeper's copy of the book, when it is up and fresh. Everything it
+      // holds is read from it; only what it does not hold (the connected
+      // wallet's own positions) goes to the RPC.
+      const book = options.snapshotUrl
+        ? await fetchKeeperBook(options.snapshotUrl).catch(() => null)
+        : null;
 
-      const [infos] = await Promise.all([
-        getMultiple(connection, keys),
-        // A failed scan keeps the treasuries already found. It is the same
-        // judgement as the backfill's: a rate limit on the heaviest call in
-        // the refresh must not empty a screen that was populated a moment ago.
+      // Without the keeper, the browser rebuilds price history itself. It is
+      // started but not awaited, and chunked; with the keeper it is not needed
+      // at all, because the keeper serves the same history to the charts.
+      if (!book && !options.snapshotUrl) {
+        void backfill(
+          derived.map((d) => ({ key: d.oracle, id: d.oracle.toBase58() })),
+        );
+      }
+
+      const fromRpc = book
+        ? keys.filter((k) => !book.accounts.has(k.toBase58()))
+        : keys;
+
+      const [rpcInfos] = await Promise.all([
+        fromRpc.length > 0
+          ? getMultiple(connection, fromRpc)
+          : Promise.resolve([]),
+        // A failed scan keeps the treasuries already found: a rate limit on
+        // the heaviest call in the refresh must not empty a screen that was
+        // populated a moment ago.
         dueForScan
-          ? scanTreasuries().catch(() => {
+          ? scanTreasuries(book?.treasuries).catch(() => {
               /* keep the last good scan */
             })
           : Promise.resolve(),
       ]);
+
+      const rpcByKey = new Map(
+        fromRpc.map((k, i) => [k.toBase58(), rpcInfos[i] ?? null]),
+      );
+      const infos = keys.map((k) => {
+        const id = k.toBase58();
+        return rpcByKey.has(id)
+          ? rpcByKey.get(id)!
+          : ((book?.accounts.get(id) ?? null) as Awaited<
+              ReturnType<typeof getMultiple>
+            >[number]);
+      });
 
       const markets: MarketView[] = [];
       const positions: Position[] = [];
@@ -446,7 +522,13 @@ export function rpcSource(options: RpcSourceOptions): LiveDataSource {
         return;
       }
 
-      snapshot = { markets, positions, lpPositions, treasuries, treasuryPositions };
+      snapshot = {
+        markets,
+        positions,
+        lpPositions,
+        treasuries,
+        treasuryPositions,
+      };
       loadedAt = Math.floor(Date.now() / 1000);
       lastError = null;
     } catch (e) {

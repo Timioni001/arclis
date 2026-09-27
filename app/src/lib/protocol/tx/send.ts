@@ -149,7 +149,52 @@ export interface SendContext {
  * message on any failure, including a simulation that fails before anything is
  * signed, which is the failure worth having.
  */
+/** A rate limit or a dropped connection: worth a short retry, not a failure. */
+export function isBusy(e: unknown): boolean {
+  return /429|rate limit|too many requests|fetch failed|failed to fetch|network ?error|ECONNRESET|timed? ?out/i.test(
+    String((e as Error)?.message ?? e),
+  );
+}
+
+const BUSY =
+  "Devnet is busy right now, so nothing was sent and nothing was charged. Try again in a few seconds.";
+
+/** Retry a read the cluster refused for load, with a short backoff. */
+async function withBusyRetry<T>(
+  read: () => Promise<T>,
+  attempts = 3,
+): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await read();
+    } catch (e) {
+      if (!isBusy(e) || i >= attempts) throw e;
+      await new Promise((r) => setTimeout(r, 800 * i));
+    }
+  }
+}
+
+/**
+ * Build, sign, send and confirm, with every failure as a sentence.
+ *
+ * A raw RPC error ("failed to get recent blockhash: Error: 429 …") told a
+ * trader nothing they could act on. Load errors are retried briefly and then
+ * reported as what they are: the network was busy and nothing happened.
+ */
 export async function sendInstructions(
+  ctx: SendContext,
+  instructions: TransactionInstruction[],
+): Promise<SendResult> {
+  try {
+    return await sendInstructionsOnce(ctx, instructions);
+  } catch (e) {
+    if (e instanceof TransactionError) throw e;
+    if (isBusy(e)) throw new TransactionError(BUSY, { name: "NetworkBusy" });
+    throw e;
+  }
+}
+
+async function sendInstructionsOnce(
   ctx: SendContext,
   instructions: TransactionInstruction[],
 ): Promise<SendResult> {
@@ -161,8 +206,9 @@ export async function sendInstructions(
 
   const tx = new Transaction();
   tx.add(...instructions);
-  const { blockhash, lastValidBlockHeight } =
-    await connection.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } = await withBusyRetry(() =>
+    connection.getLatestBlockhash("confirmed"),
+  );
   tx.recentBlockhash = blockhash;
   tx.feePayer = payer;
   if (ctx.extraSigners?.length) tx.partialSign(...ctx.extraSigners);
@@ -229,9 +275,15 @@ export async function simulate(
    * fine. The signed transaction still carries our blockhash; only the check
    * swaps it.
    */
-  const result = await connection.simulateTransaction(
-    new VersionedTransaction(tx.compileMessage()),
-    { sigVerify: false, replaceRecentBlockhash: true, commitment: "confirmed" },
+  const result = await withBusyRetry(() =>
+    connection.simulateTransaction(
+      new VersionedTransaction(tx.compileMessage()),
+      {
+        sigVerify: false,
+        replaceRecentBlockhash: true,
+        commitment: "confirmed",
+      },
+    ),
   );
   const logs = result.value.logs ?? [];
   if (result.value.err) {

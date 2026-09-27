@@ -58,6 +58,7 @@ import { newHealth, startHealthServer, redactRpc } from "./health";
 import { createFaucet, type FaucetHandler } from "./faucet";
 import { EventIndexer } from "./indexer";
 import { News } from "./news";
+import { AccountSnapshot } from "./snapshot";
 
 const env = process.env;
 
@@ -329,6 +330,28 @@ async function main() {
     abort.signal.addEventListener("abort", () => clearInterval(newsTimer));
   }
 
+  // The book, served to the interface at /snapshot. Read on the keeper's own
+  // RPC: it is the path every visitor's first paint depends on, so it gets
+  // the dedicated endpoint, and at a few batched calls every few seconds it
+  // costs a fraction of the price publisher's budget.
+  const book = new AccountSnapshot(config.connection, config.programId, SYMBOLS);
+  const SNAPSHOT_INTERVAL_MS = Number(env.SNAPSHOT_INTERVAL_MS ?? 5_000);
+  const TREASURY_SCAN_MS = Number(env.TREASURY_SCAN_MS ?? 120_000);
+  const bookTask = loop(
+    config,
+    "snapshot",
+    SNAPSHOT_INTERVAL_MS,
+    () => book.refresh(),
+    abort.signal,
+  );
+  const treasuryScanTask = loop(
+    config,
+    "treasury-scan",
+    TREASURY_SCAN_MS,
+    () => book.refreshTreasuries(),
+    abort.signal,
+  );
+
   const healthPort = Number(env.HEALTH_PORT ?? 0);
   if (healthPort > 0) {
     startHealthServer(
@@ -341,6 +364,7 @@ async function main() {
       () => faucet,
       indexer,
       () => news?.current() ?? null,
+      () => book.json(),
     );
   }
 
@@ -369,7 +393,7 @@ async function main() {
     });
   }
 
-  const tasks: Promise<void>[] = [];
+  const tasks: Promise<void>[] = [bookTask, treasuryScanTask];
 
   // Prices and sessions. Ten seconds is well inside the 60-second staleness
   // budget an open market applies, with room for a missed round trip.

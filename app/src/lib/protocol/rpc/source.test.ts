@@ -250,3 +250,70 @@ describe("treasury scan", () => {
     expect(s.treasuries()[0].address).toBe(AGENT_MINT.toBase58());
   });
 });
+
+describe("reading the book from the keeper", () => {
+  it("takes markets and treasuries from /snapshot and never backfills from the RPC", async () => {
+    const treasury = await treasuryBytes();
+    const a = marketAddresses(PROGRAM, "AAPL");
+    const accounts: Record<string, string | null> = {};
+    for (const k of [a.oracle, a.market, a.pool, a.poolVault, a.marketVault]) {
+      accounts[k.toBase58()] = null;
+    }
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        fetchedAt: Math.floor(Date.now() / 1000),
+        accounts,
+        treasuries: [{ pubkey: TREASURY.toBase58(), data: treasury.toString("base64") }],
+      }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      const { connection } = fakeConnection();
+      const src = rpcSource({
+        endpoint: "http://fake",
+        programId: PROGRAM,
+        symbols: ["AAPL"],
+        connection,
+        snapshotUrl: "http://keeper/snapshot",
+      });
+      await src.refresh();
+      const c = connection as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+      expect(fetchMock).toHaveBeenCalledWith("http://keeper/snapshot", expect.anything());
+      // The treasury came from the keeper's scan, not a getProgramAccounts.
+      expect(c.getProgramAccounts.mock.calls).toHaveLength(0);
+      expect(src.treasuries().map((t) => t.address)).toEqual([TREASURY.toBase58()]);
+      // No history rebuilt from transactions: the keeper serves it.
+      expect(c.getSignaturesForAddress.mock.calls).toHaveLength(0);
+      // The only RPC read is the treasury's follow-ups, never the book.
+      for (const call of c.getMultipleAccountsInfo.mock.calls) {
+        const keys = (call[0] as PublicKey[]).map((k) => k.toBase58());
+        expect(keys).not.toContain(a.oracle.toBase58());
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("falls back to the RPC when the keeper is down", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({}) })));
+    try {
+      const { connection } = fakeConnection();
+      const src = rpcSource({
+        endpoint: "http://fake",
+        programId: PROGRAM,
+        symbols: ["AAPL"],
+        connection,
+        snapshotUrl: "http://keeper/snapshot",
+      });
+      await src.refresh();
+      const c = connection as unknown as Record<string, { mock: { calls: unknown[][] } }>;
+      const asked = c.getMultipleAccountsInfo.mock.calls.flatMap((call) =>
+        (call[0] as PublicKey[]).map((k) => k.toBase58()),
+      );
+      expect(asked).toContain(marketAddresses(PROGRAM, "AAPL").oracle.toBase58());
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

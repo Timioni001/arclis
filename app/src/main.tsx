@@ -20,7 +20,13 @@ import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { startQualityWatch } from "./lib/perf/quality";
 import { mockSource, type DataSource } from "./lib/protocol/mock";
-import { DATA_SOURCE, MARKET_SYMBOLS, PROGRAM_ID, RPC_URL } from "./lib/config";
+import {
+  DATA_SOURCE,
+  KEEPER_URL,
+  MARKET_SYMBOLS,
+  PROGRAM_ID,
+  RPC_URL,
+} from "./lib/config";
 import { MARKET_NAMES } from "./lib/markets";
 import "./styles/base.css";
 
@@ -84,6 +90,7 @@ if (DATA_SOURCE === "rpc") {
           programId: new PublicKey(PROGRAM_ID),
           symbols: MARKET_SYMBOLS,
           names: NAMES,
+          snapshotUrl: KEEPER_URL ? `${KEEPER_URL}/snapshot` : undefined,
         }),
       );
     } catch (e) {

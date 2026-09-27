@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react";
 import type { Connection } from "@solana/web3.js";
 import type { Oracle } from "./types";
-import { DATA_SOURCE, RPC_URL } from "../config";
+import { DATA_SOURCE, KEEPER_URL, RPC_URL } from "../config";
 
 type Live = Pick<
   Oracle,
@@ -26,7 +26,10 @@ export function useLiveOracle(oracle: Oracle, intervalMs = 10_000): Oracle {
 
   useEffect(() => {
     setLive(null);
-    if (DATA_SOURCE !== "rpc") return;
+    // With the keeper's snapshot the whole book is re-read every ten seconds
+    // anyway, from the keeper rather than the RPC; a second poll here would
+    // only add load to the endpoint trades depend on.
+    if (DATA_SOURCE !== "rpc" || KEEPER_URL) return;
     let cancelled = false;
     const read = async () => {
       if (document.visibilityState === "hidden") return;

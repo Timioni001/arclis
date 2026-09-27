@@ -28,6 +28,7 @@ import type { MarketData } from "./market-data";
 import type { FaucetHandler } from "./faucet";
 import type { EventIndexer } from "./indexer";
 import type { NewsSnapshot } from "./news";
+import type { SnapshotJson } from "./snapshot";
 
 /** Consecutive failures tolerated before a task is called broken. */
 const FAILURE_BUDGET = 5;
@@ -170,6 +171,8 @@ export function startHealthServer(
   events?: EventIndexer,
   /** Daily headlines for the Overview, once the first fetch lands. */
   news?: () => NewsSnapshot | null,
+  /** Every market account, for the interface's book read. */
+  snapshot?: () => SnapshotJson,
 ): void {
   // A symbol from a URL, in the spelling the keeper uses (`nvdax` is `NVDAx`).
   const resolve = (symbol: string) =>
@@ -210,6 +213,15 @@ export function startHealthServer(
           log("error", "faucet failed", { message: String((e as Error)?.message ?? e) });
           json(500, { error: "The faucet failed. Try again later." }, 0);
         });
+      return;
+    }
+
+    // The whole book as raw account data, read here every few seconds so no
+    // visitor has to read it from a rate-limited public endpoint. Cached for
+    // three seconds: fresher than the interface polls, and one fetch serves
+    // everyone behind the same edge.
+    if (url.pathname === "/snapshot" && snapshot) {
+      json(200, snapshot(), 3);
       return;
     }
 
