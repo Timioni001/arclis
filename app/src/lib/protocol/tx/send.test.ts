@@ -150,3 +150,39 @@ describe("sendInstructions", () => {
     expect(sendRawTransaction).not.toHaveBeenCalled();
   });
 });
+
+describe("after a transaction has been sent", () => {
+  it("keeps waiting through a rate-limited status check and confirms", async () => {
+    const { session, address } = await passkey();
+    const conn = {
+      rpcEndpoint: "https://api.devnet.solana.com",
+      getLatestBlockhash: vi.fn().mockResolvedValue(BLOCKHASH),
+      simulateTransaction: vi.fn().mockResolvedValue({ value: { err: null, logs: [] } }),
+      sendRawTransaction: vi.fn().mockResolvedValue("sig"),
+      getSignatureStatuses: vi
+        .fn()
+        .mockRejectedValueOnce(new Error("429 Too Many Requests"))
+        .mockResolvedValue({ value: [{ err: null, confirmationStatus: "confirmed" }] }),
+      getBlockHeight: vi.fn().mockResolvedValue(1),
+    } as unknown as Connection;
+    await expect(sendInstructions({ connection: conn, session }, [transfer(address)])).resolves.toHaveProperty("signature");
+  }, 15_000);
+
+  it("never says nothing was sent once it was, and points at the transaction", async () => {
+    const { session, address } = await passkey();
+    const conn = {
+      rpcEndpoint: "https://api.devnet.solana.com",
+      getLatestBlockhash: vi.fn().mockResolvedValue(BLOCKHASH),
+      simulateTransaction: vi.fn().mockResolvedValue({ value: { err: null, logs: [] } }),
+      sendRawTransaction: vi.fn().mockResolvedValue("sig"),
+      getSignatureStatuses: vi.fn().mockRejectedValue(new Error("429 Too Many Requests")),
+      getBlockHeight: vi.fn().mockRejectedValue(new Error("429 Too Many Requests")),
+    } as unknown as Connection;
+    const err = await sendInstructions({ connection: conn, session }, [transfer(address)], { confirmTimeoutMs: 5_000 }).catch((e) => e);
+    expect(err).toBeInstanceOf(TransactionError);
+    expect(err.name).toBe("Unconfirmed");
+    expect(err.message).not.toMatch(/nothing was sent/);
+    expect(err.message).toMatch(/check your position before trying again/i);
+    expect(err.explorer).toContain("explorer.solana.com/tx/");
+  }, 20_000);
+});

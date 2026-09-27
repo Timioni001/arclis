@@ -53,7 +53,7 @@ type Step =
   | { kind: "review" }
   | { kind: "sending" }
   | { kind: "done"; signature: string; explorer: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; explorer?: string | null };
 
 let sharedConnection: Connection | null = null;
 function connection(): Connection {
@@ -188,7 +188,10 @@ export function OrderTicket({
           e instanceof TransactionError || e instanceof Error
             ? e.message
             : "The transaction did not go through.",
+        explorer: e instanceof TransactionError ? e.explorer : null,
       });
+      // Sent but unconfirmed may still land: re-read so it shows if it did.
+      if (e instanceof TransactionError && e.explorer) onFilled?.();
     }
   }
 
@@ -280,6 +283,14 @@ export function OrderTicket({
       {(blocker || step.kind === "error") && (
         <p className="metric-sub ticket-note" role="alert">
           {step.kind === "error" ? step.message : blocker}
+          {step.kind === "error" && step.explorer && (
+            <>
+              {" "}
+              <a href={step.explorer} target="_blank" rel="noreferrer noopener">
+                View transaction
+              </a>
+            </>
+          )}
         </p>
       )}
       {balance !== null && !blocker && step.kind !== "error" && (

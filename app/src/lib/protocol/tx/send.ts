@@ -47,15 +47,23 @@ export class TransactionError extends Error {
   readonly code: number | null;
   readonly name: string;
   readonly logs: string[];
+  /** The transaction on the explorer, when it was sent. */
+  readonly explorer: string | null;
 
   constructor(
     message: string,
-    opts: { code?: number | null; name?: string; logs?: string[] } = {},
+    opts: {
+      code?: number | null;
+      name?: string;
+      logs?: string[];
+      explorer?: string | null;
+    } = {},
   ) {
     super(message);
     this.code = opts.code ?? null;
     this.name = opts.name ?? "TransactionError";
     this.logs = opts.logs ?? [];
+    this.explorer = opts.explorer ?? null;
   }
 }
 
@@ -194,12 +202,37 @@ export async function readBeforeSend<T>(read: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * How long to keep checking a sent transaction before saying it is not yet
+ * confirmed. Its blockhash expires in about a minute; this is the backstop
+ * for when the network is too busy to say even that.
+ */
+const CONFIRM_TIMEOUT_MS = 90_000;
+
+/**
+ * A transaction that was sent and could not be confirmed. It may still land,
+ * so this must never read as "nothing happened": someone who believes that
+ * and tries again can open the same position twice.
+ */
+function unconfirmed(connection: Connection, signature: string): TransactionError {
+  return new TransactionError(
+    "Sent, but the network has not confirmed it yet, so it may still go through. " +
+      "Check your position before trying again.",
+    { name: "Unconfirmed", explorer: explorerFor(connection, signature) },
+  );
+}
+
 export async function sendInstructions(
   ctx: SendContext,
   instructions: TransactionInstruction[],
+  options: { confirmTimeoutMs?: number } = {},
 ): Promise<SendResult> {
   try {
-    return await sendInstructionsOnce(ctx, instructions);
+    return await sendInstructionsOnce(
+      ctx,
+      instructions,
+      options.confirmTimeoutMs ?? CONFIRM_TIMEOUT_MS,
+    );
   } catch (e) {
     if (e instanceof TransactionError) throw e;
     if (isBusy(e)) throw new TransactionError(BUSY, { name: "NetworkBusy" });
@@ -210,6 +243,7 @@ export async function sendInstructions(
 async function sendInstructionsOnce(
   ctx: SendContext,
   instructions: TransactionInstruction[],
+  confirmTimeoutMs: number,
 ): Promise<SendResult> {
   const { connection, session } = ctx;
   if (!session.address) {
@@ -240,6 +274,7 @@ async function sendInstructionsOnce(
       signed,
       signature,
       lastValidBlockHeight,
+      confirmTimeoutMs,
     );
   } else {
     signature = await signAndSend(ctx, tx);
@@ -249,11 +284,18 @@ async function sendInstructionsOnce(
         "confirmed",
       )
       .catch(async (e) => {
-        // Expiry is not proof of failure: check before saying so.
-        const st = (await connection.getSignatureStatuses([signature]))
-          .value[0];
+        // Expiry is not proof of failure: check before saying so. And a
+        // network too busy to answer is not proof of anything: the
+        // transaction was sent.
+        const st = await connection
+          .getSignatureStatuses([signature])
+          .then((r) => r.value[0])
+          .catch(() => {
+            throw unconfirmed(connection, signature);
+          });
         if (st && !st.err && st.confirmationStatus)
           return { value: { err: null } };
+        if (isBusy(e)) throw unconfirmed(connection, signature);
         throw expired(e);
       });
   }
@@ -351,16 +393,26 @@ export async function broadcastUntilConfirmed(
   raw: Uint8Array,
   signature: string,
   lastValidBlockHeight: number,
+  timeoutMs = CONFIRM_TIMEOUT_MS,
 ): Promise<{ value: { err: unknown } }> {
   const send = () =>
     connection
       .sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 })
       .catch(() => undefined);
+  const deadline = Date.now() + timeoutMs;
   await send();
   for (;;) {
     await new Promise((r) => setTimeout(r, 2000));
-    const status = (await connection.getSignatureStatuses([signature]))
-      .value[0];
+    if (Date.now() > deadline) throw unconfirmed(connection, signature);
+    // A busy network answering 429 says nothing about the transaction; keep
+    // asking rather than give up on something that may already have landed.
+    let status;
+    try {
+      status = (await connection.getSignatureStatuses([signature])).value[0];
+    } catch (e) {
+      if (isBusy(e)) continue;
+      throw e;
+    }
     if (status?.err) return { value: { err: status.err } };
     if (
       status?.confirmationStatus === "confirmed" ||
@@ -370,11 +422,12 @@ export async function broadcastUntilConfirmed(
     }
     const height = await connection.getBlockHeight("confirmed").catch(() => 0);
     if (height > lastValidBlockHeight) {
-      const last = (
-        await connection.getSignatureStatuses([signature], {
-          searchTransactionHistory: true,
-        })
-      ).value[0];
+      const last = await connection
+        .getSignatureStatuses([signature], { searchTransactionHistory: true })
+        .then((r) => r.value[0])
+        .catch(() => {
+          throw unconfirmed(connection, signature);
+        });
       if (last && !last.err) return { value: { err: null } };
       throw expired();
     }

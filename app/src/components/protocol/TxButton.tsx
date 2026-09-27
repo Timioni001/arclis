@@ -14,13 +14,13 @@ import type { Session } from "../../lib/auth/session";
 import { canTrade } from "../../lib/auth/session";
 import { DATA_SOURCE, PROGRAM_ID, QUOTE_MINT, RPC_URL } from "../../lib/config";
 import type { ActionContext } from "../../lib/protocol/tx/actions";
-import type { SendResult } from "../../lib/protocol/tx/send";
+import { TransactionError, type SendResult } from "../../lib/protocol/tx/send";
 
 type Step =
   | { kind: "idle" }
   | { kind: "sending" }
   | { kind: "done"; explorer: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; explorer?: string | null };
 
 /*
  * web3.js is imported when a button is pressed, not when it is drawn. The
@@ -99,7 +99,10 @@ export function TxButton({
           e instanceof Error
             ? e.message
             : "The transaction did not go through.",
+        explorer: e instanceof TransactionError ? e.explorer : null,
       });
+      // Sent but unconfirmed may still land: re-read so it shows if it did.
+      if (e instanceof TransactionError && e.explorer) onDone?.();
     }
   }
 
@@ -128,6 +131,14 @@ export function TxButton({
       {note && (
         <p className="metric-sub ticket-note" role="alert">
           {note}
+          {step.kind === "error" && step.explorer && (
+            <>
+              {" "}
+              <a href={step.explorer} target="_blank" rel="noreferrer noopener">
+                View transaction
+              </a>
+            </>
+          )}
         </p>
       )}
     </>

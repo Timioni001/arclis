@@ -64,4 +64,24 @@ describe("TxButton", () => {
     fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
     expect((await screen.findByRole("alert")).textContent).toBe("Cooldown has not elapsed.");
   });
+
+  it("links a sent but unconfirmed transaction, and re-reads in case it landed", async () => {
+    const { TransactionError } = await import("../../lib/protocol/tx/send");
+    const onDone = vi.fn();
+    const action = vi.fn().mockRejectedValue(
+      new TransactionError("Sent, but the network has not confirmed it yet.", {
+        name: "Unconfirmed",
+        explorer: "https://explorer.solana.com/tx/abc?cluster=devnet",
+      }),
+    );
+    render(
+      <TxButton symbol="AAPL" session={wallet} action={action} onDone={onDone}>Withdraw</TxButton>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Withdraw" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.querySelector("a")?.getAttribute("href")).toBe(
+      "https://explorer.solana.com/tx/abc?cluster=devnet",
+    );
+    expect(onDone).toHaveBeenCalled();
+  });
 });
