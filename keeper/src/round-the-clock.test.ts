@@ -181,17 +181,51 @@ describe("Jupiter at twenty markets", () => {
     expect(await feed.quote(sources.map((s) => s.symbol))).toHaveLength(20);
   });
 
-  it("refuses a price outside the market its last check measured", async () => {
+  it("trades at the executable market when the price API disagrees with it", async () => {
+    let t = 5;
+    const quoted: number[] = [];
     const feed = jupiterXStockFeed([sources[0]], {
-      now: () => 5,
-      fetchJson: async (url) =>
-        url.includes("/price/v3") ? { MINT0: { usdPrice: 150 } } : quoteJson(url),
+      now: () => t,
+      fetchJson: async (url) => {
+        if (url.includes("/price/v3")) return { MINT0: { usdPrice: 150 } }; // a stale print
+        quoted.push(t);
+        return quoteJson(url);
+      },
     });
-    expect(await feed.quote(["S0x"])).toEqual([]);
-    expect(feed.unpriced()).toEqual({
-      at: 5,
-      markets: { S0x: expect.stringMatching(/^price 150\.00 outside the checked market/) },
+    // A check was taken this tick, so its executable mid is the price.
+    const [first] = await feed.quote(["S0x"]);
+    expect(Number(first.price) / 1e6).toBeCloseTo(199.5);
+    // And it is re-proved every tick while the disagreement lasts, rather
+    // than trading on a mid that is minutes old.
+    t += 20;
+    const [second] = await feed.quote(["S0x"]);
+    expect(Number(second.price) / 1e6).toBeCloseTo(199.5);
+    expect(quoted.filter((q) => q === 25)).toHaveLength(2);
+  });
+
+  it("keeps a market priced through one failed quote, and retries it next tick", async () => {
+    let t = 0;
+    let fail = false;
+    const quoted: number[] = [];
+    const feed = jupiterXStockFeed([sources[0]], {
+      now: () => t,
+      fetchJson: async (url) => {
+        if (url.includes("/price/v3")) return { MINT0: { usdPrice: 199.4 } };
+        quoted.push(t);
+        if (fail) throw new Error("500 Internal Server Error");
+        return quoteJson(url);
+      },
     });
+    expect(await feed.quote(["S0x"])).toHaveLength(1);
+    // The scheduled re-check fails: the check from 180 s ago still stands.
+    t = 180;
+    fail = true;
+    expect(await feed.quote(["S0x"])).toHaveLength(1);
+    // Retried on the very next tick, not three minutes later.
+    t = 200;
+    fail = false;
+    await feed.quote(["S0x"]);
+    expect(quoted).toContain(200);
   });
 
   it("accepts a deep book's price that drifted a little since its check", async () => {
@@ -242,13 +276,13 @@ describe("Jupiter at twenty markets", () => {
       NOROUTEx: "no Jupiter route to buy",
       S0x: "waiting for its first spread check",
     });
-    // One tick later it has only the price API to go on, which has nothing.
+    // It is re-checked every tick, so it stays priced. The market with no
+    // route is retried, and says so until a route appears.
     t += 20;
     await feed.quote(all);
     expect(feed.unpriced().markets).toEqual({
       THINx: expect.stringMatching(/over the 300 bps limit/),
       NOROUTEx: "no Jupiter route to buy",
-      UNLISTEDx: "no price from the Jupiter price API",
     });
   });
 });

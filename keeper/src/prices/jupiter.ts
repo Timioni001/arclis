@@ -135,16 +135,24 @@ export interface ExplainedFeed extends PriceFeed {
  *   - **Is there a market:** a buy and a sell quote for a few markets per
  *     tick, oldest first, so each is re-proved every few minutes.
  *
- * A market is priced only while its last check is recent, its round trip was
- * under `maxSpreadBps`, and the price sits inside the two-sided market that
- * check measured (widened by one spread). A thin or stale book publishes
- * nothing, and the keeper closes the market to new risk, exactly as before.
+ * A market is priced only while its last check is recent and its round trip
+ * was under `maxSpreadBps`. The price is the price API's number while it sits
+ * inside the two-sided market that check measured (widened by one spread, and
+ * at least `minBandBps`); when it does not, the executable mid from a check
+ * taken the same tick. A thin or stale book publishes nothing, and the keeper
+ * closes the market to new risk, exactly as before.
  */
 export function jupiterXStockFeed(
   sources: XStockSource[],
   options: JupiterOptions & {
     /** Markets whose spread is re-proved each tick. */
     checksPerTick?: number;
+    /**
+     * Extra checks each tick for markets the last tick could not settle: a
+     * quote request that failed, or a price API number the executable market
+     * disagreed with. Those are priced from a check taken that same tick.
+     */
+    urgentPerTick?: number;
     /** Seconds before a market's spread is due for a re-check. */
     recheckSecs?: number;
     /** A check older than this no longer counts. */
@@ -167,13 +175,19 @@ export function jupiterXStockFeed(
   const clipUsd = options.clipUsd ?? 1_000;
   const maxSpreadBps = options.maxSpreadBps ?? 300;
   const checksPerTick = options.checksPerTick ?? 3;
+  const urgentPerTick = options.urgentPerTick ?? 2;
   const recheckSecs = options.recheckSecs ?? 180;
   const maxCheckAgeSecs = options.maxCheckAgeSecs ?? 600;
   const minBandBps = options.minBandBps ?? 100;
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const fetchJson = options.fetchJson ?? getJson;
   const bySymbol = new Map(sources.map((s) => [s.symbol.toUpperCase(), s]));
+  // The last check that measured a market, kept through a failed one.
   const checks = new Map<string, SpreadCheck>();
+  // The most recent failure since then, for the reason a market is closed.
+  const failures = new Map<string, { at: number; error: string }>();
+  // Markets to re-prove next tick, ahead of the rotation.
+  const urgent = new Set<string>();
   let reasons: { at: number; markets: Record<string, string> } = { at: 0, markets: {} };
 
   const quoteUrl = (inputMint: string, outputMint: string, amount: bigint) =>
@@ -216,49 +230,62 @@ export function jupiterXStockFeed(
       if (wanted.length === 0) return [];
       const t = now();
 
-      // Re-prove the markets due for it, never-checked and oldest first.
-      const due = wanted
-        .filter((s) => t - (checks.get(s.symbol)?.at ?? -Infinity) >= recheckSecs)
+      const lastTry = (sym: string) =>
+        Math.max(checks.get(sym)?.at ?? 0, failures.get(sym)?.at ?? 0);
+      // Markets the last tick could not settle go first, longest waiting
+      // first; then the rotation re-proves the rest, never-checked and oldest
+      // first.
+      const priority = wanted
+        .filter((s) => urgent.has(s.symbol))
+        .sort((a, b) => lastTry(a.symbol) - lastTry(b.symbol))
+        .slice(0, urgentPerTick);
+      const rotation = wanted
+        .filter(
+          (s) =>
+            !urgent.has(s.symbol) &&
+            t - (checks.get(s.symbol)?.at ?? -Infinity) >= recheckSecs,
+        )
         .sort((a, b) => (checks.get(a.symbol)?.at ?? 0) - (checks.get(b.symbol)?.at ?? 0))
         .slice(0, checksPerTick);
+
+      const check = async (s: XStockSource) => {
+        let c: SpreadCheck;
+        try {
+          c = await checkSpread(s, t);
+        } catch (e) {
+          const error = `quote request failed: ${String(e).slice(0, 120)}`;
+          c = { bid: 0, ask: 0, mid: 0, spreadBps: Infinity, at: t, error };
+        }
+        if (c.error) {
+          // One failed request says little about the market; the last good
+          // check still stands until it ages out, and this one is retried.
+          failures.set(s.symbol, { at: t, error: c.error });
+          urgent.add(s.symbol);
+        } else {
+          checks.set(s.symbol, c);
+          failures.delete(s.symbol);
+          urgent.delete(s.symbol);
+        }
+      };
 
       const [priced] = await Promise.all([
         fetchJson(`${baseUrl}/price/v3?ids=${wanted.map((s) => s.mint).join(",")}`, headers)
           .then(parsePriceV3)
           .catch(() => new Map<string, number>()),
-        Promise.allSettled(
-          due.map(async (s) =>
-            checks.set(
-              s.symbol,
-              await checkSpread(s, t).catch(
-                (e): SpreadCheck => ({
-                  bid: 0,
-                  ask: 0,
-                  mid: 0,
-                  spreadBps: Infinity,
-                  at: t,
-                  error: `quote request failed: ${String(e).slice(0, 120)}`,
-                }),
-              ),
-            ),
-          ),
-        ),
+        Promise.allSettled([...priority, ...rotation].map(check)),
       ]);
 
       const out: Quote[] = [];
       const why: Record<string, string> = {};
       for (const s of wanted) {
         const c = checks.get(s.symbol);
+        const failed = failures.get(s.symbol)?.error;
         if (!c) {
-          why[s.symbol] = "waiting for its first spread check";
-          continue;
-        }
-        if (c.error) {
-          why[s.symbol] = c.error;
+          why[s.symbol] = failed ?? "waiting for its first spread check";
           continue;
         }
         if (t - c.at > maxCheckAgeSecs) {
-          why[s.symbol] = `last spread check is ${t - c.at}s old`;
+          why[s.symbol] = failed ?? `last spread check is ${t - c.at}s old`;
           continue;
         }
         if (!(c.spreadBps <= maxSpreadBps)) {
@@ -266,17 +293,22 @@ export function jupiterXStockFeed(
             `round trip costs ${Math.round(c.spreadBps)} bps, over the ${maxSpreadBps} bps limit`;
           continue;
         }
-        // The price API's number, or the check's own mid if it was just taken
-        // and the price request failed.
-        const price = priced.get(s.mint) ?? (c.at === t ? c.mid : undefined);
-        if (price === undefined) {
-          why[s.symbol] = "no price from the Jupiter price API";
-          continue;
-        }
+        // The price API's number while it agrees with the executable market.
+        // When it does not (on a thin weekend book it can lag the pools by a
+        // few percent) or has nothing, the price is the executable mid, but
+        // only from a check taken this tick; otherwise the market is
+        // re-proved next tick, ahead of the rotation.
+        const api = priced.get(s.mint);
         const width = Math.max(c.ask - c.bid, (c.mid * minBandBps) / 10_000);
-        if (price < c.bid - width || price > c.ask + width) {
+        const agrees = api !== undefined && api >= c.bid - width && api <= c.ask + width;
+        if (!agrees) urgent.add(s.symbol);
+        const price = agrees ? api : c.at === t ? c.mid : undefined;
+        if (price === undefined) {
           why[s.symbol] =
-            `price ${price.toFixed(2)} outside the checked market ${c.bid.toFixed(2)}-${c.ask.toFixed(2)}`;
+            api === undefined
+              ? "no price from the Jupiter price API; re-checking the executable market"
+              : `price API reads ${api.toFixed(2)}, outside the executable market ` +
+                `${c.bid.toFixed(2)}-${c.ask.toFixed(2)}; re-checking`;
           continue;
         }
         try {
