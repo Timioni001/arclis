@@ -100,7 +100,11 @@ let LIVE_PRICES_REQUESTED = false;
 async function useLivePrices(apiKey: string) {
   LIVE_PRICES_REQUESTED = true;
   for (const listing of LISTINGS) {
-    for (let attempt = 1; attempt <= 3 && !LIVE.has(listing.symbol); attempt++) {
+    for (
+      let attempt = 1;
+      attempt <= 3 && !LIVE.has(listing.symbol);
+      attempt++
+    ) {
       try {
         const res = await fetch(
           `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(listing.quoteSymbol)}&token=${apiKey}`,
@@ -114,7 +118,9 @@ async function useLivePrices(apiKey: string) {
         /* retried below */
       }
       // Finnhub's free tier allows sixty calls a minute; back off on a miss.
-      await new Promise((r) => setTimeout(r, LIVE.has(listing.symbol) ? 1_100 : 2_500 * attempt));
+      await new Promise((r) =>
+        setTimeout(r, LIVE.has(listing.symbol) ? 1_100 : 2_500 * attempt),
+      );
     }
   }
 }
@@ -241,7 +247,9 @@ function symbolBytes(symbol: string): number[] {
  * under an address nothing references any more.
  */
 function localQuoteMintKeypair(): Keypair {
-  const seed = createHash("sha256").update("arclis local quote mint v1").digest();
+  const seed = createHash("sha256")
+    .update("arclis local quote mint v1")
+    .digest();
   return Keypair.fromSeed(seed.subarray(0, 32));
 }
 
@@ -295,7 +303,8 @@ const pace = () =>
     : Promise.resolve();
 
 let step = 0;
-const say = (msg: string) => console.log(`  ${String(++step).padStart(2)}. ${msg}`);
+const say = (msg: string) =>
+  console.log(`  ${String(++step).padStart(2)}. ${msg}`);
 const skip = (msg: string) => console.log(`      already done: ${msg}`);
 const warn = (msg: string) => console.log(`      note: ${msg}`);
 
@@ -547,7 +556,9 @@ async function main() {
       // timestamp without moving it.
       const current = await program.account.priceOracle.fetch(oracle);
       listing.price = Number(current.price.toString()) / SCALE;
-      say(`${listing.symbol} exists at $${listing.price}, keeping the keeper's price`);
+      say(
+        `${listing.symbol} exists at $${listing.price}, keeping the keeper's price`,
+      );
     }
 
     // Publish the price, which is what a keeper does and what the program
@@ -571,16 +582,40 @@ async function main() {
       await pace();
     };
 
-    await publishPrice();
-
     // A fresh oracle starts Closed, which refuses every increase-risk action.
     // Forced open here so the interface is usable at any hour; the keeper is
     // what decides this from the real NYSE calendar in a running system.
-    await program.methods
-      .setMarketSession({ open: {} })
-      .accounts({ authority: walletKp.publicKey, oracle })
-      .rpc();
-    await pace();
+    const openNow = async () => {
+      await publishPrice();
+      await program.methods
+        .setMarketSession({ open: {} })
+        .accounts({ authority: walletKp.publicKey, oracle })
+        .rpc();
+      await pace();
+    };
+
+    /*
+     * A running keeper already lists this symbol, and it can close the market
+     * between our open and the step that needs it open: a 24/7 market it has
+     * no Jupiter price for yet is closed on its next tick. Losing that race
+     * is not a failure of the step, so reopen and try again.
+     */
+    const whileOpen = async (step: () => Promise<unknown>) => {
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await step();
+        } catch (e) {
+          const closed = /CannotIncreaseRiskWhileClosed|StaleOracle/.test(
+            String(e),
+          );
+          if (!closed || attempt >= 3) throw e;
+          warn("the keeper closed the market mid-seed; reopening and retrying");
+          await openNow();
+        }
+      }
+    };
+
+    await openNow();
 
     if (!(await exists(conn, market))) {
       await program.methods
@@ -631,21 +666,23 @@ async function main() {
     }
 
     if (!(await exists(conn, lpPosition))) {
-      await program.methods
-        .depositLiquidity(units(LP_DEPOSIT))
-        .accounts({
-          owner: walletKp.publicKey,
-          config: configPda,
-          market,
-          oracle,
-          pool,
-          lpPosition,
-          vault: poolVault,
-          ownerTokenAccount: payerAta,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await whileOpen(() =>
+        program.methods
+          .depositLiquidity(units(LP_DEPOSIT))
+          .accounts({
+            owner: walletKp.publicKey,
+            config: configPda,
+            market,
+            oracle,
+            pool,
+            lpPosition,
+            vault: poolVault,
+            ownerTokenAccount: payerAta,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc(),
+      );
       await pace();
     }
 
@@ -655,38 +692,42 @@ async function main() {
     // one of them is short so the interface is not only ever exercised from
     // the long side.
     if (listing.long !== 0 && !(await exists(conn, position))) {
-      await publishPrice();
+      await openNow();
 
-      await program.methods
-        .depositCollateral(units(TRADER_COLLATERAL))
-        .accounts({
-          owner: walletKp.publicKey,
-          config: configPda,
-          market,
-          oracle,
-          position,
-          ownerTokenAccount: payerAta,
-          vault: marketVault,
-          tokenProgram: TOKEN_PROGRAM_ID,
-          systemProgram: SystemProgram.programId,
-        })
-        .rpc();
+      await whileOpen(() =>
+        program.methods
+          .depositCollateral(units(TRADER_COLLATERAL))
+          .accounts({
+            owner: walletKp.publicKey,
+            config: configPda,
+            market,
+            oracle,
+            position,
+            ownerTokenAccount: payerAta,
+            vault: marketVault,
+            tokenProgram: TOKEN_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc(),
+      );
       await pace();
 
-      await program.methods
-        .openPosition(units(listing.long))
-        .accounts({
-          owner: walletKp.publicKey,
-          config: configPda,
-          market,
-          oracle,
-          position,
-          pool,
-          poolVault,
-          marketVault,
-          tokenProgram: TOKEN_PROGRAM_ID,
-        })
-        .rpc();
+      await whileOpen(() =>
+        program.methods
+          .openPosition(units(listing.long))
+          .accounts({
+            owner: walletKp.publicKey,
+            config: configPda,
+            market,
+            oracle,
+            position,
+            pool,
+            poolVault,
+            marketVault,
+            tokenProgram: TOKEN_PROGRAM_ID,
+          })
+          .rpc(),
+      );
       await pace();
 
       const side = listing.long > 0 ? "long" : "short";
@@ -726,7 +767,9 @@ async function main() {
       units(MINT_TO_WALLET).toNumber(),
     );
     await pace();
-    console.log(`      10 SOL and ${MINT_TO_WALLET.toLocaleString()} quote tokens`);
+    console.log(
+      `      10 SOL and ${MINT_TO_WALLET.toLocaleString()} quote tokens`,
+    );
   }
 
   // --- what the interface needs to read any of this ------------------------
@@ -751,7 +794,9 @@ async function main() {
     fs.writeFileSync(dest, env);
     console.log(`\n  wrote app/.env.local\n\n  npm run app:dev\n`);
   } else {
-    console.log(`\n  put this in app/.env.local, or re-run with --write-env:\n`);
+    console.log(
+      `\n  put this in app/.env.local, or re-run with --write-env:\n`,
+    );
     console.log(
       env
         .split("\n")
