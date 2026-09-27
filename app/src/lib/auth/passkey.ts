@@ -345,8 +345,14 @@ export function saveAccount(account: StoredAccount): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(account));
   } catch {
-    // Private browsing. The account works for this session and will need
-    // creating again next time, which the interface states rather than hides.
+    // Private browsing, or storage full. This record is the only copy of the
+    // wrapped key: an account that cannot be kept would work in this tab and
+    // be gone on reload, with anything sent to its address. So creation fails
+    // here, before the address is ever shown.
+    throw new Error(
+      "This browser could not save your account (private browsing or full storage), " +
+        "so it would be lost when you leave. Use a normal window, or connect a wallet instead.",
+    );
   }
 }
 

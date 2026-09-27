@@ -52,4 +52,16 @@ describe("the stored passkey account", () => {
     });
     expect(loadAccount()).toBeNull();
   });
+
+  it("refuses to report an account created when it could not be kept", () => {
+    // Private browsing, or storage full: the key would exist only in this
+    // tab, and anything sent to the address would be lost on reload.
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => {
+        throw new Error("QuotaExceededError");
+      },
+    });
+    expect(() => saveAccount(ACCOUNT)).toThrow(/could not save/i);
+  });
 });
