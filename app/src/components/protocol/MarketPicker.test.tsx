@@ -17,7 +17,11 @@ describe("MarketPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: /AAPL/ }));
     const search = screen.getByLabelText("Search markets");
     fireEvent.change(search, { target: { value: "coca" } });
-    expect(screen.getAllByRole("option")).toHaveLength(1);
+    // Coca-Cola is listed twice: KO on market hours, KOx around the clock.
+    const found = screen.getAllByRole("option").map((o) => o.textContent ?? "");
+    expect(found).toHaveLength(2);
+    expect(found[0]).toMatch(/^KO(?!x)/);
+    expect(found[1]).toMatch(/^KOx/);
     fireEvent.keyDown(search, { key: "Enter" });
     expect(onSelect).toHaveBeenCalledWith("KO");
     expect(screen.queryByRole("listbox")).toBeNull();

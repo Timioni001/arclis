@@ -91,9 +91,53 @@ export function midFromQuotes(
   return { mid, halfSpread, spreadBps: (2 * halfSpread * 10_000) / mid };
 }
 
+/** usdPrice by mint, from a Price API v3 response. */
+export function parsePriceV3(payload: unknown): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!payload || typeof payload !== "object") return out;
+  for (const [mint, raw] of Object.entries(payload as Record<string, unknown>)) {
+    const p = Number((raw as { usdPrice?: unknown })?.usdPrice);
+    if (Number.isFinite(p) && p > 0) out.set(mint, p);
+  }
+  return out;
+}
+
+interface SpreadCheck {
+  bid: number;
+  ask: number;
+  mid: number;
+  spreadBps: number;
+  /** Unix seconds. */
+  at: number;
+}
+
+/**
+ * Prices every xStock in one request, and proves each market is real on a
+ * rotation.
+ *
+ * Two live quotes per market per tick priced each one honestly, but at twenty
+ * markets that was a hundred and twenty requests a minute, past the keyless
+ * endpoint's limit. So the work is split by how fast each answer changes:
+ *
+ *   - **Price:** one Price API request for every mint, every tick.
+ *   - **Is there a market:** a buy and a sell quote for a few markets per
+ *     tick, oldest first, so each is re-proved every few minutes.
+ *
+ * A market is priced only while its last check is recent, its round trip was
+ * under `maxSpreadBps`, and the price sits inside the two-sided market that
+ * check measured (widened by one spread). A thin or stale book publishes
+ * nothing, and the keeper closes the market to new risk, exactly as before.
+ */
 export function jupiterXStockFeed(
   sources: XStockSource[],
-  options: JupiterOptions = {},
+  options: JupiterOptions & {
+    /** Markets whose spread is re-proved each tick. */
+    checksPerTick?: number;
+    /** Seconds before a market's spread is due for a re-check. */
+    recheckSecs?: number;
+    /** A check older than this no longer counts. */
+    maxCheckAgeSecs?: number;
+  } = {},
 ): PriceFeed {
   const baseUrl =
     options.baseUrl ??
@@ -103,15 +147,20 @@ export function jupiterXStockFeed(
     : {};
   const clipUsd = options.clipUsd ?? 1_000;
   const maxSpreadBps = options.maxSpreadBps ?? 300;
+  const checksPerTick = options.checksPerTick ?? 3;
+  const recheckSecs = options.recheckSecs ?? 180;
+  const maxCheckAgeSecs = options.maxCheckAgeSecs ?? 600;
   const now = options.now ?? (() => Math.floor(Date.now() / 1000));
   const fetchJson = options.fetchJson ?? getJson;
   const bySymbol = new Map(sources.map((s) => [s.symbol.toUpperCase(), s]));
+  const checks = new Map<string, SpreadCheck>();
 
   const quoteUrl = (inputMint: string, outputMint: string, amount: bigint) =>
     `${baseUrl}/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}` +
     `&amount=${amount}&slippageBps=50&restrictIntermediateTokens=true`;
 
-  async function priceOne(source: XStockSource): Promise<Quote | null> {
+  async function checkSpread(source: XStockSource, at: number): Promise<SpreadCheck> {
+    const failed = { bid: 0, ask: 0, mid: 0, spreadBps: Infinity, at };
     const unit = 10 ** source.decimals;
     const buy = parseOutAmount(
       await fetchJson(
@@ -119,26 +168,19 @@ export function jupiterXStockFeed(
         headers,
       ),
     );
-    if (!buy) return null;
-    const buyShares = Number(buy) / unit;
+    if (!buy) return failed;
+    const shares = Number(buy) / unit;
     // Sell back the same number of shares, so both legs are the same size.
-    const sell = parseOutAmount(
-      await fetchJson(quoteUrl(source.mint, USDC_MINT, buy), headers),
-    );
-    if (!sell) return null;
-    const m = midFromQuotes(
-      clipUsd,
-      buyShares,
-      buyShares,
-      Number(sell) / 10 ** USDC_DECIMALS,
-    );
-    if (!m || m.spreadBps > maxSpreadBps) return null;
+    const sell = parseOutAmount(await fetchJson(quoteUrl(source.mint, USDC_MINT, buy), headers));
+    if (!sell) return failed;
+    const m = midFromQuotes(clipUsd, shares, shares, Number(sell) / 10 ** USDC_DECIMALS);
+    if (!m) return failed;
     return {
-      symbol: source.symbol,
-      price: toFixed(m.mid),
-      confidence: toFixed(m.halfSpread),
-      printedAt: now(),
-      halted: false,
+      bid: m.mid - m.halfSpread,
+      ask: m.mid + m.halfSpread,
+      mid: m.mid,
+      spreadBps: m.spreadBps,
+      at,
     };
   }
 
@@ -148,10 +190,58 @@ export function jupiterXStockFeed(
       const wanted = symbols
         .map((s) => bySymbol.get(s.toUpperCase()))
         .filter((s): s is XStockSource => Boolean(s));
-      const results = await Promise.allSettled(wanted.map(priceOne));
-      return results.flatMap((r) =>
-        r.status === "fulfilled" && r.value ? [r.value] : [],
-      );
+      if (wanted.length === 0) return [];
+      const t = now();
+
+      // Re-prove the markets due for it, never-checked and oldest first.
+      const due = wanted
+        .filter((s) => t - (checks.get(s.symbol)?.at ?? -Infinity) >= recheckSecs)
+        .sort((a, b) => (checks.get(a.symbol)?.at ?? 0) - (checks.get(b.symbol)?.at ?? 0))
+        .slice(0, checksPerTick);
+
+      const [priced] = await Promise.all([
+        fetchJson(`${baseUrl}/price/v3?ids=${wanted.map((s) => s.mint).join(",")}`, headers)
+          .then(parsePriceV3)
+          .catch(() => new Map<string, number>()),
+        Promise.allSettled(
+          due.map(async (s) =>
+            checks.set(
+              s.symbol,
+              await checkSpread(s, t).catch(() => ({
+                bid: 0,
+                ask: 0,
+                mid: 0,
+                spreadBps: Infinity,
+                at: t,
+              })),
+            ),
+          ),
+        ),
+      ]);
+
+      const out: Quote[] = [];
+      for (const s of wanted) {
+        const c = checks.get(s.symbol);
+        if (!c || t - c.at > maxCheckAgeSecs || !(c.spreadBps <= maxSpreadBps)) continue;
+        // The price API's number, or the check's own mid if it was just taken
+        // and the price request failed.
+        const price = priced.get(s.mint) ?? (c.at === t ? c.mid : undefined);
+        if (price === undefined) continue;
+        const width = c.ask - c.bid;
+        if (price < c.bid - width || price > c.ask + width) continue;
+        try {
+          out.push({
+            symbol: s.symbol,
+            price: toFixed(price),
+            confidence: toFixed(width / 2),
+            printedAt: t,
+            halted: false,
+          });
+        } catch {
+          /* an unusable number is no price */
+        }
+      }
+      return out;
     },
   };
 }

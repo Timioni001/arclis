@@ -141,6 +141,56 @@ describe("Jupiter", () => {
   });
 });
 
+describe("Jupiter at twenty markets", () => {
+  const sources = Array.from({ length: 20 }, (_, i) => ({
+    symbol: `S${i}x`,
+    mint: `MINT${i}`,
+    decimals: 8,
+  }));
+  // Every market: $1,000 buys 5 shares, 5 shares sell for $995 (mid $199.50).
+  const quoteJson = (url: string) =>
+    url.includes(`inputMint=${USDC_MINT}`)
+      ? { outAmount: String(5 * 1e8) }
+      : { outAmount: String(995 * 1e6) };
+
+  it("prices every market in one request and re-proves only a few per tick", async () => {
+    let t = 1_000;
+    const urls: string[] = [];
+    const feed = jupiterXStockFeed(sources, {
+      now: () => t,
+      fetchJson: async (url) => {
+        urls.push(url);
+        if (url.includes("/price/v3")) {
+          return Object.fromEntries(sources.map((s) => [s.mint, { usdPrice: 199.4 }]));
+        }
+        return quoteJson(url);
+      },
+    });
+    const first = await feed.quote(sources.map((s) => s.symbol));
+    expect(urls.filter((u) => u.includes("/price/v3"))).toHaveLength(1);
+    expect(urls.filter((u) => u.includes("/swap/v1/quote"))).toHaveLength(6); // 3 markets x 2
+    expect(first).toHaveLength(3); // only markets proved so far are priced
+    expect(Number(first[0].price) / 1e6).toBeCloseTo(199.4);
+
+    // Seven ticks later every market has been proved once.
+    for (let i = 0; i < 6; i++) {
+      t += 20;
+      await feed.quote(sources.map((s) => s.symbol));
+    }
+    t += 20;
+    expect(await feed.quote(sources.map((s) => s.symbol))).toHaveLength(20);
+  });
+
+  it("refuses a price outside the market its last check measured", async () => {
+    const feed = jupiterXStockFeed([sources[0]], {
+      now: () => 5,
+      fetchJson: async (url) =>
+        url.includes("/price/v3") ? { MINT0: { usdPrice: 150 } } : quoteJson(url),
+    });
+    expect(await feed.quote(["S0x"])).toEqual([]);
+  });
+});
+
 describe("the 24/7 schedule", () => {
   const twins = [ROUND_THE_CLOCK.find((m) => m.symbol === "NVDAx")!];
   const stockAsked: string[][] = [];
@@ -200,11 +250,14 @@ describe("the 24/7 schedule", () => {
     expect(app).toEqual(
       ROUND_THE_CLOCK.map((m) => ({ symbol: m.symbol, underlying: m.underlying, mint: m.mint })),
     );
-    // Every 24/7 market's underlying is itself listed, so it has a price and
-    // a chart history to borrow.
+    // Every 24/7 market names a real underlying ticker the stock feed can
+    // price in US hours; most are also listed as hours-bound markets.
     for (const m of ROUND_THE_CLOCK) {
-      expect(file.markets.some((x) => x.symbol === m.underlying)).toBe(true);
+      expect(m.underlying).toMatch(/^[A-Z.]{1,6}$/);
+      expect(m.symbol).toBe(`${m.underlying}x`);
+      expect(m.mint).toMatch(/^Xs/);
     }
+    expect(ROUND_THE_CLOCK.length).toBeGreaterThanOrEqual(20);
   });
 });
 

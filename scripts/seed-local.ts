@@ -84,20 +84,38 @@ const LISTINGS = MARKET_FILE.markets.map((m) => ({
   roundTheClock: m.schedule === "24/7",
 }));
 
-/** Replace indicative prices with live quotes, where Finnhub has one. */
+/**
+ * Replace indicative prices with live quotes, where Finnhub has one.
+ *
+ * Retried, and remembered per listing: a market created at the file's
+ * indicative figure starts far from the real price, and the program's 10%
+ * per-update cap then refuses every live price until someone walks it across
+ * with ORACLE_CATCHUP. So with a key set, a new market is only created at a
+ * live price; one that could not be priced is skipped and the next run picks
+ * it up.
+ */
+const LIVE = new Set<string>();
+let LIVE_PRICES_REQUESTED = false;
+
 async function useLivePrices(apiKey: string) {
+  LIVE_PRICES_REQUESTED = true;
   for (const listing of LISTINGS) {
-    try {
-      const res = await fetch(
-        `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(listing.quoteSymbol)}&token=${apiKey}`,
-      );
-      const q = (await res.json()) as { c?: number };
-      if (q.c && q.c > 0) listing.price = Math.round(q.c * 100) / 100;
-    } catch {
-      /* keep the indicative price; the keeper's catch-up can walk it */
+    for (let attempt = 1; attempt <= 3 && !LIVE.has(listing.symbol); attempt++) {
+      try {
+        const res = await fetch(
+          `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(listing.quoteSymbol)}&token=${apiKey}`,
+        );
+        const q = (await res.json()) as { c?: number };
+        if (res.ok && q.c && q.c > 0) {
+          listing.price = Math.round(q.c * 100) / 100;
+          LIVE.add(listing.symbol);
+        }
+      } catch {
+        /* retried below */
+      }
+      // Finnhub's free tier allows sixty calls a minute; back off on a miss.
+      await new Promise((r) => setTimeout(r, LIVE.has(listing.symbol) ? 1_100 : 2_500 * attempt));
     }
-    // Finnhub's free tier allows sixty calls a minute.
-    await new Promise((r) => setTimeout(r, 1_100));
   }
 }
 
@@ -279,6 +297,7 @@ const pace = () =>
 let step = 0;
 const say = (msg: string) => console.log(`  ${String(++step).padStart(2)}. ${msg}`);
 const skip = (msg: string) => console.log(`      already done: ${msg}`);
+const warn = (msg: string) => console.log(`      note: ${msg}`);
 
 async function exists(conn: Connection, address: PublicKey): Promise<boolean> {
   await pace();
@@ -504,6 +523,11 @@ async function main() {
     }
 
     if (!(await exists(conn, oracle))) {
+      if (LIVE_PRICES_REQUESTED && !LIVE.has(listing.symbol)) {
+        say(`${listing.symbol} skipped: no live price from Finnhub`);
+        warn("re-run the seed to create it once a live price is available");
+        continue;
+      }
       say(`${listing.symbol} at $${listing.price}`);
       await program.methods
         .initializePriceOracle(symbol, dollars(listing.price))

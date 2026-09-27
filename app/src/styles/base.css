@@ -3571,3 +3571,46 @@ button.market-row:focus-visible {
   color: var(--warn, #b45309);
   font-weight: 600;
 }
+
+/* Trade: a closed stock pointing at its always-open xStock twin. */
+.twin-callout {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg, 20px);
+  border: 1px solid color-mix(in srgb, var(--lime) 60%, transparent);
+  background: var(--lime-wash);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform var(--fast) var(--ease-out);
+}
+.twin-callout:hover {
+  transform: translateY(-1px);
+}
+.twin-callout-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.twin-callout-text b {
+  color: var(--text-primary);
+}
+.twin-callout-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-weight: 700;
+  color: var(--lime-ink);
+}
+@media (max-width: 640px) {
+  .twin-callout {
+    flex-wrap: wrap;
+  }
+}

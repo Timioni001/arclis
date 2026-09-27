@@ -122,6 +122,11 @@ export function Trade({
   // The traded market's price, re-read every ten seconds rather than with
   // the rest of the book every thirty. See liveOracle.ts.
   const oracle = useLiveOracle(view.oracle);
+  const twin = markets.find(
+    (mv) =>
+      mv.oracle.symbol === `${view.oracle.symbol}x` &&
+      mv.oracle.session === "Open",
+  );
   const [side, setSide] = useState<"long" | "short">("long");
   const [sizeInput, setSizeInput] = useState("2");
   const [lev, setLev] = useState(5);
@@ -376,6 +381,27 @@ export function Trade({
       </Card>
 
       <SessionNotice oracle={oracle} />
+
+      {/*
+        A closed stock with an always-open xStock twin: say where it trades
+        right now, rather than leaving someone at a closed door.
+      */}
+      {oracle.session !== "Open" && twin && onSelectMarket && (
+        <button
+          className="twin-callout"
+          onClick={() => onSelectMarket(twin.oracle.symbol)}
+        >
+          <span className="badge-lime">24/7</span>
+          <span className="twin-callout-text">
+            <b>{twin.oracle.symbol} is open now.</b> The {oracle.symbol} xStock
+            trades around the clock, priced from its own market on Solana while
+            the exchange is shut.
+          </span>
+          <span className="twin-callout-go">
+            Trade {twin.oracle.symbol} <Icon name="arrowRight" size={15} />
+          </span>
+        </button>
+      )}
 
       {corporateActions.length > 0 && (
         <CorporateActionCard

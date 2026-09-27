@@ -44,6 +44,21 @@ export const ROUND_THE_CLOCK: RoundTheClockMarket[] = [
   { symbol: "TSLAx", underlying: "TSLA", mint: "XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB", decimals: 8 },
   { symbol: "SPYx", underlying: "SPY", mint: "XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W", decimals: 8 },
   { symbol: "QQQx", underlying: "QQQ", mint: "Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ", decimals: 8 },
+  { symbol: "MSTRx", underlying: "MSTR", mint: "XsP7xzNPvEHS1m6qfanPUGjNmdnmsLKEoNAnHjdxxyZ", decimals: 8 },
+  { symbol: "COINx", underlying: "COIN", mint: "Xs7ZdzSHLU9ftNJsii5fCeJhoRWSC32SQGzGQtePxNu", decimals: 8 },
+  { symbol: "HOODx", underlying: "HOOD", mint: "XsvNBAYkrDRNhA7wPHQfX3ZUXZyZLdnCQDfHZ56bzpg", decimals: 8 },
+  { symbol: "PLTRx", underlying: "PLTR", mint: "XsoBhf2ufR8fTyNSjqfU71DYGaE6Z3SUGAidpzriAA4", decimals: 8 },
+  { symbol: "MSFTx", underlying: "MSFT", mint: "XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX", decimals: 8 },
+  { symbol: "GOOGLx", underlying: "GOOGL", mint: "XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN", decimals: 8 },
+  { symbol: "METAx", underlying: "META", mint: "Xsa62P5mvPszXL1krVUnU5ar38bBSVcWAB6fmPCo5Zu", decimals: 8 },
+  { symbol: "AMZNx", underlying: "AMZN", mint: "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg", decimals: 8 },
+  { symbol: "AVGOx", underlying: "AVGO", mint: "XsgSaSvNSqLTtFuyWPBhK9196Xb9Bbdyjj4fH3cPJGo", decimals: 8 },
+  { symbol: "CRCLx", underlying: "CRCL", mint: "XsueG8BtpquVJX9LVLLEGuViXUungE6WmK5YZ3p3bd1", decimals: 8 },
+  { symbol: "GLDx", underlying: "GLD", mint: "Xsv9hRk1z5ystj9MhnA7Lq4vjSsLwzL2nxrwmwtD3re", decimals: 8 },
+  { symbol: "MCDx", underlying: "MCD", mint: "XsqE9cRRpzxcGKDXj1BJ7Xmg4GRhZoyY1KpmGSxAWT2", decimals: 8 },
+  { symbol: "KOx", underlying: "KO", mint: "XsaBXg8dU5cPM6ehmVctMkVqoiRG2ZjMo1cyBJ3AykQ", decimals: 8 },
+  { symbol: "GMEx", underlying: "GME", mint: "Xsf9mBktVB9BSU5kf4nHxPq5hCBJ2j2ui3ecFGxPRGc", decimals: 8 },
+  { symbol: "DFDVx", underlying: "DFDV", mint: "Xs2yquAgsHByNzx68WJC55WHjHBvG9JsMB7CWjTLyPy", decimals: 8 },
 ];
 
 /**

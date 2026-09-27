@@ -34,7 +34,7 @@ kill_timeout = "30s"
   # public devnet endpoint (see keeper/src/run.ts).
   PROGRAM_ID = "BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP"
   QUOTE_MINT = "8nMZjpyLpGGtnCkdCotT8jWUDUpSnJeVjeuazyYVvqGu"
-  MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ,MU,CRCL,LLY,JNJ,KO,MCD,COST,INTC,BA,SHOP,ARM,GME,RDDT,IONQ,GLD,AAPLx,NVDAx,TSLAx,SPYx,QQQx"
+  MARKETS = "AAPL,NVDA,MSFT,TSLA,GOOGL,AMZN,META,AVGO,PLTR,AMD,COIN,HOOD,MSTR,SPY,QQQ,MU,CRCL,LLY,JNJ,KO,MCD,COST,INTC,BA,SHOP,ARM,GME,RDDT,IONQ,GLD,AAPLx,NVDAx,TSLAx,SPYx,QQQx,MSTRx,COINx,HOODx,PLTRx,MSFTx,GOOGLx,METAx,AMZNx,AVGOx,CRCLx,GLDx,MCDx,KOx,GMEx,DFDVx"
   # Prices come from Alpaca's free market data (ALPACA_KEY_ID and
   # ALPACA_SECRET_KEY, secrets), which quotes every market in one request.
   # Finnhub (FINNHUB_API_KEY) then prices only what Alpaca could not, and the
