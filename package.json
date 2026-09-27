@@ -19,6 +19,7 @@
     "assistant:typecheck": "tsc --noEmit",
     "keeper": "ts-node keeper/src/run.ts",
     "keeper:test": "npm --prefix app exec -- vitest run --root .. keeper pipeline tools/clawpump",
+    "keeper:typecheck": "tsc -p keeper",
     "registry:build": "ts-node pipeline/src/run.ts",
     "registry:prerender": "ts-node pipeline/src/prerender.ts",
     "assistant": "tsx server/dev.ts",

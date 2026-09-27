@@ -1,0 +1,20 @@
+{
+  // The keeper's own, stricter check. The root tsconfig is for the Anchor
+  // tests and scripts and does not include the keeper, so without this the
+  // keeper was only ever typechecked by hand.
+  "compilerOptions": {
+    "lib": ["es2022", "dom"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "target": "es2022",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
+}

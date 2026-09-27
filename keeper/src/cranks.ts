@@ -114,27 +114,38 @@ export async function crankFunding(
    * Which markets are due, from one read. Funding accrues hourly and this
    * runs every few minutes, so nearly every attempt used to be a send the
    * program refused with FundingNotDue: with fifty markets, a hundred wasted
-   * requests a pass against the endpoint the price publisher needs. A market
-   * whose account cannot be read is tried anyway; the program is the judge.
+   * requests a pass against the endpoint the price publisher needs. The
+   * program also settles funding only while the market is open, so overnight
+   * every hours-bound market was a refused send too; each market's oracle is
+   * read in the same call. A market whose accounts cannot be read is tried
+   * anyway; the program is the judge.
    */
   const now = Math.floor(Date.now() / 1000);
   let due = symbols;
   try {
-    const markets = symbols.map((s) => addressesFor(config.programId, s).market);
+    const keys = symbols.flatMap((s) => {
+      const a = addressesFor(config.programId, s);
+      return [a.market, a.oracle];
+    });
     const infos: (import("@solana/web3.js").AccountInfo<Buffer> | null)[] = [];
-    for (let i = 0; i < markets.length; i += 100) {
-      infos.push(...(await config.connection.getMultipleAccountsInfo(markets.slice(i, i + 100))));
+    for (let i = 0; i < keys.length; i += 100) {
+      infos.push(...(await config.connection.getMultipleAccountsInfo(keys.slice(i, i + 100))));
     }
     due = symbols.filter((symbol, i) => {
-      const info = infos[i];
-      if (!info) return true;
+      const marketInfo = infos[2 * i];
+      const oracleInfo = infos[2 * i + 1];
+      if (!marketInfo || !oracleInfo) return true;
       try {
-        const m = coder.accounts.decode("Market", info.data) as {
+        const m = coder.accounts.decode("Market", marketInfo.data) as {
           last_funding_ts: { toString(): string };
           funding_interval_secs: { toString(): string };
         };
+        const o = coder.accounts.decode("PriceOracle", oracleInfo.data) as {
+          session: Record<string, unknown>;
+        };
         const next = Number(m.last_funding_ts.toString()) + Number(m.funding_interval_secs.toString());
-        if (now < next) {
+        const open = Object.keys(o.session)[0]?.toLowerCase() === "open";
+        if (now < next || !open) {
           notDue.push(symbol);
           return false;
         }
