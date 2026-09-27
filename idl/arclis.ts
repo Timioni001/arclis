@@ -2111,6 +2111,11 @@ export type Arclis = {
       "code": 6055,
       "name": "NegativeAmount",
       "msg": "Expected a non-negative amount"
+    },
+    {
+      "code": 6056,
+      "name": "WithdrawalWindowExpired",
+      "msg": "The withdrawal window has passed; cancel the request and make a new one"
     }
   ],
   "types": [
@@ -3561,6 +3566,10 @@ export type Arclis = {
           },
           {
             "name": "session_updated_ts",
+            "docs": [
+              "When `session` last changed. Not moved by setting the same session",
+              "again: an open market's funding counts from here."
+            ],
             "type": "i64"
           },
           {
@@ -5902,6 +5911,11 @@ export const IDL: Arclis = {
       "code": 6055,
       "name": "NegativeAmount",
       "msg": "Expected a non-negative amount"
+    },
+    {
+      "code": 6056,
+      "name": "WithdrawalWindowExpired",
+      "msg": "The withdrawal window has passed; cancel the request and make a new one"
     }
   ],
   "types": [
@@ -7352,6 +7366,10 @@ export const IDL: Arclis = {
           },
           {
             "name": "session_updated_ts",
+            "docs": [
+              "When `session` last changed. Not moved by setting the same session",
+              "again: an open market's funding counts from here."
+            ],
             "type": "i64"
           },
           {

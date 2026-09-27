@@ -178,6 +178,14 @@ pub const MAX_UTILIZATION_CAP_BPS: u16 = 20_000; // 200%
 pub const MIN_LP_COOLDOWN_SECS: i64 = 3_600; // 1 hour
 pub const MAX_LP_COOLDOWN_SECS: i64 = 14 * 86_400; // 14 days
 
+/// How long a matured LP withdrawal stays claimable.
+///
+/// Without a limit, an LP could request once, wait out the cooldown, and then
+/// hold a standing option to leave the instant the pool looked bad: exactly
+/// the exit the cooldown exists to delay. Past this window the request lapses
+/// and a new one starts a new cooldown.
+pub const LP_WITHDRAW_WINDOW_SECS: i64 = 2 * 86_400; // 2 days
+
 /// How much utilisation amplifies the funding rate, in bps of the base rate.
 ///
 /// At 100% utilisation funding is doubled, so the book pays progressively more

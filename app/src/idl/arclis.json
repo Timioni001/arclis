@@ -2105,6 +2105,11 @@
       "code": 6055,
       "name": "NegativeAmount",
       "msg": "Expected a non-negative amount"
+    },
+    {
+      "code": 6056,
+      "name": "WithdrawalWindowExpired",
+      "msg": "The withdrawal window has passed; cancel the request and make a new one"
     }
   ],
   "types": [
@@ -3555,6 +3560,10 @@
           },
           {
             "name": "session_updated_ts",
+            "docs": [
+              "When `session` last changed. Not moved by setting the same session",
+              "again: an open market's funding counts from here."
+            ],
             "type": "i64"
           },
           {

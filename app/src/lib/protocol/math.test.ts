@@ -297,3 +297,24 @@ describe("session matrix, matching math/session.rs", () => {
     }
   });
 });
+
+describe("LP withdrawal window, matching state/liquidity.rs", () => {
+  const ends = 1_000;
+  it("cools down, is claimable for the window, then lapses", () => {
+    expect(m.lpWithdrawStage(ends, ends - 1)).toBe("cooling");
+    expect(m.lpWithdrawStage(ends, ends)).toBe("claimable");
+    expect(m.lpWithdrawStage(ends, ends + m.LP_WITHDRAW_WINDOW_SECS)).toBe("claimable");
+    expect(m.lpWithdrawStage(ends, ends + m.LP_WITHDRAW_WINDOW_SECS + 1)).toBe("lapsed");
+  });
+
+  it("has the program's window", async () => {
+    const { readFileSync } = await import("node:fs");
+    const { resolve } = await import("node:path");
+    const rust = readFileSync(
+      resolve(__dirname, "../../../../programs/arclis/src/constants.rs"),
+      "utf8",
+    );
+    const match = rust.match(/LP_WITHDRAW_WINDOW_SECS: i64 = (\d+) \* 86_400/);
+    expect(Number(match?.[1]) * 86_400).toBe(m.LP_WITHDRAW_WINDOW_SECS);
+  });
+});

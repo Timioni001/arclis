@@ -185,12 +185,70 @@ impl LpPosition {
         self.shares.saturating_sub(self.pending_shares)
     }
 
+    /// The pending withdrawal is claimable now: its cooldown is over and its
+    /// window ([`LP_WITHDRAW_WINDOW_SECS`]) has not yet passed.
     pub fn require_cooldown_elapsed(&self, now: i64) -> Result<()> {
         require!(self.has_pending(), ArclisError::NoPendingWithdrawal);
         require!(
             now >= self.cooldown_ends_ts,
             ArclisError::CooldownNotElapsed
         );
+        let closes = self
+            .cooldown_ends_ts
+            .checked_add(LP_WITHDRAW_WINDOW_SECS)
+            .ok_or(ArclisError::MathOverflow)?;
+        require!(now <= closes, ArclisError::WithdrawalWindowExpired);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pending(cooldown_ends_ts: i64) -> LpPosition {
+        LpPosition {
+            owner: Pubkey::default(),
+            pool: Pubkey::default(),
+            shares: 100,
+            pending_shares: 40,
+            cooldown_ends_ts,
+            last_deposit_ts: 0,
+            bump: 0,
+            _reserved: [0u8; 32],
+        }
+    }
+
+    #[test]
+    fn a_withdrawal_waits_for_its_cooldown() {
+        assert_eq!(
+            pending(1_000).require_cooldown_elapsed(999).unwrap_err(),
+            ArclisError::CooldownNotElapsed.into()
+        );
+        assert!(pending(1_000).require_cooldown_elapsed(1_000).is_ok());
+    }
+
+    #[test]
+    fn a_matured_withdrawal_is_claimable_for_its_window_and_then_lapses() {
+        let ends = 1_000;
+        assert!(pending(ends)
+            .require_cooldown_elapsed(ends + LP_WITHDRAW_WINDOW_SECS)
+            .is_ok());
+        assert_eq!(
+            pending(ends)
+                .require_cooldown_elapsed(ends + LP_WITHDRAW_WINDOW_SECS + 1)
+                .unwrap_err(),
+            ArclisError::WithdrawalWindowExpired.into()
+        );
+    }
+
+    #[test]
+    fn nothing_pending_is_nothing_to_claim() {
+        let mut lp = pending(0);
+        lp.pending_shares = 0;
+        assert_eq!(
+            lp.require_cooldown_elapsed(10).unwrap_err(),
+            ArclisError::NoPendingWithdrawal.into()
+        );
     }
 }

@@ -188,4 +188,9 @@ pub enum ArclisError {
 
     #[msg("Expected a non-negative amount")]
     NegativeAmount,
+
+    // Appended, never inserted: an error's number is its position, and the
+    // interface and the keeper decode by number.
+    #[msg("The withdrawal window has passed; cancel the request and make a new one")]
+    WithdrawalWindowExpired,
 }

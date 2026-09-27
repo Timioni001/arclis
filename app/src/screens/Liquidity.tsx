@@ -190,6 +190,7 @@ export function Liquidity({
     return s < lp.shares ? s : lp.shares;
   })();
   const pending = lp !== undefined && lp.pendingShares > 0n;
+  const stage = pending ? m.lpWithdrawStage(lp.cooldownEndsTs, now) : null;
   const symbol = view.oracle.symbol;
 
   return (
@@ -426,9 +427,11 @@ export function Liquidity({
                       session={session}
                       onDone={onDone}
                       blocker={
-                        cooldownLeft > 0
-                          ? `Available in ${duration(cooldownLeft)}.`
-                          : null
+                        stage === "cooling"
+                          ? `Available in ${duration(cooldownLeft)}, then for ${duration(m.LP_WITHDRAW_WINDOW_SECS)}.`
+                          : stage === "lapsed"
+                            ? "This request's window has passed. Cancel it and make a new one."
+                            : null
                       }
                       doneText="Withdrawn to your wallet."
                       action={async (ctx: ActionContext) =>

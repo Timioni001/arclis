@@ -353,3 +353,18 @@ export function rescaleHistoricalPrice(
   if (factorNow === 0n) return price;
   return divTrunc(price * factorThen, factorNow);
 }
+
+/**
+ * How long a matured LP withdrawal stays claimable before it lapses, from
+ * `LP_WITHDRAW_WINDOW_SECS` in `programs/arclis/src/constants.rs`.
+ */
+export const LP_WITHDRAW_WINDOW_SECS = 2 * 86_400;
+
+/** Where a pending LP withdrawal stands, as the program will judge it. */
+export function lpWithdrawStage(
+  cooldownEndsTs: number,
+  now: number,
+): "cooling" | "claimable" | "lapsed" {
+  if (now < cooldownEndsTs) return "cooling";
+  return now <= cooldownEndsTs + LP_WITHDRAW_WINDOW_SECS ? "claimable" : "lapsed";
+}
