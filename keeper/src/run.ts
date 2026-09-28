@@ -337,6 +337,18 @@ async function main() {
   // the dedicated endpoint, and at a few batched calls every few seconds it
   // costs a fraction of the price publisher's budget.
   const book = new AccountSnapshot(config.connection, config.programId, SYMBOLS);
+  // How fresh the book the interface loads from is. Reported, not judged: an
+  // endpoint that rate-limits the read makes it stale, the interface then
+  // falls back to slow direct reads, and "healthy" alone would hide that.
+  health.attach("snapshot", () => {
+    const b = book.json();
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      ageSecs: b.fetchedAt ? now - b.fetchedAt : null,
+      accounts: Object.values(b.accounts).filter(Boolean).length,
+      treasuries: b.treasuries.length,
+    };
+  });
   const SNAPSHOT_INTERVAL_MS = Number(env.SNAPSHOT_INTERVAL_MS ?? 5_000);
   const TREASURY_SCAN_MS = Number(env.TREASURY_SCAN_MS ?? 120_000);
   const bookTask = loop(
