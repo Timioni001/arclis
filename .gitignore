@@ -12,7 +12,6 @@ test-ledger/
 
 # Keypairs - never commit these.
 **/*-keypair.json
-!programs/**/keypair.json.example
 .env
 .env.*
 !.env.example
