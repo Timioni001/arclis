@@ -42,4 +42,10 @@ ENV HEALTH_PORT=8080
 EXPOSE 8080
 
 ENTRYPOINT ["dumb-init", "--"]
-CMD ["npx", "tsx", "keeper/src/run.ts"]
+# One Node process. `npx tsx` ran three (npm, the tsx launcher, the keeper),
+# about 100 MB of a 512 MB machine gone before the keeper read anything.
+# And a heap ceiling below the machine's memory: without it V8 does not know
+# the container is small, grows until the kernel kills the process without a
+# word in the logs, and the host restarts it into the same end.
+ENV NODE_OPTIONS=--max-old-space-size=384
+CMD ["node", "--import", "tsx", "keeper/src/run.ts"]
