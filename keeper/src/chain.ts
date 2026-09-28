@@ -14,7 +14,6 @@ import {
   PublicKey,
   Transaction,
   TransactionInstruction,
-  sendAndConfirmTransaction,
 } from "@solana/web3.js";
 import { utils } from "@coral-xyz/anchor";
 import { readFileSync } from "node:fs";
@@ -94,6 +93,13 @@ export function programError(err: unknown): string | null {
   const hex = text.match(/custom program error: 0x([0-9a-fA-F]+)/);
   if (hex) return errorName(parseInt(hex[1], 16)) ?? `Custom(0x${hex[1]})`;
 
+  // The structured form a status poll returns: {"InstructionError":[0,{"Custom":6010}]}.
+  const structured = text.match(/"Custom":(\d+)/);
+  if (structured) {
+    const code = Number(structured[1]);
+    return errorName(code) ?? `Custom(${code})`;
+  }
+
   const named = text.match(/Error Code: (\w+)/);
   return named ? named[1] : null;
 }
@@ -138,12 +144,7 @@ export async function send(
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const tx = new Transaction().add(...instructions);
     try {
-      const signature = await sendAndConfirmTransaction(
-        config.connection,
-        tx,
-        [config.payer],
-        { commitment: "confirmed", maxRetries: 3 },
-      );
+      const signature = await sendAndPoll(config, tx);
       return { ok: true, signature };
     } catch (err) {
       const name = programError(err);
@@ -189,6 +190,62 @@ export async function send(
 }
 
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** How often a sent transaction's status is read, and when to stop waiting. */
+const POLL_MS = 1_500;
+const CONFIRM_TIMEOUT_MS = 90_000;
+
+/**
+ * Send one transaction and wait for it to confirm, over plain HTTP.
+ *
+ * `sendAndConfirmTransaction` waits on a `signatureSubscribe` websocket, and
+ * not every RPC offers one: Alchemy's Solana endpoint answers "Method
+ * 'signatureSubscribe' not found". Every send then sat out its blockhash, the
+ * price loop stalled, the health check went to 503, and the keeper stopped
+ * answering. Polling `getSignatureStatuses` works on every endpoint.
+ *
+ * Throws in the shapes `send` already classifies: the preflight's own error
+ * (with its logs) for a simulation rejection, `failed ({...})` with the
+ * structured error for a rejection seen at confirmation, and "block height
+ * exceeded" when the blockhash expires unconfirmed.
+ */
+async function sendAndPoll(config: ChainConfig, tx: Transaction): Promise<string> {
+  const { connection, payer } = config;
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash("confirmed");
+  tx.recentBlockhash = blockhash;
+  tx.feePayer = payer.publicKey;
+  tx.sign(payer);
+  const raw = tx.serialize();
+  const signature = await connection.sendRawTransaction(raw, {
+    maxRetries: 3,
+    preflightCommitment: "confirmed",
+  });
+
+  const deadline = Date.now() + CONFIRM_TIMEOUT_MS;
+  for (;;) {
+    await sleep(POLL_MS);
+    // A rate-limited status read says nothing about the transaction.
+    const status = await connection
+      .getSignatureStatuses([signature])
+      .then((r) => r.value[0])
+      .catch(() => undefined);
+    if (status?.err) {
+      throw new Error(`Transaction ${signature} failed (${JSON.stringify(status.err)})`);
+    }
+    if (status?.confirmationStatus === "confirmed" || status?.confirmationStatus === "finalized") {
+      return signature;
+    }
+    const height = await connection.getBlockHeight("confirmed").catch(() => 0);
+    if (height > lastValidBlockHeight) {
+      throw new Error(`Transaction ${signature} unconfirmed: block height exceeded`);
+    }
+    if (Date.now() > deadline) {
+      throw new Error(`Transaction ${signature} unconfirmed after ${CONFIRM_TIMEOUT_MS / 1000}s`);
+    }
+    // The cluster may have dropped it; sending the same bytes again is safe.
+    void connection.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 0 }).catch(() => {});
+  }
+}
 
 /**
  * Run `work` forever on an interval, never letting a throw kill the loop.
