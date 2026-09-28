@@ -64,8 +64,12 @@ function config(
       blockhash: "11111111111111111111111111111111",
       lastValidBlockHeight: 1,
     })),
-    sendTransaction: send,
-    confirmTransaction: vi.fn(async () => ({ value: { err: null } })),
+    // The keeper broadcasts raw bytes and polls for the status over HTTP.
+    sendRawTransaction: send,
+    getSignatureStatuses: vi.fn(async () => ({
+      value: [{ err: null, confirmationStatus: "confirmed" }],
+    })),
+    getBlockHeight: vi.fn(async () => 0),
   };
   return {
     config: {
