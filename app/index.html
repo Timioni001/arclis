@@ -45,18 +45,10 @@
     />
     <meta name="twitter:card" content="summary_large_image" />
 
-    <!-- Theme colour follows the resolved theme, so the mobile browser chrome
-         matches the page instead of framing a dark app in a light bar. -->
-    <meta
-      name="theme-color"
-      content="#eef0ed"
-      media="(prefers-color-scheme: light)"
-    />
-    <meta
-      name="theme-color"
-      content="#0b0d0a"
-      media="(prefers-color-scheme: dark)"
-    />
+    <!-- Theme colour follows the page's theme, not the system's, so the
+         mobile browser chrome matches the page. Updated when the theme is
+         switched. -->
+    <meta name="theme-color" content="#eef0ed" />
     <!-- Fonts are self-hosted from /fonts (scripts/fetch-fonts.py). No
          third-party request on first paint, and the interface renders the same
          offline, in CI and behind a proxy. -->
@@ -84,21 +76,22 @@
        * the tokens decide the colour, and there is no flash of the wrong theme
        * on reload either.
        *
+       * Light is the default for everyone. Only an explicit choice made
+       * with the theme toggle is remembered, under its own key: the old
+       * `arclis-theme` key also stored the system preference automatically,
+       * which kept visitors on a dark-mode device in dark mode for good.
+       *
        * Storage can throw in private browsing, so a failure falls through to
-       * the system preference rather than taking the page down with it.
+       * the light default rather than taking the page down with it.
        */
       (function () {
         var theme = null;
         try {
-          theme = localStorage.getItem("arclis-theme");
+          theme = localStorage.getItem("arclis-theme-choice");
         } catch (e) {
-          /* private browsing: fall through to the system preference */
+          /* private browsing: fall through to the default */
         }
-        if (theme !== "light" && theme !== "dark") {
-          theme = window.matchMedia("(prefers-color-scheme: dark)").matches
-            ? "dark"
-            : "light";
-        }
+        if (theme !== "light" && theme !== "dark") theme = "light";
         document.documentElement.setAttribute("data-theme", theme);
         document.documentElement.style.colorScheme = theme;
       })();

@@ -35,7 +35,7 @@ export async function checkLink(
       redirect: "follow",
       headers: {
         accept: "text/html,application/pdf;q=0.9,*/*;q=0.8",
-        "user-agent": "ArclisRegistryLinkCheck/1.0 (+https://arclis.timioni1490.workers.dev)",
+        "user-agent": "ArclisRegistryLinkCheck/1.0 (+https://arclis.world)",
       },
       signal: AbortSignal.timeout(12_000),
     });

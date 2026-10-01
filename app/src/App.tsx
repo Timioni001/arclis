@@ -108,12 +108,21 @@ export function App({ source }: { source: DataSource }) {
     // same side of the theme as the page. Without it a dark page renders a
     // white select menu.
     document.documentElement.style.colorScheme = theme;
-    try {
-      localStorage.setItem("arclis-theme", theme);
-    } catch {
-      // Private browsing: the preference just does not persist.
-    }
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", theme === "dark" ? "#0b0d0a" : "#eef0ed");
   }, [theme]);
+
+  // Only a choice made with the toggle is remembered. Persisting whatever the
+  // page started in would turn the light default into a sticky setting.
+  const chooseTheme = (next: "light" | "dark") => {
+    setTheme(next);
+    try {
+      localStorage.setItem("arclis-theme-choice", next);
+    } catch {
+      // Private browsing: the choice just does not persist.
+    }
+  };
 
   // The modelled dataset renders immediately; a live snapshot replaces it if
   // the pipeline has written one recently. The fallback direction is the point:
@@ -339,7 +348,7 @@ export function App({ source }: { source: DataSource }) {
               */}
               <button
                 className="icon-btn"
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+                onClick={() => chooseTheme(theme === "dark" ? "light" : "dark")}
                 aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
               >
                 <Icon name={theme === "dark" ? "sun" : "moon"} />

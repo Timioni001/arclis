@@ -399,7 +399,8 @@ export function Registry({
                 {usd(value)} circulating
                 <span className="registry-coverage">
                   {" "}
-                  · {(exitCoverageBps(stock) / 100).toFixed(1)}% pooled
+                  · {(exitCoverageBps(stock) / 100).toFixed(1)}%{" "}
+                  {registry.kind === "live" ? "sellable within 1%" : "pooled"}
                 </span>
               </span>
               <div className="registry-card-actions">
@@ -609,8 +610,16 @@ function StockDetail({
               <thead>
                 <tr>
                   <th scope="col">Venue</th>
-                  <th scope="col" className="ta-right">
-                    Pooled
+                  <th
+                    scope="col"
+                    className="ta-right"
+                    title={
+                      sample
+                        ? "Quote-side liquidity in the pool."
+                        : "How much can be sold before the price moves 1%, measured with live quotes."
+                    }
+                  >
+                    {sample ? "Pooled" : "Sellable within 1%"}
                   </th>
                   <th scope="col" className="ta-right">
                     Sell impact
@@ -628,7 +637,9 @@ function StockDetail({
                     <td className="ta-right num">
                       {(p.sellImpactBps / 100).toFixed(2)}%
                     </td>
-                    <td className="ta-right num">{usd(p.volume24h)}</td>
+                    <td className="ta-right num">
+                      {p.volume24h > 0n ? usd(p.volume24h) : "n/a"}
+                    </td>
                   </tr>
                 ))}
                 {stock.pools.length === 0 && (
@@ -660,7 +671,9 @@ function StockDetail({
             <li>
               <SourceLink issuer={issuer} now={now} long />
             </li>
-            {issuer.website && issuer.website !== issuer.disclosureUrl && (
+            {issuer.website &&
+              issuer.website !== issuer.disclosureUrl &&
+              issuer.links?.disclosure?.ok !== false && (
               <li>
                 <a href={issuer.website} target="_blank" rel="noreferrer noopener">
                   {issuer.name} website

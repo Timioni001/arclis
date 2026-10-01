@@ -262,7 +262,7 @@ export const TOKENIZED_STOCKS: TokenizedStock[] = [
   },
   {
     symbol: "SPCX",
-    underlying: "SPCX",
+    underlying: "SpaceX (SPCX)",
     referenceSymbol: "SPCX",
     name: "Space Exploration Technologies Corp.",
     issuerId: "backpack",

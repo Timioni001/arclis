@@ -19,7 +19,7 @@ Arclis is a Solana protocol with three parts:
 
 | Component | Location |
 |---|---|
-| Interface | [arclis.timioni1490.workers.dev](https://arclis.timioni1490.workers.dev) |
+| Interface | [arclis.world](https://arclis.world), also served at [arclis.timioni1490.workers.dev](https://arclis.timioni1490.workers.dev) |
 | Program (devnet) | [`BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP`](https://explorer.solana.com/address/BuN69a1vsMdPQx6bWjaA7FJMbnBKo6yZ66cHrdyiTbiP?cluster=devnet) |
 | Keeper | [arclis-keeper.fly.dev/health](https://arclis-keeper.fly.dev/health) |
 

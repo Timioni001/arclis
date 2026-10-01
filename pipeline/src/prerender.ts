@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const DIST = join(ROOT, "app/dist");
 const SNAPSHOT = join(ROOT, "app/public/registry.json");
-const SITE = process.env.SITE_URL ?? "https://arclis.timioni1490.workers.dev";
+const SITE = process.env.SITE_URL ?? "https://arclis.world";
 
 const BACKING_LABEL: Record<string, string> = {
   Redeemable: "Redeemable",

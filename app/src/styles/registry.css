@@ -319,6 +319,8 @@
 
 .registry-detail-shell {
   border-radius: var(--radius-xl);
+  /* Clear the sticky header when the detail is scrolled into view. */
+  scroll-margin-top: 96px;
 }
 .registry-detail {
   padding: var(--space-6);
