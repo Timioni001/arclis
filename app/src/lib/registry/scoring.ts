@@ -38,7 +38,13 @@ import {
 // ---------------------------------------------------------------------------
 
 export type DeviationVerdict =
-  "Fair" | "Premium" | "Discount" | "Stale" | "Dislocated";
+  | "Fair"
+  | "Premium"
+  | "Discount"
+  | "Stale"
+  | "Dislocated"
+  /** No listed share exists, so there is no reference to deviate from. */
+  | "Unlisted";
 
 export interface Deviation {
   /** Signed basis points: positive means the token trades above the stock. */
@@ -98,6 +104,19 @@ export function assessDeviation(
   stock: TokenizedStock,
   nowTs: number,
 ): Deviation {
+  // A private company has no listed share, so there is nothing to measure a
+  // gap against. Saying so beats printing 0.00% as though it were in line.
+  if (stock.referenceSymbol === null || stock.referencePrice <= 0n) {
+    return {
+      bps: 0,
+      verdict: "Unlisted",
+      referenceStale: true,
+      note:
+        `${stock.underlying} has no listed share, so there is no public price to check this ` +
+        "token against. The pool price is the only price.",
+    };
+  }
+
   const bps = deviationBps(stock.onChainPrice, stock.referencePrice);
   const tolerance = deviationToleranceBps(stock.referenceSession);
   const referenceStale = stock.referenceSession !== "Open";
@@ -202,6 +221,7 @@ const ATTESTATION_POINTS: Record<AttestationCadence, number> = {
   Monthly: 12,
   Quarterly: 6,
   None: 0,
+  Unverified: 0,
 };
 
 export function assessBacking(
@@ -248,7 +268,9 @@ export function assessBacking(
       detail:
         attestation === "None"
           ? "Nobody outside the issuer publishes confirmation that the shares exist."
-          : `Holdings are attested ${attestation.toLowerCase()} by a third party.`,
+          : attestation === "Unverified"
+            ? "Arclis has not yet confirmed a published third-party attestation. Scored as zero until it does; check the issuer's documents."
+            : `Holdings are attested ${attestation.toLowerCase()} by a third party.`,
     },
     {
       label: "Named custodian",
@@ -376,6 +398,78 @@ export interface ControlFinding {
  * the holder knows it is there, and the structure column right beside it is
  * what tells them which case they are in.
  */
+/**
+ * What each Token-2022 extension means for a holder. Most are bookkeeping; a
+ * few let someone other than the holder act on a balance, and those are the
+ * ones flagged.
+ */
+const EXTENSION_NOTES: Record<
+  string,
+  { tone: ControlFinding["tone"]; detail: string }
+> = {
+  "Scaled UI amount": {
+    tone: "neutral",
+    detail:
+      "A display multiplier the issuer adjusts for dividends and splits. It changes the balance your wallet shows, not who controls it.",
+  },
+  "Metadata pointer": {
+    tone: "neutral",
+    detail: "Points to the token's name and symbol. No effect on balances.",
+  },
+  "Token metadata": {
+    tone: "neutral",
+    detail:
+      "The token's name and symbol, stored on the mint. No effect on balances.",
+  },
+  "Transfer hook": {
+    tone: "watch",
+    detail:
+      "A program runs on every transfer and can refuse it, for example to enforce an allowlist.",
+  },
+  "Permanent delegate": {
+    tone: "watch",
+    detail:
+      "A named account can move or burn tokens from any holder's balance without their signature.",
+  },
+  "Default account state": {
+    tone: "watch",
+    detail: "New token accounts start frozen until the issuer approves them.",
+  },
+  Pausable: {
+    tone: "watch",
+    detail: "The issuer can pause all transfers of this token.",
+  },
+  "Transfer fee config": {
+    tone: "watch",
+    detail: "A fee is taken from every transfer of this token.",
+  },
+  "Mint close authority": {
+    tone: "watch",
+    detail: "A named account can close the mint once its supply is zero.",
+  },
+  "Confidential transfer mint": {
+    tone: "neutral",
+    detail:
+      "Allows transfers with hidden amounts. No effect on who controls a balance.",
+  },
+  "Group pointer": {
+    tone: "neutral",
+    detail: "Links the mint to a token group. No effect on balances.",
+  },
+  "Token group": {
+    tone: "neutral",
+    detail: "Marks the mint as a token group. No effect on balances.",
+  },
+  "Group member pointer": {
+    tone: "neutral",
+    detail: "Links the mint to the group it belongs to. No effect on balances.",
+  },
+  "Token group member": {
+    tone: "neutral",
+    detail: "Records the group this mint belongs to. No effect on balances.",
+  },
+};
+
 export function assessControl(stock: TokenizedStock): ControlFinding[] {
   const findings: ControlFinding[] = [];
 
@@ -413,11 +507,13 @@ export function assessControl(stock: TokenizedStock): ControlFinding[] {
   );
 
   for (const ext of stock.mint.extensions) {
+    const known = EXTENSION_NOTES[ext];
     findings.push({
       label: ext,
-      tone: "watch",
+      tone: known?.tone ?? "watch",
       detail:
-        "A Token-2022 extension is active on this mint and can intercept transfers.",
+        known?.detail ??
+        "A Token-2022 extension is active on this mint. Check what it allows before relying on the token.",
     });
   }
 
@@ -433,17 +529,19 @@ export function assessControl(stock: TokenizedStock): ControlFinding[] {
  * REGISTRY_PRICE_SCALE. This is the number that has to be backed by something.
  */
 export function circulatingValue(stock: TokenizedStock): bigint {
-  return (stock.mint.supply * stock.referencePrice) / REGISTRY_PRICE_SCALE;
+  // With no listed reference, the pool price is the only price there is.
+  const price =
+    stock.referencePrice > 0n ? stock.referencePrice : stock.onChainPrice;
+  return (stock.mint.supply * price) / REGISTRY_PRICE_SCALE;
 }
 
 /**
  * What fraction of the circulating value could actually leave through the DEX
  * pools today, in bps of the supply.
  *
- * The number that made PreStocks' break legible after the fact: the supply was
- * many times what the pools could absorb, and it was visible on-chain before
- * anything happened. Nobody was looking at the ratio because nobody published
- * it.
+ * A supply many times what the pools can absorb is visible on-chain long
+ * before it matters, and it matters most for tokens whose only exit is
+ * selling. Nobody looks at the ratio because nobody publishes it.
  */
 export function exitCoverageBps(stock: TokenizedStock): number {
   const value = circulatingValue(stock);

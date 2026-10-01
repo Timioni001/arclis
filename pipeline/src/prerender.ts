@@ -28,7 +28,7 @@ import { fileURLToPath } from "node:url";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const DIST = join(ROOT, "app/dist");
 const SNAPSHOT = join(ROOT, "app/public/registry.json");
-const SITE = process.env.SITE_URL ?? "https://arclis.xyz";
+const SITE = process.env.SITE_URL ?? "https://arclis.timioni1490.workers.dev";
 
 const BACKING_LABEL: Record<string, string> = {
   Redeemable: "Redeemable",
@@ -84,7 +84,8 @@ function description(token: Token, issuer: Issuer | undefined): string {
   const claim =
     token.backing === "Synthetic"
       ? `${token.symbol} holds no shares. It tracks the price of ${token.underlying}.`
-      : `${token.symbol} is a ${BACKING_LABEL[token.backing]?.toLowerCase()} claim on ${token.underlying}` +
+      : `${token.symbol} is ${/^[aeiou]/i.test(BACKING_LABEL[token.backing] ?? "") ? "an" : "a"} ` +
+        `${BACKING_LABEL[token.backing]?.toLowerCase()} claim on ${token.underlying}` +
         (token.custodian ? `, custodied at ${token.custodian}.` : ".");
   const redeem = `Redemption: ${REDEMPTION_LABEL[token.redemption] ?? token.redemption}.`;
   const who = issuer

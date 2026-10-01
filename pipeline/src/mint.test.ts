@@ -195,3 +195,36 @@ describe("supplyAtScale", () => {
     expect(supplyAtScale(facts(10_000n, 2))).toBe(100_000_000n);
   });
 });
+
+describe("parseMint, Scaled UI amount", () => {
+  /** A mint whose only extension is a ScaledUiAmountConfig. */
+  function scaled(current: number, next: number, effectiveAt: bigint): Uint8Array {
+    const data = withExtensions(baseMint({ supply: 1_000n }), [[25, 56]]);
+    const view = new DataView(data.buffer);
+    const body = 166 + 4;
+    view.setFloat64(body + 32, current, true);
+    view.setBigInt64(body + 40, effectiveAt, true);
+    view.setFloat64(body + 48, next, true);
+    return data;
+  }
+
+  it("is 1 on a mint without the extension", () => {
+    expect(parseMint("M", baseMint({})).uiMultiplier).toBe(1);
+  });
+
+  it("reads the multiplier in force", () => {
+    const facts = parseMint("M", scaled(1.0123, 1.02, 2_000_000_000n), undefined, 1_900_000_000);
+    expect(facts.uiMultiplier).toBeCloseTo(1.0123, 6);
+    expect(facts.extensions).toContain("Scaled UI amount");
+  });
+
+  it("switches to the new multiplier once its time has come", () => {
+    const facts = parseMint("M", scaled(1.0123, 4.05, 1_800_000_000n), undefined, 1_900_000_000);
+    expect(facts.uiMultiplier).toBeCloseTo(4.05, 6);
+  });
+
+  it("ignores a multiplier that is not a positive number", () => {
+    const facts = parseMint("M", scaled(Number.NaN, -2, 0n), undefined, 1_900_000_000);
+    expect(facts.uiMultiplier).toBe(1);
+  });
+});

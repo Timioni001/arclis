@@ -34,6 +34,10 @@ RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY idl ./idl
 COPY keeper ./keeper
+# The registry build (keeper/src/registry.ts) runs the pipeline's assembler on
+# the curated issuer list.
+COPY pipeline/curated.json ./pipeline/curated.json
+COPY pipeline/src ./pipeline/src
 
 ENV NODE_ENV=production
 # Answered by keeper/src/health.ts. Off unless set, so a local `npm run keeper`

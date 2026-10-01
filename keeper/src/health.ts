@@ -181,6 +181,8 @@ export function startHealthServer(
   news?: () => NewsSnapshot | null,
   /** Every market account, for the interface's book read. */
   snapshot?: () => SnapshotJson,
+  /** The tokenized-stock registry, once the first build lands. */
+  registry?: () => unknown,
 ): void {
   // A symbol from a URL, in the spelling the keeper uses (`nvdax` is `NVDAx`).
   const resolve = (symbol: string) =>
@@ -237,6 +239,16 @@ export function startHealthServer(
     // five-minute cache is plenty; an empty document until the first fetch.
     if (url.pathname === "/news" && news) {
       json(200, news() ?? { updatedAt: 0, stocks: [], solana: [] }, 300);
+      return;
+    }
+
+    // The tokenized-stock registry. Rebuilt every half hour, so five minutes
+    // of edge cache is plenty. 503 until the first build lands, which the
+    // interface reads as "use the fallback", never as an empty registry.
+    if (url.pathname === "/registry" && registry) {
+      const body = registry();
+      if (body) json(200, body, 300);
+      else json(503, { error: "The registry is still building." }, 0);
       return;
     }
 

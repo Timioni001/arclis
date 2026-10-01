@@ -125,10 +125,25 @@ describe("assessDeviation", () => {
   });
 });
 
+describe("assessDeviation without a listed share", () => {
+  it("says there is nothing to compare against instead of reporting 0%", () => {
+    const s = stock({
+      underlying: "OpenAI (private)",
+      referenceSymbol: null,
+      referencePrice: 0n,
+      onChainPrice: usd(70),
+    });
+    const d = assessDeviation(s, NOW);
+    expect(d.verdict).toBe("Unlisted");
+    expect(d.bps).toBe(0);
+    expect(d.note).toContain("no listed share");
+  });
+});
+
 describe("assessBacking", () => {
   it("scores a redeemable, attested, custodied token above a synthetic one", () => {
     const apple = TOKENIZED_STOCKS.find((s) => s.symbol === "AAPLx")!;
-    const synthetic = TOKENIZED_STOCKS.find((s) => s.symbol === "preOPENAI")!;
+    const synthetic = TOKENIZED_STOCKS.find((s) => s.symbol === "OPENAI")!;
 
     const a = assessBacking(
       apple,
@@ -145,7 +160,11 @@ describe("assessBacking", () => {
   });
 
   it("gives a synthetic with no redemption and no attestation the floor score", () => {
-    const synthetic = TOKENIZED_STOCKS.find((s) => s.symbol === "preOPENAI")!;
+    const synthetic = stock({
+      backing: "Synthetic",
+      redemption: "None",
+      custodian: null,
+    });
     const b = assessBacking(synthetic, "None", null);
     // Claim only: 1 * 10. Everything else is zero, and nothing is negative.
     expect(b.score).toBe(10);
@@ -240,16 +259,38 @@ describe("assessControl", () => {
   });
 
   it("surfaces every Token-2022 extension as its own finding", () => {
-    const ondo = TOKENIZED_STOCKS.find((s) => s.symbol === "oUSTB-MSFT")!;
-    const findings = assessControl(ondo);
-    expect(findings.some((f) => f.label.includes("Transfer hook"))).toBe(true);
+    const hooked = stock({
+      mint: {
+        ...TOKENIZED_STOCKS[0].mint,
+        extensions: ["Transfer hook", "Scaled UI amount"],
+      },
+    });
+    const findings = assessControl(hooked);
+    expect(findings.find((f) => f.label === "Transfer hook")?.tone).toBe(
+      "watch",
+    );
+    // A display multiplier for dividends and splits is bookkeeping, not control.
+    expect(findings.find((f) => f.label === "Scaled UI amount")?.tone).toBe(
+      "neutral",
+    );
+  });
+
+  it("flags an extension it does not recognise rather than calling it harmless", () => {
+    const odd = stock({
+      mint: { ...TOKENIZED_STOCKS[0].mint, extensions: ["Extension 99"] },
+    });
+    expect(
+      assessControl(odd).find((f) => f.label === "Extension 99")?.tone,
+    ).toBe("watch");
   });
 });
 
 describe("supply cover", () => {
   it("values the circulating supply at the reference price", () => {
-    const s = stock({ referencePrice: usd(100) });
-    // supply is 412_000 tokens at 1e6.
+    const s = stock({
+      referencePrice: usd(100),
+      mint: { ...TOKENIZED_STOCKS[0].mint, supply: usd(412_000) },
+    });
     expect(circulatingValue(s)).toBe(usd(41_200_000));
   });
 
@@ -273,13 +314,14 @@ describe("supply cover", () => {
     expect(exitCoverageBps(s)).toBe(1_000);
   });
 
-  it("flags the synthetic as the thinnest cover in the set", () => {
-    const coverage = TOKENIZED_STOCKS.map((s) => ({
-      symbol: s.symbol,
-      bps: exitCoverageBps(s),
-    }));
-    const worst = coverage.reduce((a, b) => (a.bps <= b.bps ? a : b));
-    expect(worst.symbol).toBe("preOPENAI");
+  it("values a token with no listed share at its pool price", () => {
+    const s = stock({
+      referenceSymbol: null,
+      referencePrice: 0n,
+      onChainPrice: usd(70),
+      mint: { ...TOKENIZED_STOCKS[0].mint, supply: usd(1_000) },
+    });
+    expect(circulatingValue(s)).toBe(usd(70_000));
   });
 
   it("is zero rather than infinite when nothing is circulating", () => {

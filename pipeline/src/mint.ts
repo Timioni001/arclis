@@ -84,7 +84,16 @@ export interface MintFacts {
   controlExtensions: string[];
   /** True when the mint is Token-2022 rather than the original program. */
   isToken2022: boolean;
+  /**
+   * The Scaled UI amount multiplier in force, or 1. Issuers that reinvest
+   * dividends or apply splits this way leave raw balances alone and scale what
+   * wallets show, so one raw unit is worth `uiMultiplier` shares.
+   */
+  uiMultiplier: number;
 }
+
+/** Token-2022 extension type for the Scaled UI amount config. */
+const SCALED_UI_AMOUNT = 25;
 
 const B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -140,6 +149,7 @@ export function parseMint(
   address: string,
   data: Uint8Array,
   owner?: string,
+  nowSecs = Math.floor(Date.now() / 1000),
 ): MintFacts {
   if (data.length < MINT_LEN) {
     throw new Error(
@@ -154,6 +164,7 @@ export function parseMint(
 
   const extensions: string[] = [];
   const controlExtensions: string[] = [];
+  let uiMultiplier = 1;
 
   // Extensions only exist past the account-type byte. A base-length mint is
   // the original Token program and has none.
@@ -168,6 +179,9 @@ export function parseMint(
       const name = EXTENSION_NAMES[type] ?? `Extension ${type}`;
       extensions.push(name);
       if (CONTROL_EXTENSIONS.has(type)) controlExtensions.push(name);
+      if (type === SCALED_UI_AMOUNT && length >= 56 && cursor + 4 + 56 <= data.length) {
+        uiMultiplier = scaledUiMultiplier(data, cursor + 4, nowSecs);
+      }
       cursor += 4 + length;
     }
   }
@@ -183,7 +197,28 @@ export function parseMint(
     isToken2022:
       data.length > ACCOUNT_TYPE_OFFSET ||
       owner === "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    uiMultiplier,
   };
+}
+
+/**
+ * The multiplier from a ScaledUiAmountConfig: authority (32 bytes), multiplier
+ * (f64), the time a new multiplier takes effect (i64), and that new multiplier
+ * (f64). The new one applies once its time has come. A value that is not a
+ * positive finite number is ignored rather than trusted.
+ */
+export function scaledUiMultiplier(
+  data: Uint8Array,
+  offset: number,
+  nowSecs: number,
+): number {
+  const view = new DataView(data.buffer, data.byteOffset + offset, 56);
+  const current = view.getFloat64(32, true);
+  const effectiveAt = Number(view.getBigInt64(40, true));
+  const next = view.getFloat64(48, true);
+  const chosen = nowSecs >= effectiveAt ? next : current;
+  if (Number.isFinite(chosen) && chosen > 0) return chosen;
+  return Number.isFinite(current) && current > 0 ? current : 1;
 }
 
 /** Supply scaled to the registry's 1e6 convention. */

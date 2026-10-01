@@ -23,7 +23,7 @@ function snapshot(over: Record<string, unknown> = {}) {
         issuerId: "backed",
         backing: "Redeemable",
         redemption: "VerifiedHolders",
-        custodian: "InCore Bank AG",
+        custodian: "Alpaca Securities LLC",
         dividendTreatment: "Accrues.",
         corporateActionPolicy: "Passed through.",
         issuerRisk: "Creditor claim.",
@@ -127,11 +127,71 @@ describe("loadRegistry", () => {
   it("surfaces the pipeline's failures rather than hiding them", async () => {
     const partial = snapshot({
       kind: "partial",
-      failures: [{ symbol: "oUSTB-MSFT", reason: "mint account not found" }],
+      failures: [{ symbol: "AAPLon", reason: "mint account not found" }],
     });
     const registry = await loadRegistry(respond(partial), NOW);
     expect(registry.failures).toHaveLength(1);
-    expect(registry.failures[0].symbol).toBe("oUSTB-MSFT");
+    expect(registry.failures[0].symbol).toBe("AAPLon");
+  });
+
+  it("reads the keeper first when one is configured", async () => {
+    const fetchImpl = respond(snapshot());
+    await loadRegistry(fetchImpl, NOW, "https://keeper.example");
+    expect((fetchImpl.mock.calls[0] as unknown[])[0]).toBe(
+      "https://keeper.example/registry",
+    );
+  });
+
+  it("falls through to the static snapshot while the keeper is still building", async () => {
+    const urls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string) => {
+      urls.push(url);
+      return url.endsWith("/registry")
+        ? ({ ok: false, json: async () => ({}) } as unknown as Response)
+        : ({ ok: true, json: async () => snapshot() } as unknown as Response);
+    }) as unknown as typeof fetch;
+    const registry = await loadRegistry(
+      fetchImpl,
+      NOW,
+      "https://keeper.example",
+    );
+    expect(registry.kind).toBe("live");
+    expect(urls).toHaveLength(2);
+  });
+
+  it("keeps the keeper's issuer rows, link checks included", async () => {
+    const issuers = [
+      {
+        id: "backed",
+        name: "xStocks (Backed Finance)",
+        jurisdiction: "Jersey",
+        structure: "Tracker certificate",
+        regulator: null,
+        website: "https://xstocks.fi",
+        disclosureUrl: "https://example.com/gone",
+        attestationUrl: null,
+        attestation: "Unverified",
+        links: { disclosure: { ok: false, status: 404, checkedAt: NOW - 100 } },
+      },
+    ];
+    const registry = await loadRegistry(
+      respond(snapshot({ issuers })),
+      NOW,
+      "",
+    );
+    expect(registry.issuers()[0].links?.disclosure?.ok).toBe(false);
+  });
+
+  it("reads an older snapshot's reference ticker from the underlying", async () => {
+    const registry = await loadRegistry(respond(snapshot()), NOW, "");
+    expect(registry.stocks()[0].referenceSymbol).toBe("AAPL");
+  });
+
+  it("keeps a token with no listed share unlisted", async () => {
+    const unlisted = snapshot();
+    (unlisted.tokens[0] as Record<string, any>).referenceSymbol = null;
+    const registry = await loadRegistry(respond(unlisted), NOW, "");
+    expect(registry.stocks()[0].referenceSymbol).toBeNull();
   });
 
   it("resolves a ticker case-insensitively, as the modelled source does", async () => {

@@ -58,6 +58,7 @@ import { newHealth, startHealthServer, redactRpc, resolveRpcUrl } from "./health
 import { createFaucet, type FaucetHandler } from "./faucet";
 import { EventIndexer } from "./indexer";
 import { News } from "./news";
+import { RegistryService } from "./registry";
 import { AccountSnapshot } from "./snapshot";
 
 const env = process.env;
@@ -96,11 +97,15 @@ const SIMULATED_SEEDS: Record<string, number> = {
   GOOGL: 247.1,
 };
 
-function pickFeed(log: ChainConfig["log"]): { feed: PriceFeed; xstocks?: ExplainedFeed } {
+function pickFeed(log: ChainConfig["log"]): {
+  feed: PriceFeed;
+  stocks: PriceFeed;
+  xstocks?: ExplainedFeed;
+} {
   const stocks = pickStockFeed(log);
-  if (TWINS.length === 0) return { feed: stocks };
+  if (TWINS.length === 0) return { feed: stocks, stocks };
   const xstocks = jupiterXStockFeed(TWINS, { apiKey: env.JUPITER_API_KEY });
-  return { feed: roundTheClockFeed(stocks, xstocks, TWINS), xstocks };
+  return { feed: roundTheClockFeed(stocks, xstocks, TWINS), stocks, xstocks };
 }
 
 /** Finnhub symbols per pass that fit in its sixty calls a minute, with room. */
@@ -208,7 +213,7 @@ async function main() {
     symbols: SYMBOLS,
   });
 
-  const { feed, xstocks } = pickFeed(log);
+  const { feed, stocks, xstocks } = pickFeed(log);
   const state = newKeeperState();
   const abort = new AbortController();
 
@@ -366,6 +371,37 @@ async function main() {
     abort.signal,
   );
 
+  /*
+   * The tokenized-stock registry, served at /registry. Built from mainnet
+   * mint reads, Jupiter exit depth and the same equity feed the oracle uses,
+   * on a slow schedule: the data moves over minutes, and its Jupiter quotes
+   * are spaced so they never crowd out the 24/7 price feed. Off with
+   * REGISTRY_ENABLED=no; on a simulated feed it would compare tokens against
+   * invented prices, so it stays off there too.
+   */
+  const registry =
+    env.REGISTRY_ENABLED !== "no" && !/simulated/i.test(stocks.name)
+      ? new RegistryService({
+          feed: stocks,
+          rpcUrl: env.REGISTRY_RPC_URL || "https://api.mainnet-beta.solana.com",
+          jupiterApiKey: env.JUPITER_API_KEY,
+          log: (level, message, extra) => log(level, message, extra),
+        })
+      : null;
+  if (registry) {
+    health.attach("registry", () => registry.status());
+    // After startup settles, then every half hour.
+    const first = setTimeout(() => void registry.refresh(), 30_000);
+    const registryTimer = setInterval(
+      () => void registry.refresh(),
+      Number(env.REGISTRY_INTERVAL_MS ?? 30 * 60_000),
+    );
+    abort.signal.addEventListener("abort", () => {
+      clearTimeout(first);
+      clearInterval(registryTimer);
+    });
+  }
+
   const healthPort = Number(env.HEALTH_PORT ?? 0);
   if (healthPort > 0) {
     startHealthServer(
@@ -379,6 +415,7 @@ async function main() {
       indexer,
       () => news?.current() ?? null,
       () => book.json(),
+      registry ? () => registry.current() : undefined,
     );
   }
 

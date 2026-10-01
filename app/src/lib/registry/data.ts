@@ -1,76 +1,85 @@
 /**
- * The registry's data source.
+ * The registry's fallback dataset.
  *
  * # What this is and is not
  *
- * The rows below are a **modelled dataset**, not a live feed, and the interface
- * says so on every screen that renders them. They are shaped from the public
- * structure of the four issuer families shipping tokenized equities on Solana,
- * and they exist so the pipeline, the scoring and the page can be built and
- * tested end to end before any key is issued.
+ * The live registry is built by the keeper (`keeper/src/registry.ts`) from
+ * `pipeline/curated.json` plus the chain, Jupiter and the equity feed, and is
+ * served at `/registry`. This file is what the page shows when that is
+ * unreachable, and the interface labels it as sample data whenever it does.
  *
- * Shipping this as if it were live would be the exact failure the product is
- * about, so it is not presented that way anywhere. `RegistrySource` is the seam
- * a real pipeline drops into: the same interface, backed by issuer disclosures,
- * `getAccountInfo` on each mint, and Jupiter quote calls for depth. Every field
- * carries a `disclosureUrl` because the intended end state is that no number
- * here is takeable on trust, including ours.
+ * The two halves are deliberately different in kind:
  *
- * # Where each field would come from
- *
- *   mint authorities, supply, extensions -> `getAccountInfo(mint)`, parsed
- *   pool depth and impact                -> Jupiter `/quote` at several sizes
- *   on-chain price                       -> the deepest pool's mid
- *   reference price and session          -> the same equity feed Arclis reads
- *   structure, custody, redemption       -> the issuer's own disclosure PDF
- *
- * Only the last one needs a human, which is why it is the one with a link
- * beside it.
+ *   - **Issuer facts** (structure, custodian, redemption, dividends, mints)
+ *     are the real curated facts, identical to `pipeline/curated.json`. A test
+ *     holds them in step, so the fallback never tells a different story from
+ *     the live page.
+ *   - **Market numbers** (supply, pools, prices, authorities) are samples.
+ *     They exist so the scoring and the page render end to end, and they are
+ *     never presented as live.
  */
 
-import type { Issuer, TokenizedStock } from "./types";
+import type { Issuer, MintFacts, PoolDepth, TokenizedStock } from "./types";
+
+/** When the curated issuer facts were last checked against public sources. */
+export const CHECKED_AT = "2026-10-01";
 
 export const ISSUERS: Issuer[] = [
   {
     id: "backed",
-    name: "Backed Finance (xStocks)",
-    jurisdiction: "Switzerland / Liechtenstein",
+    name: "xStocks (Backed Finance)",
+    issuingEntity: "Backed Assets (JE) Limited",
+    jurisdiction: "Jersey; base prospectus approved in Liechtenstein",
     structure:
-      "Tracker certificate issued under a Liechtenstein base prospectus",
-    regulator: "FMA Liechtenstein",
-    disclosureUrl: "https://backed.fi/legal-documentation",
-    attestationUrl: "https://backed.fi/transparency",
-    attestation: "Daily",
+      "Tracker certificate, collateralised 1:1 by the underlying share, issued under a bankruptcy-remote structure",
+    regulator: "FMA Liechtenstein (prospectus approval)",
+    website: "https://xstocks.fi",
+    disclosureUrl: "https://assets.backed.fi/legal-documentation",
+    attestationUrl: null,
+    attestation: "Unverified",
+    checkedAt: CHECKED_AT,
   },
   {
     id: "ondo",
-    name: "Ondo Finance",
-    jurisdiction: "United States / British Virgin Islands",
-    structure: "Tokenized note issued by a bankruptcy-remote SPV",
-    regulator: "SEC-registered transfer agent in the structure",
-    disclosureUrl: "https://ondo.finance/global-markets",
-    attestationUrl: "https://ondo.finance/transparency",
+    name: "Ondo Global Markets",
+    issuingEntity: "Ondo Global Markets (BVI) Limited",
+    jurisdiction: "British Virgin Islands; not offered to US persons",
+    structure:
+      "Structured note issued by a bankruptcy-remote SPV, backed 1:1 by shares held at US-registered broker-dealers",
+    regulator: null,
+    website: "https://ondo.finance",
+    disclosureUrl: "https://docs.ondo.finance",
+    attestationUrl: null,
     attestation: "Daily",
+    checkedAt: CHECKED_AT,
   },
   {
     id: "backpack",
-    name: "Backpack Exchange",
-    jurisdiction: "United Arab Emirates",
-    structure: "Exchange-issued claim against exchange-held custody",
-    regulator: "VARA Dubai",
-    disclosureUrl: "https://backpack.exchange/legal",
+    name: "Backpack Securities",
+    issuingEntity: "Backpack Securities",
+    jurisdiction: "United States",
+    structure:
+      "Tokenized security entitlement; each token backed 1:1 by a share held in US broker-dealer custody under New York UCC Article 8",
+    regulator: "US broker-dealer",
+    website: "https://backpack.exchange",
+    disclosureUrl: "https://learn.backpack.exchange/blog/tokenized-spacex-spcx",
     attestationUrl: null,
-    attestation: "Monthly",
+    attestation: "Unverified",
+    checkedAt: CHECKED_AT,
   },
   {
     id: "prestocks",
     name: "PreStocks",
-    jurisdiction: "Undisclosed",
-    structure: "Synthetic price tracker, no stated share custody",
+    issuingEntity: "PreStocks",
+    jurisdiction: "Not stated in the sources Arclis checked",
+    structure:
+      "Token giving economic exposure to interests in SPVs that hold pre-IPO shares directly or indirectly",
     regulator: null,
+    website: "https://prestocks.com",
     disclosureUrl: "https://prestocks.com",
     attestationUrl: null,
-    attestation: "None",
+    attestation: "Unverified",
+    checkedAt: CHECKED_AT,
   },
 ];
 
@@ -81,51 +90,68 @@ export function issuerById(id: string): Issuer | undefined {
 const P = 1_000_000n;
 const usd = (dollars: number) => BigInt(Math.round(dollars * 1_000_000));
 
-/** A recent weekday close, so the seeded session and timestamps line up. */
-const REFERENCE_TS = Math.floor(Date.UTC(2026, 8, 18, 20, 0, 0) / 1000);
+/** A recent weekday close, so the sample session and timestamps line up. */
+const REFERENCE_TS = Math.floor(Date.UTC(2026, 8, 30, 20, 0, 0) / 1000);
+
+/**
+ * Sample mint state. Regulated share tokens keep both authorities, so the
+ * sample does too; the live registry reads the real ones from the chain.
+ */
+function sampleMint(
+  mint: string,
+  decimals: number,
+  supplyTokens: number,
+  extensions: string[],
+): MintFacts {
+  return {
+    mint,
+    decimals,
+    supply: usd(supplyTokens),
+    mintAuthority: "sample",
+    freezeAuthority: "sample",
+    extensions,
+  };
+}
+
+function pool(
+  venue: string,
+  quoteLiquidity: number,
+  sellImpactBps: number,
+  volume24h: number,
+): PoolDepth {
+  return {
+    venue,
+    poolAddress: `sample-${venue}`,
+    quoteLiquidity: usd(quoteLiquidity),
+    baseLiquidity: 0n,
+    sellImpactBps,
+    depthProbeQuote: usd(25_000),
+    volume24h: usd(volume24h),
+  };
+}
 
 export const TOKENIZED_STOCKS: TokenizedStock[] = [
   {
     symbol: "AAPLx",
     underlying: "AAPL",
+    referenceSymbol: "AAPL",
     name: "Apple Inc.",
     issuerId: "backed",
     backing: "Redeemable",
     redemption: "VerifiedHolders",
-    custodian: "InCore Bank AG",
+    custodian: "Alpaca Securities LLC, with InCore Bank AG as backup",
     dividendTreatment:
-      "Cash dividends accrue into the certificate's value rather than being paid out, so the token price steps up instead of you receiving cash.",
+      "Reinvested. On Solana the token's display multiplier (the Scaled UI amount extension) rises instead of cash being paid.",
     corporateActionPolicy:
-      "Splits and mergers are passed through by the issuer, who adjusts the certificate ratio.",
+      "Splits are reflected through the same display multiplier, adjusted by the issuer.",
     issuerRisk:
-      "You hold a certificate issued by Backed, not the share itself. If the issuer fails, you are a creditor against the collateral pool, not an Apple shareholder.",
-    mint: {
-      mint: "XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp",
-      decimals: 6,
-      supply: usd(412_000),
-      mintAuthority: "BkdMintAuth11111111111111111111111111111111",
-      freezeAuthority: "BkdFreezeAuth1111111111111111111111111111111",
-      extensions: [],
-    },
+      "You hold a certificate issued by Backed, not the share itself. If the issuer fails, the bankruptcy-remote structure and a security agent stand between you and the collateral; you are not an Apple shareholder.",
+    mint: sampleMint("XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp", 8, 41200, [
+      "Scaled UI amount",
+    ]),
     pools: [
-      {
-        venue: "Raydium CLMM",
-        poolAddress: "RayAAPLx1111111111111111111111111111111111",
-        quoteLiquidity: usd(2_340_000),
-        baseLiquidity: usd(9_180),
-        sellImpactBps: 18,
-        depthProbeQuote: usd(25_000),
-        volume24h: usd(1_820_000),
-      },
-      {
-        venue: "Meteora DLMM",
-        poolAddress: "MetAAPLx111111111111111111111111111111111",
-        quoteLiquidity: usd(860_000),
-        baseLiquidity: usd(3_400),
-        sellImpactBps: 41,
-        depthProbeQuote: usd(25_000),
-        volume24h: usd(640_000),
-      },
+      pool("Raydium CLMM", 2340000, 18, 1820000),
+      pool("Meteora DLMM", 860000, 41, 640000),
     ],
     onChainPrice: usd(254.9),
     referencePrice: usd(254.2),
@@ -134,38 +160,51 @@ export const TOKENIZED_STOCKS: TokenizedStock[] = [
     arclisSymbol: "AAPL",
   },
   {
+    symbol: "AAPLon",
+    underlying: "AAPL",
+    referenceSymbol: "AAPL",
+    name: "Apple Inc.",
+    issuerId: "ondo",
+    backing: "Redeemable",
+    redemption: "VerifiedHolders",
+    custodian: "US-registered broker-dealers",
+    dividendTreatment:
+      "Total return. Dividends are reinvested and show up as more tokens in your balance.",
+    corporateActionPolicy: "Handled by the issuer at the note level.",
+    issuerRisk:
+      "You hold a note issued by an SPV, not the share. The SPV is bankruptcy-remote, and minting and redemption are open only to eligible, onboarded non-US investors; everyone else exits by selling.",
+    mint: sampleMint(
+      "123mYEnRLM2LLYsJW3K6oyYh8uP1fngj732iG638ondo",
+      6,
+      30500,
+      [],
+    ),
+    pools: [pool("Meteora DLMM", 620000, 35, 410000)],
+    onChainPrice: usd(255.4),
+    referencePrice: usd(254.2),
+    referenceTs: REFERENCE_TS,
+    referenceSession: "Closed",
+    arclisSymbol: "AAPL",
+  },
+  {
     symbol: "NVDAx",
     underlying: "NVDA",
+    referenceSymbol: "NVDA",
     name: "NVIDIA Corporation",
     issuerId: "backed",
     backing: "Redeemable",
     redemption: "VerifiedHolders",
-    custodian: "InCore Bank AG",
+    custodian: "Alpaca Securities LLC, with InCore Bank AG as backup",
     dividendTreatment:
-      "Accrues into the certificate value. NVIDIA's yield is negligible either way.",
+      "Reinvested through the display multiplier. NVIDIA's yield is small either way.",
     corporateActionPolicy:
-      "Passed through. The 2024 10-for-1 split was handled by ratio adjustment.",
+      "Splits are reflected through the display multiplier, adjusted by the issuer.",
     issuerRisk:
-      "Creditor claim against Backed's collateral pool if the issuer fails, not a direct NVIDIA holding.",
-    mint: {
-      mint: "Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg",
-      decimals: 6,
-      supply: usd(198_500),
-      mintAuthority: "BkdMintAuth11111111111111111111111111111111",
-      freezeAuthority: "BkdFreezeAuth1111111111111111111111111111111",
-      extensions: [],
-    },
-    pools: [
-      {
-        venue: "Raydium CLMM",
-        poolAddress: "RayNVDAx1111111111111111111111111111111111",
-        quoteLiquidity: usd(4_120_000),
-        baseLiquidity: usd(22_400),
-        sellImpactBps: 11,
-        depthProbeQuote: usd(25_000),
-        volume24h: usd(5_640_000),
-      },
-    ],
+      "A certificate claim against Backed's collateral, not a direct NVIDIA holding.",
+    mint: sampleMint("Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh", 8, 88400, [
+      "Scaled UI amount",
+    ]),
+    pools: [pool("Raydium CLMM", 4120000, 11, 5640000)],
     onChainPrice: usd(183.4),
     referencePrice: usd(182.9),
     referenceTs: REFERENCE_TS,
@@ -173,159 +212,109 @@ export const TOKENIZED_STOCKS: TokenizedStock[] = [
     arclisSymbol: "NVDA",
   },
   {
-    symbol: "oUSTB-MSFT",
-    underlying: "MSFT",
-    name: "Microsoft Corporation",
-    issuerId: "ondo",
-    backing: "CustodyBacked",
-    redemption: "AuthorizedParticipants",
-    custodian: "Clear Street LLC",
-    dividendTreatment:
-      "Dividends are collected by the SPV and reflected in NAV. Holders do not receive cash directly.",
-    corporateActionPolicy:
-      "Handled at the SPV level; token supply is adjusted to match.",
-    issuerRisk:
-      "The SPV is bankruptcy-remote, which is stronger than an operating-company claim, but redemption runs through authorized participants. Retail exits by selling.",
-    mint: {
-      mint: "OndoMSFT111111111111111111111111111111111111",
-      decimals: 6,
-      supply: usd(88_000),
-      mintAuthority: "OndoMintAuth1111111111111111111111111111111",
-      freezeAuthority: "OndoFreezeAuth11111111111111111111111111111",
-      extensions: ["Transfer hook: allowlist"],
-    },
-    pools: [
-      {
-        venue: "Orca Whirlpool",
-        poolAddress: "OrcaMSFT11111111111111111111111111111111",
-        quoteLiquidity: usd(410_000),
-        baseLiquidity: usd(760),
-        sellImpactBps: 142,
-        depthProbeQuote: usd(25_000),
-        volume24h: usd(96_000),
-      },
-    ],
-    onChainPrice: usd(519.1),
-    referencePrice: usd(511.6),
-    referenceTs: REFERENCE_TS,
-    referenceSession: "Closed",
-    arclisSymbol: "MSFT",
-  },
-  {
-    symbol: "SPCX-TSLA",
-    underlying: "TSLA",
-    name: "Tesla, Inc.",
-    issuerId: "backpack",
-    backing: "CustodyBacked",
-    redemption: "VerifiedHolders",
-    custodian: "Backpack Exchange (self-custody)",
-    dividendTreatment:
-      "Tesla pays no dividend, so the question has not been tested for this token.",
-    corporateActionPolicy:
-      "Stated as handled by the exchange. No published mechanism for how a split is reflected on-chain.",
-    issuerRisk:
-      "The custodian and the issuer are the same company. That is one balance sheet standing behind both halves of the claim, which is materially weaker than a third-party custodian.",
-    mint: {
-      mint: "SPCXTSLA1111111111111111111111111111111111",
-      decimals: 6,
-      supply: usd(140_000),
-      mintAuthority: "BpkMintAuth11111111111111111111111111111111",
-      freezeAuthority: "BpkFreezeAuth1111111111111111111111111111111",
-      extensions: [],
-    },
-    pools: [
-      {
-        venue: "Meteora DLMM",
-        poolAddress: "MetTSLA11111111111111111111111111111111111",
-        quoteLiquidity: usd(1_240_000),
-        baseLiquidity: usd(2_900),
-        sellImpactBps: 64,
-        depthProbeQuote: usd(25_000),
-        volume24h: usd(880_000),
-      },
-    ],
-    onChainPrice: usd(441.2),
-    referencePrice: usd(438.0),
-    referenceTs: REFERENCE_TS,
-    referenceSession: "Closed",
-    arclisSymbol: "TSLA",
-  },
-  {
-    symbol: "preOPENAI",
-    underlying: "OPENAI (private)",
-    name: "OpenAI (pre-IPO exposure)",
-    issuerId: "prestocks",
-    backing: "Synthetic",
-    redemption: "None",
-    custodian: null,
-    dividendTreatment: "Not applicable. Nothing is held and nothing is paid.",
-    corporateActionPolicy:
-      "None. There is no share for an action to happen to.",
-    issuerRisk:
-      "This token holds nothing. Its price is whatever the pool says it is, and the reference is an estimated private valuation, not a traded price. If the issuer stops supporting it, the only floor is the pool.",
-    mint: {
-      mint: "PreOpenAI111111111111111111111111111111111",
-      decimals: 6,
-      supply: usd(1_950_000),
-      mintAuthority: "PreMintAuth11111111111111111111111111111111",
-      freezeAuthority: null,
-      extensions: [],
-    },
-    pools: [
-      {
-        venue: "Raydium CPMM",
-        poolAddress: "RayPreOpenAI1111111111111111111111111111",
-        quoteLiquidity: usd(190_000),
-        baseLiquidity: usd(3_100),
-        sellImpactBps: 780,
-        depthProbeQuote: usd(25_000),
-        volume24h: usd(2_100_000),
-      },
-    ],
-    onChainPrice: usd(71.4),
-    referencePrice: usd(61.0),
-    referenceTs: REFERENCE_TS,
-    // A private company has no session. Modelled as Closed: there is a
-    // reference mark, it is stale by construction, and it never opens.
-    referenceSession: "Closed",
-    arclisSymbol: null,
-  },
-  {
     symbol: "GOOGLx",
     underlying: "GOOGL",
+    referenceSymbol: "GOOGL",
     name: "Alphabet Inc. Class A",
     issuerId: "backed",
     backing: "Redeemable",
     redemption: "VerifiedHolders",
-    custodian: "InCore Bank AG",
-    dividendTreatment: "Accrues into the certificate value.",
-    corporateActionPolicy: "Passed through by ratio adjustment.",
+    custodian: "Alpaca Securities LLC, with InCore Bank AG as backup",
+    dividendTreatment: "Reinvested through the display multiplier.",
+    corporateActionPolicy:
+      "Splits are reflected through the display multiplier, adjusted by the issuer.",
     issuerRisk:
-      "Creditor claim against the Backed collateral pool if the issuer fails.",
-    mint: {
-      mint: "XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN",
-      decimals: 6,
-      supply: usd(96_400),
-      mintAuthority: "BkdMintAuth11111111111111111111111111111111",
-      freezeAuthority: "BkdFreezeAuth1111111111111111111111111111111",
-      extensions: [],
-    },
-    pools: [
-      {
-        venue: "Raydium CLMM",
-        poolAddress: "RayGOOGLx111111111111111111111111111111111",
-        quoteLiquidity: usd(1_050_000),
-        baseLiquidity: usd(4_200),
-        sellImpactBps: 33,
-        depthProbeQuote: usd(25_000),
-        volume24h: usd(720_000),
-      },
-    ],
+      "A certificate claim against Backed's collateral, not a direct Alphabet holding.",
+    mint: sampleMint("XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN", 8, 9640, [
+      "Scaled UI amount",
+    ]),
+    pools: [pool("Raydium CLMM", 1050000, 33, 720000)],
     onChainPrice: usd(247.8),
     referencePrice: usd(247.1),
     referenceTs: REFERENCE_TS,
     referenceSession: "Closed",
     arclisSymbol: "GOOGL",
+  },
+  {
+    symbol: "SPYx",
+    underlying: "SPY",
+    referenceSymbol: "SPY",
+    name: "SPDR S&P 500 ETF Trust",
+    issuerId: "backed",
+    backing: "Redeemable",
+    redemption: "VerifiedHolders",
+    custodian: "Alpaca Securities LLC, with InCore Bank AG as backup",
+    dividendTreatment:
+      "ETF distributions are reinvested through the display multiplier.",
+    corporateActionPolicy:
+      "Reflected through the display multiplier, adjusted by the issuer.",
+    issuerRisk:
+      "A certificate claim against Backed's collateral, not a direct holding of the ETF.",
+    mint: sampleMint("XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W", 8, 18300, [
+      "Scaled UI amount",
+    ]),
+    pools: [pool("Meteora DLMM", 2900000, 14, 2100000)],
+    onChainPrice: usd(662.1),
+    referencePrice: usd(661.4),
+    referenceTs: REFERENCE_TS,
+    referenceSession: "Closed",
+    arclisSymbol: "SPY",
+  },
+  {
+    symbol: "SPCX",
+    underlying: "SPCX",
+    referenceSymbol: "SPCX",
+    name: "Space Exploration Technologies Corp.",
+    issuerId: "backpack",
+    backing: "Redeemable",
+    redemption: "VerifiedHolders",
+    custodian: "Backpack Securities (US broker-dealer custody)",
+    dividendTreatment:
+      "Holders are entitled to cash dividends and corporate actions on the underlying share.",
+    corporateActionPolicy:
+      "Passed through by Backpack Securities as the broker-dealer holding the share.",
+    issuerRisk:
+      "The token is a security entitlement to a real share at a US broker-dealer. Verified holders can redeem it and move the share to another brokerage; unverified holders exit by selling.",
+    mint: sampleMint(
+      "SPCXxcqXj6e5dJDVNovHN8744zkbhM2bYudU45BimGb",
+      6,
+      45000,
+      [],
+    ),
+    pools: [pool("Meteora DLMM", 1800000, 52, 420000)],
+    onChainPrice: usd(161.8),
+    referencePrice: usd(160.9),
+    referenceTs: REFERENCE_TS,
+    referenceSession: "Closed",
+    arclisSymbol: null,
+  },
+  {
+    symbol: "OPENAI",
+    underlying: "OpenAI (private)",
+    referenceSymbol: null,
+    name: "OpenAI (pre-IPO exposure)",
+    issuerId: "prestocks",
+    backing: "IssuerAttested",
+    redemption: "None",
+    custodian: null,
+    dividendTreatment:
+      "Not applicable. OpenAI is private and pays no dividend.",
+    corporateActionPolicy:
+      "Depends on the SPVs behind the token, which hold OpenAI exposure directly or indirectly.",
+    issuerRisk:
+      "You do not own OpenAI shares. The token tracks the issuer's SPV exposure, and with no listed share there is no public price to check it against: the pool is the market.",
+    mint: sampleMint(
+      "PreweJYECqtQwBtpxHL171nL2K6umo692gTm7Q3rpgF",
+      6,
+      27000,
+      [],
+    ),
+    pools: [pool("Meteora DLMM", 190000, 780, 2100000)],
+    onChainPrice: usd(71.4),
+    referencePrice: usd(0),
+    referenceTs: 0,
+    referenceSession: "Closed",
+    arclisSymbol: null,
   },
 ];
 

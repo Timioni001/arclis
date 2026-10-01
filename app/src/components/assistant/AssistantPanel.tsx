@@ -20,8 +20,8 @@ import { Icon } from "../ui";
 
 const SUGGESTIONS = [
   "What am I actually holding if I own AAPLx?",
-  "Why is preOPENAI trading 17% above its reference?",
-  "Which of these can I actually redeem for a share?",
+  "Which Apple tokens can I redeem for the real share?",
+  "Which of these has no listed price to check against?",
 ];
 
 export function AssistantPanel() {

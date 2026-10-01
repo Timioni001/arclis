@@ -39,6 +39,7 @@ import {
   exitCoverageBps,
 } from "../lib/registry/scoring";
 import { issuerById, type RegistrySource } from "../lib/registry/data";
+import type { Issuer } from "../lib/registry/types";
 import {
   BACKING_LABEL,
   BACKING_RANK,
@@ -91,6 +92,11 @@ export function Registry({
 
   const stocks = registry.stocks();
   const failures = registry.failures ?? [];
+  // The live snapshot carries its own issuer rows (with link checks); the
+  // bundled list is only the floor.
+  const issuers = registry.issuers();
+  const issuerOf = (id: string): Issuer =>
+    issuers.find((i) => i.id === id) ?? issuerById(id)!;
 
   const rows = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -101,12 +107,12 @@ export function Registry({
         s.symbol.toLowerCase().includes(q) ||
         s.underlying.toLowerCase().includes(q) ||
         s.name.toLowerCase().includes(q) ||
-        (issuerById(s.issuerId)?.name.toLowerCase().includes(q) ?? false)
+        issuerOf(s.issuerId).name.toLowerCase().includes(q)
       );
     });
 
     const withScores = filtered.map((s) => {
-      const issuer = issuerById(s.issuerId)!;
+      const issuer = issuerOf(s.issuerId);
       return {
         stock: s,
         issuer,
@@ -133,7 +139,7 @@ export function Registry({
           return a.value > b.value ? -1 : a.value < b.value ? 1 : 0;
       }
     });
-  }, [stocks, query, tier, sort, now]);
+  }, [stocks, issuers, query, tier, sort, now]);
 
   const detail = selected ? stocks.find((s) => s.symbol === selected) : null;
 
@@ -183,13 +189,11 @@ export function Registry({
             <span className="data-note-more">Details</span>
           </summary>
           <p>
-            The scoring, the session logic and the exit-depth maths are the
-            real pipeline, running on this page as written. What is modelled is
-            their input: each row is shaped from the issuer's own public
-            disclosure rather than read live, because live rows need mint state
-            from <code>getAccountInfo</code> and routed depth from Jupiter on a
-            schedule, and this deployment does not run that crawl yet. Every
-            issuer is linked, so any row can be checked against its source. Do
+            The live registry could not be reached, so this page is showing
+            sample numbers. The issuer facts (structure, custodian, redemption,
+            dividends and mint addresses) are real and linked to their sources.
+            Supply, prices, pool depth and mint authorities are samples, read
+            live from the chain and Jupiter when the registry is available. Do
             not trade on these numbers.
           </p>
         </details>
@@ -339,14 +343,7 @@ export function Registry({
 
             <div className="registry-issuer">
               <span>{issuer.name}</span>
-              <a
-                href={issuer.disclosureUrl}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                Disclosure
-                <Icon name="arrowRight" size={13} />
-              </a>
+              <SourceLink issuer={issuer} now={now} />
             </div>
 
             <div className="registry-metrics crisp">
@@ -365,14 +362,15 @@ export function Registry({
 
               <div className="registry-metric">
                 <div className="registry-metric-label">
-                  vs. {stock.underlying}
+                  vs. {stock.referenceSymbol ?? "listed price"}
                 </div>
                 <div
                   className="registry-metric-value num"
                   data-verdict={deviation.verdict.toLowerCase()}
                 >
-                  {deviation.bps > 0 ? "+" : ""}
-                  {(deviation.bps / 100).toFixed(2)}%
+                  {deviation.verdict === "Unlisted"
+                    ? "n/a"
+                    : `${deviation.bps > 0 ? "+" : ""}${(deviation.bps / 100).toFixed(2)}%`}
                 </div>
                 <div className="registry-metric-sub">{deviation.verdict}</div>
               </div>
@@ -444,6 +442,8 @@ export function Registry({
       {detail && (
         <StockDetail
           stock={detail}
+          issuer={issuerOf(detail.issuerId)}
+          sample={registry.kind === "modelled"}
           now={now}
           onClose={() => setSelected(null)}
         />
@@ -462,14 +462,18 @@ export function Registry({
  */
 function StockDetail({
   stock,
+  issuer,
+  sample,
   now,
   onClose,
 }: {
   stock: TokenizedStock;
+  issuer: Issuer;
+  /** Sample market numbers: mint powers are not known, so none are claimed. */
+  sample: boolean;
   now: number;
   onClose: () => void;
 }) {
-  const issuer = issuerById(stock.issuerId)!;
   const backing = assessBacking(stock, issuer.attestation, issuer.regulator);
   const liquidity = assessLiquidity(stock.pools);
   const control = assessControl(stock);
@@ -506,6 +510,12 @@ function StockDetail({
         <div className="registry-detail-col">
           <h4 className="registry-detail-h">The claim</h4>
           <dl className="registry-facts">
+            {issuer.issuingEntity && issuer.issuingEntity !== issuer.name && (
+              <div>
+                <dt>Issued by</dt>
+                <dd>{issuer.issuingEntity}</dd>
+              </div>
+            )}
             <div>
               <dt>Legal structure</dt>
               <dd>{issuer.structure}</dd>
@@ -572,17 +582,25 @@ function StockDetail({
           <h4 className="registry-detail-h">
             What the issuer can do to your balance
           </h4>
-          <ul className="registry-control">
-            {control.map((f) => (
-              <li key={f.label} data-tone={f.tone}>
-                <Icon name={f.tone === "watch" ? "alert" : "check"} size={16} />
-                <div>
-                  <strong>{f.label}</strong>
-                  <p>{f.detail}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
+          {sample ? (
+            <p className="registry-detail-note">
+              Freeze and mint authorities are read live from the mint, and the
+              live registry is unavailable right now. Check them on Solscan
+              below rather than relying on this page.
+            </p>
+          ) : (
+            <ul className="registry-control">
+              {control.map((f) => (
+                <li key={f.label} data-tone={f.tone}>
+                  <Icon name={f.tone === "watch" ? "alert" : "check"} size={16} />
+                  <div>
+                    <strong>{f.label}</strong>
+                    <p>{f.detail}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
 
           <h4 className="registry-detail-h">Getting out</h4>
           <p className="registry-detail-note">{liquidity.note}</p>
@@ -636,6 +654,28 @@ function StockDetail({
 
           <h4 className="registry-detail-h">If the issuer disappears</h4>
           <p className="registry-detail-note">{stock.issuerRisk}</p>
+
+          <h4 className="registry-detail-h">Sources</h4>
+          <ul className="registry-sources">
+            <li>
+              <SourceLink issuer={issuer} now={now} long />
+            </li>
+            {issuer.website && issuer.website !== issuer.disclosureUrl && (
+              <li>
+                <a href={issuer.website} target="_blank" rel="noreferrer noopener">
+                  {issuer.name} website
+                  <Icon name="arrowRight" size={13} />
+                </a>
+              </li>
+            )}
+          </ul>
+          <p className="registry-detail-note registry-sources-note">
+            {issuer.checkedAt
+              ? `Issuer facts checked against public sources on ${formatDay(issuer.checkedAt)}. `
+              : ""}
+            On-chain facts are read from the mint itself. Confirm anything that
+            matters in the issuer's own documents.
+          </p>
         </div>
       </div>
 
@@ -648,18 +688,22 @@ function StockDetail({
         </div>
         <div className="registry-detail-price">
           <span className="registry-metric-label">
-            {stock.underlying} reference ·{" "}
-            {SESSION_LABEL[stock.referenceSession]}
+            {stock.referenceSymbol
+              ? `${stock.referenceSymbol} reference · ${SESSION_LABEL[stock.referenceSession]}`
+              : "Reference"}
           </span>
           <span className="num">
-            {usd(stock.referencePrice, { compact: false })}
+            {stock.referenceSymbol
+              ? usd(stock.referencePrice, { compact: false })
+              : "No listed share"}
           </span>
         </div>
         <div className="registry-detail-price">
           <span className="registry-metric-label">Deviation</span>
           <span className="num" data-verdict={deviation.verdict.toLowerCase()}>
-            {deviation.bps > 0 ? "+" : ""}
-            {(deviation.bps / 100).toFixed(2)}%
+            {deviation.verdict === "Unlisted"
+              ? "n/a"
+              : `${deviation.bps > 0 ? "+" : ""}${(deviation.bps / 100).toFixed(2)}%`}
           </span>
         </div>
         <a
@@ -672,5 +716,52 @@ function StockDetail({
         </a>
       </footer>
     </GlassPanel>
+  );
+}
+
+/** `2026-10-01` as `1 Oct 2026`, without a timezone shift. */
+function formatDay(day: string): string {
+  const [y, m, d] = day.split("-").map(Number);
+  if (!y || !m || !d) return day;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return `${d} ${months[m - 1]} ${y}`;
+}
+
+/**
+ * The link to an issuer's documents, which must always go somewhere.
+ *
+ * The live registry checks every document link each build. When the last
+ * check found the page gone, this sends the reader to the issuer's own site
+ * instead and says why, rather than linking to a dead document.
+ */
+function SourceLink({
+  issuer,
+  now,
+  long = false,
+}: {
+  issuer: Issuer;
+  now: number;
+  long?: boolean;
+}) {
+  const check = issuer.links?.disclosure;
+  const dead = check?.ok === false && !!issuer.website;
+  const href = dead ? issuer.website! : issuer.disclosureUrl;
+  const label = dead
+    ? long
+      ? `${issuer.name} website (documents page unavailable)`
+      : "Issuer site"
+    : long
+      ? `${issuer.name} documents`
+      : "Documents";
+  const title = dead
+    ? `The documents page did not load when last checked ${ago(check!.checkedAt, now)}. Opening the issuer's site instead.`
+    : check?.ok
+      ? `Link checked ${ago(check.checkedAt, now)}.`
+      : undefined;
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener" title={title}>
+      {label}
+      <Icon name="arrowRight" size={13} />
+    </a>
   );
 }

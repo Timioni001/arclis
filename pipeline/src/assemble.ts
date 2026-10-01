@@ -29,6 +29,9 @@ import { measureDepth, type Router } from "./depth";
 export interface CuratedEntry {
   symbol: string;
   underlying: string;
+  /** Ticker the equity feed is asked for. Null for a private company, which
+   *  has no listed price; absent means `underlying`. */
+  referenceSymbol?: string | null;
   name: string;
   issuerId: string;
   mint: string;
@@ -41,6 +44,16 @@ export interface CuratedEntry {
   issuerRisk: string;
   arclisSymbol: string | null;
 }
+
+/**
+ * How far an executable price may sit from the listed stock before the mint
+ * is presumed not to be the token it is filed under.
+ *
+ * Tokenized shares trade within a few percent of the stock even with the
+ * market shut. A gap past this is not a premium; it is a mint pasted against
+ * the wrong ticker, and publishing it would score the wrong instrument.
+ */
+export const MISMATCH_BPS = 5_000;
 
 export interface AssembleOptions {
   entries: CuratedEntry[];
@@ -58,6 +71,7 @@ export interface AssembleOptions {
 export interface AssembledToken {
   symbol: string;
   underlying: string;
+  referenceSymbol: string | null;
   name: string;
   issuerId: string;
   backing: CuratedEntry["backing"];
@@ -135,16 +149,36 @@ export async function assemble(options: AssembleOptions): Promise<Snapshot> {
         continue;
       }
 
-      const reference = options.referencePrices.get(entry.underlying);
-      if (!reference) {
+      const referenceSymbol =
+        entry.referenceSymbol === undefined ? entry.underlying : entry.referenceSymbol;
+      const reference = referenceSymbol
+        ? options.referencePrices.get(referenceSymbol.toUpperCase())
+        : null;
+      if (referenceSymbol && !reference) {
         failures.push({
           symbol: entry.symbol,
-          reason: `no reference price for ${entry.underlying}`,
+          reason: `no reference price for ${referenceSymbol}`,
         });
         continue;
       }
 
-      const approxPrice = Number(reference.price) / 1_000_000;
+      // With no listed share, size the ladder from what one token sells for.
+      let approxPrice = reference ? Number(reference.price) / 1_000_000 : 0;
+      if (!reference) {
+        const one = await options.router.quote({
+          inputMint: entry.mint,
+          outputMint: options.quoteMint,
+          amount: 10n ** BigInt(facts.decimals),
+        });
+        approxPrice = one ? Number(one.outAmount) / 1_000_000 : 0;
+        if (!(approxPrice > 0)) {
+          failures.push({
+            symbol: entry.symbol,
+            reason: "no route to price the token, and no listed reference",
+          });
+          continue;
+        }
+      }
       const depth = await measureDepth({
         router: options.router,
         tokenMint: entry.mint,
@@ -164,17 +198,41 @@ export async function assemble(options: AssembleOptions): Promise<Snapshot> {
       // which is what somebody would really get. A pool mid ignores the side
       // of the book they have to cross.
       const best = depth?.probes[0];
-      const onChainPrice =
+      // Quotes are in raw units. Where a Scaled UI multiplier is in force one
+      // raw unit is `m` shares, so the per-share price is the raw price / m.
+      const m = facts.uiMultiplier > 0 ? facts.uiMultiplier : 1;
+      const rawPrice =
         best && best.size > 0n
           ? (best.out * 1_000_000n) /
             (BigInt(
               Math.round((Number(best.size) / 1e6 / approxPrice) * 1e6),
             ) || 1n)
-          : reference.price;
+          : null;
+      const onChainPrice =
+        rawPrice !== null
+          ? BigInt(Math.round(Number(rawPrice) / m))
+          : reference
+            ? reference.price
+            : BigInt(Math.round((approxPrice / m) * 1_000_000));
+
+      if (reference && reference.price > 0n && best) {
+        const gap = onChainPrice - reference.price;
+        const bps = Number(((gap < 0n ? -gap : gap) * 10_000n) / reference.price);
+        if (bps > MISMATCH_BPS) {
+          failures.push({
+            symbol: entry.symbol,
+            reason:
+              `trades ${(bps / 100).toFixed(0)}% away from ${referenceSymbol}; ` +
+              "the mint may not be the token filed under this symbol",
+          });
+          continue;
+        }
+      }
 
       tokens.push({
         symbol: entry.symbol,
         underlying: entry.underlying,
+        referenceSymbol,
         name: entry.name,
         issuerId: entry.issuerId,
         backing: entry.backing,
@@ -187,7 +245,8 @@ export async function assemble(options: AssembleOptions): Promise<Snapshot> {
         mint: {
           mint: facts.mint,
           decimals: facts.decimals,
-          supply: supplyAtScale(facts).toString(),
+          // In shares, as a wallet shows it: raw supply times the multiplier.
+          supply: BigInt(Math.round(Number(supplyAtScale(facts)) * m)).toString(),
           mintAuthority: facts.mintAuthority,
           freezeAuthority: facts.freezeAuthority,
           extensions: facts.extensions,
@@ -208,9 +267,9 @@ export async function assemble(options: AssembleOptions): Promise<Snapshot> {
             ]
           : [],
         onChainPrice: onChainPrice.toString(),
-        referencePrice: reference.price.toString(),
-        referenceTs: reference.at,
-        referenceSession: reference.session,
+        referencePrice: (reference?.price ?? 0n).toString(),
+        referenceTs: reference?.at ?? 0,
+        referenceSession: reference?.session ?? "Closed",
         sources: {
           mint: "getAccountInfo",
           supply: "getAccountInfo",
@@ -218,7 +277,7 @@ export async function assemble(options: AssembleOptions): Promise<Snapshot> {
           extensions: "getAccountInfo",
           depth: options.router.name,
           onChainPrice: options.router.name,
-          referencePrice: "equity feed",
+          referencePrice: reference ? "equity feed" : "none: no listed share",
           structure: "issuer disclosure",
           custody: "issuer disclosure",
           redemption: "issuer disclosure",

@@ -2,12 +2,11 @@
  * The tokenized-equity registry read model.
  *
  * Four issuers are shipping products on Solana that render as an identical
- * price chart and are not the same instrument at all. One is a redeemable
- * claim on a share held by a regulated custodian. One is a note issued by a
- * company that holds the shares. One tracks the price and holds nothing. A
- * holder cannot tell which they own by looking at a wallet, and no issuer puts
- * the comparison on one page, because the comparison is not flattering to
- * everyone on it.
+ * price chart and are not the same instrument at all: a tracker certificate,
+ * a note issued by an SPV, a security entitlement at a broker-dealer, and a
+ * token giving exposure to SPVs that hold private-company shares. A holder
+ * cannot tell which they own by looking at a wallet, and no issuer puts the
+ * comparison on one page.
  *
  * So this is the read model for that page. It is deliberately a *separate*
  * model from `protocol/types.ts`: the registry describes instruments Arclis
@@ -85,7 +84,14 @@ export const REDEMPTION_LABEL: Record<RedemptionAccess, string> = {
 
 /** How often somebody who is not the issuer checks the shares are there. */
 export type AttestationCadence =
-  "Realtime" | "Daily" | "Monthly" | "Quarterly" | "None";
+  | "Realtime"
+  | "Daily"
+  | "Monthly"
+  | "Quarterly"
+  | "None"
+  /** Arclis has not confirmed a published schedule. Not the same as "None":
+   *  absence of evidence in our check is not evidence of absence. */
+  | "Unverified";
 
 export const ATTESTATION_LABEL: Record<AttestationCadence, string> = {
   Realtime: "Continuous",
@@ -93,11 +99,24 @@ export const ATTESTATION_LABEL: Record<AttestationCadence, string> = {
   Monthly: "Monthly",
   Quarterly: "Quarterly",
   None: "None published",
+  Unverified: "Not yet verified",
 };
+
+/** The last check of a source link. `ok: null` means the site refused an
+ *  automated check (401, 403, 429), which says nothing about the page. */
+export interface LinkCheck {
+  ok: boolean | null;
+  status: number;
+  checkedAt: number;
+}
 
 export interface Issuer {
   id: string;
   name: string;
+  /** The legal entity that issues the token, when it differs from the brand. */
+  issuingEntity?: string;
+  /** The issuer's home page: the fallback when a document link has moved. */
+  website?: string;
   /** Jurisdiction the issuing entity is organised in. */
   jurisdiction: string;
   /** The legal wrapper a holder is actually inside. */
@@ -110,6 +129,10 @@ export interface Issuer {
   /** Where attestations are published, when they are. */
   attestationUrl: string | null;
   attestation: AttestationCadence;
+  /** Date (YYYY-MM-DD) the curated facts were last checked against sources. */
+  checkedAt?: string;
+  /** Link checks from the live pipeline. Absent on the modelled dataset. */
+  links?: { disclosure?: LinkCheck; attestation?: LinkCheck };
 }
 
 /**
@@ -155,6 +178,10 @@ export interface TokenizedStock {
   symbol: string;
   /** The stock it references. */
   underlying: string;
+  /** The listed ticker the reference price is read for, or null when there
+   *  is no listed share (a private company), in which case there is no
+   *  reference price and no deviation to measure. */
+  referenceSymbol: string | null;
   name: string;
   issuerId: string;
 

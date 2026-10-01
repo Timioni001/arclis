@@ -176,8 +176,55 @@ describe("assemble", () => {
       ...base,
       entries: [entry()],
       getAccount: async () => mintAccount(412_000_000_000_000n, 9),
+      // 9-decimal base units: 250 USDC per whole token is 250e6 per 1e9.
+      router: {
+        name: "jupiter",
+        async quote({ amount }) {
+          return { outAmount: (amount * 250n * 999n) / 1_000_000n, routes: ["Raydium CLMM"] };
+        },
+      },
     });
     expect(snapshot.tokens[0].mint.supply).toBe("412000000000");
+  });
+
+  it("refuses a mint that trades nowhere near the stock it is filed under", async () => {
+    // A mint pasted against the wrong ticker: it sells for about $2.50 while
+    // AAPL is $254. Publishing that would score the wrong instrument.
+    const snapshot = await assemble({
+      ...base,
+      entries: [entry()],
+      router: {
+        name: "jupiter",
+        async quote({ amount }) {
+          return { outAmount: (amount * 25n) / 10n, routes: ["Raydium CLMM"] };
+        },
+      },
+    });
+    expect(snapshot.tokens).toHaveLength(0);
+    expect(snapshot.failures[0].reason).toContain("may not be the token");
+  });
+
+  it("builds a token with no listed share, priced from its pool", async () => {
+    const snapshot = await assemble({
+      ...base,
+      entries: [entry({ symbol: "OPENAI", underlying: "OpenAI (private)", referenceSymbol: null })],
+      referencePrices: new Map(),
+    });
+    expect(snapshot.failures).toEqual([]);
+    const token = snapshot.tokens[0];
+    expect(token.referenceSymbol).toBeNull();
+    expect(token.referencePrice).toBe("0");
+    expect(Number(token.onChainPrice) / 1e6).toBeCloseTo(249.75, 0);
+  });
+
+  it("reads a reference under its own ticker when it differs from the label", async () => {
+    const snapshot = await assemble({
+      ...base,
+      entries: [entry({ symbol: "SPCX", underlying: "SpaceX", referenceSymbol: "spcx" })],
+      referencePrices: new Map([["SPCX", { price: 250_000_000n, at: 1, session: "Closed" }]]),
+    });
+    expect(snapshot.tokens[0].referenceSymbol).toBe("spcx");
+    expect(snapshot.tokens[0].referencePrice).toBe("250000000");
   });
 
   it("reports a revoked mint authority as null", async () => {

@@ -52,8 +52,8 @@ for fees if the wallet has none.
 |---|---|
 | `programs/arclis/` | Anchor program (Rust): markets, positions, liquidity pools, oracles, insurance, corporate actions, agent treasuries. |
 | `app/` | Interface (React, TypeScript, Vite), deployed on Cloudflare. Builds, simulates and signs transactions in the browser. |
-| `keeper/` | Operations service on Fly.io: price and session publisher, funding crank, liquidator, treasury rebalancer, event indexer, market data, news and devnet faucet. |
-| `pipeline/` | Builds the Registry dataset from chain data and live Jupiter quotes. |
+| `keeper/` | Operations service on Fly.io: price and session publisher, funding crank, liquidator, treasury rebalancer, event indexer, market data, news, the live Registry and devnet faucet. |
+| `pipeline/` | The Registry's curated issuer facts and the code that reads each token live from chain data and Jupiter quotes. |
 | `src/dbc/` | Meteora Dynamic Bonding Curve configuration and monitoring for pools quoted in a tokenized stock. |
 | `tools/clawpump/` | Agent token launches through the ClawPump partner API. |
 | `server/` | Optional assistant endpoint for the interface (not deployed). |
@@ -133,9 +133,10 @@ Anything prefixed `VITE_` is shipped to the browser and must not be secret.
 | `MARKETS` | env | Symbols to operate; must match `markets.json`. |
 | `PRICE_INTERVAL_MS` | env | Publish interval; must stay inside the program's 60-second staleness bound. |
 | `FAUCET_ENABLED` | env | `yes` serves test USDC at `POST /faucet`. Rate limited per wallet, per IP and per day. |
+| `REGISTRY_RPC_URL` | env, optional | Mainnet endpoint for the Registry's mint reads; defaults to public mainnet. `REGISTRY_ENABLED=no` turns the Registry build off. |
 
 HTTP endpoints: `/health`, `/snapshot`, `/history`, `/candles`, `/summary`,
-`/events`, `/news` and `POST /faucet`. The health report shows each loop's
+`/events`, `/news`, `/registry` and `POST /faucet`. The health report shows each loop's
 state, the RPC host (redacted) and the snapshot's age.
 
 ## Testing

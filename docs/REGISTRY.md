@@ -10,21 +10,15 @@ roughly two hundred thousand holders. Four issuer families are live, and their
 products are structurally different in ways that do not show up anywhere a
 holder looks:
 
-| What it looks like | What it can actually be |
-|---|---|
-| A token called `AAPLx` | A certificate you can redeem for a share through a named custodian |
-| A token called `AAPL` | A note issued by an SPV that holds shares you personally cannot demand |
-| A token called `AAPL` | An exchange IOU where the issuer and the custodian are the same balance sheet |
-| A token called `preOPENAI` | A price tracker holding nothing at all |
+| Token | Issuer | What it actually is |
+|---|---|---|
+| `AAPLx` | xStocks (Backed Assets (JE) Limited) | A tracker certificate, collateralised 1:1, redeemable by verified holders |
+| `AAPLon` | Ondo Global Markets (BVI SPV) | A note backed 1:1 by shares at US broker-dealers, open only to eligible non-US investors |
+| `SPCX` | Backpack Securities | A security entitlement to a SpaceX share at a US broker-dealer, redeemable by verified holders |
+| `OPENAI` | PreStocks | Exposure to SPVs holding pre-IPO OpenAI shares; no share is owned and none can be redeemed |
 
-All four render as a line going up and to the right. None of the four issuers
-publishes the comparison, because the comparison is not flattering to everyone
-on it, and the venues that list them have no reason to: ambiguity keeps volume
-flowing.
-
-One issuer's break has already made the gap public. What made it legible after
-the fact was on-chain the whole time. Nobody was looking, because nobody
-published the ratio.
+All four render as a line going up and to the right. No issuer publishes the
+comparison, and the venues that list them have no reason to.
 
 ## What it reports
 
@@ -84,8 +78,8 @@ venue. Total pooled liquidity is reported beside the impact as context, never
 in place of it.
 
 Alongside it, **exit coverage**: pooled quote liquidity as a percentage of the
-circulating value at the reference price. This is the ratio that would have
-made the PreStocks break visible in advance.
+circulating value at the reference price (at the pool price, for a token with
+no listed share). It matters most for tokens whose only exit is selling.
 
 ### 4. What the mint can do to your balance
 
@@ -100,26 +94,50 @@ it says which case they are in.
 
 | Field | Source |
 |---|---|
-| Mint authorities, supply, extensions | `getAccountInfo(mint)`, parsed |
-| Pool depth and sell impact | Jupiter `/quote` at several sizes |
-| On-chain price | The deepest pool's mid |
-| Reference price and session | The same equity feed Arclis reads |
-| Structure, custody, redemption rights | The issuer's own disclosure, linked on every row |
+| Mint authorities, supply, extensions | `getAccountInfo(mint)` on mainnet, parsed |
+| Pool depth and sell impact | Jupiter `/swap/v1/quote`, a ladder of sell sizes |
+| On-chain price | The best executable sell, per share |
+| Reference price and session | The same equity feed the oracle reads; none for a private company |
+| Structure, custody, redemption rights | `pipeline/curated.json`, checked against the issuer's documents |
 
-Only the last one needs a human, which is why it is the one with a link beside
-it. Every issuer row carries a `disclosureUrl` and the tests assert it, because
-a claim with no link is not checkable.
+Only the last needs a human, which is why it carries its sources: every issuer
+has a documents link and a home page, and `checkedAt` records when the facts
+were last checked. Where a fact could not be confirmed it says so: an
+attestation schedule Arclis has not verified is shown as **not yet verified**
+and scores zero, which is different from "none".
+
+Three checks keep a live row honest:
+
+- **Display multipliers.** Issuers that reinvest dividends or apply splits
+  through Token-2022's Scaled UI amount extension leave raw balances alone, so
+  one raw unit is worth the multiplier in shares. Supply and price are converted
+  to shares before anything is compared.
+- **Wrong-mint guard.** A token trading more than 50% away from the stock it is
+  filed under is left out and reported, not scored: that is a mint pasted
+  against the wrong ticker, not a premium.
+- **Link checks.** Every documents link is fetched on each build. A page that is
+  gone is reported on `/health`, and the interface sends readers to the
+  issuer's home page instead. A site that refuses an automated visitor (401,
+  403, 429) is not reported as broken.
 
 ## Current state
 
-The shipped dataset is **modelled, not live**, and the interface says so on
-every screen that renders it, in a banner that cannot be dismissed. Shipping
-modelled data as if it were live would be precisely the failure this product is
-about.
+The keeper builds the registry every 30 minutes (`keeper/src/registry.ts`) and
+serves it at `/registry`. The interface reads that first, then an optional
+static `registry.json` written by `npm run registry:build`, and otherwise falls
+back to a bundled dataset. The fallback carries the same curated facts (a test
+holds them in step with `curated.json`) but sample market numbers, and the
+interface labels it as sample data whenever it is shown.
 
-`RegistrySource` in `app/src/lib/registry/data.ts` is the seam a real pipeline
-implements. Its `kind` field is what drives the banner: a source that cannot
-say where its numbers came from does not get to render without a label.
+| Setting (keeper) | Default | Purpose |
+|---|---|---|
+| `REGISTRY_ENABLED` | on | `no` turns the build off |
+| `REGISTRY_RPC_URL` | public mainnet | Mainnet endpoint for mint reads; separate from the devnet publisher |
+| `REGISTRY_INTERVAL_MS` | 1,800,000 | Time between builds |
+| `JUPITER_API_KEY` | none | Shared with the 24/7 feed; quotes are spaced 3 s apart either way |
+
+To add a token, add it to `pipeline/curated.json` and to the fallback in
+`app/src/lib/registry/data.ts`; the tests fail until the two agree.
 
 ## Why it lives inside Arclis
 
@@ -141,11 +159,17 @@ and it is structural rather than promised.
 ## Files
 
 ```
+pipeline/
+  curated.json    issuer facts and mints, with sources and a check date
+  src/build.ts    one snapshot: curated facts, read live, links checked
+  src/assemble.ts mint reads, depth, prices, multiplier and wrong-mint guard
+keeper/src/
+  registry.ts     the scheduled build behind GET /registry
 app/src/lib/registry/
   types.ts        the read model; scales, tiers, and the ordered BACKING_RANK
   scoring.ts      every number on the page: deviation, claim, liquidity, control
-  data.ts         the modelled dataset and the RegistrySource seam
-  scoring.test.ts 32 tests, including that the score breakdown sums to the score
+  data.ts         the bundled fallback and the RegistrySource seam
+  live.ts         keeper first, then a static snapshot, then the fallback
 app/src/screens/
   Registry.tsx    the lookup and the per-token detail sheet
 app/src/styles/
@@ -179,7 +203,7 @@ in AAPLx rather than SOL.
 
 So a stock-quoted launch inherits the backing of the thing people are paying in.
 Raising into a redeemable, custodied certificate is materially different from
-raising into a synthetic tracker holding nothing, and on a price chart those are
+raising into a token with no claim on a share, and on a price chart those are
 identical. Contributors cannot see it and the launchpad has no reason to show
 it.
 

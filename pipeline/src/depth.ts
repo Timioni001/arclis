@@ -66,26 +66,60 @@ export interface Router {
   quote(request: QuoteRequest): Promise<QuoteResponse | null>;
 }
 
+export interface JupiterRouterOptions {
+  /** Default: `https://api.jup.ag` with a key, the keyless lite host without. */
+  baseUrl?: string;
+  apiKey?: string;
+  /**
+   * Least time between two quotes, in milliseconds. The registry shares
+   * Jupiter's rate limit with the keeper's 24/7 price feed, and a burst of
+   * ladder quotes must never starve the feed that prices live markets.
+   */
+  spacingMs?: number;
+  fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+}
+
 /**
- * Jupiter's quote API.
+ * Jupiter's swap quote API (`/swap/v1/quote`).
  *
  * Returns null rather than throwing on a route that cannot be found: "no route"
  * is a real and important answer about a token, and it is not the same as the
  * router being down. The caller distinguishes them.
  */
-export function jupiterRouter(baseUrl = "https://quote-api.jup.ag/v6"): Router {
+export function jupiterRouter(options: JupiterRouterOptions | string = {}): Router {
+  const opts: JupiterRouterOptions =
+    typeof options === "string" ? { baseUrl: options } : options;
+  const baseUrl =
+    opts.baseUrl ?? (opts.apiKey ? "https://api.jup.ag" : "https://lite-api.jup.ag");
+  const headers: Record<string, string> = { accept: "application/json" };
+  if (opts.apiKey) headers["x-api-key"] = opts.apiKey;
+  const spacingMs = opts.spacingMs ?? 0;
+  const doFetch = opts.fetchImpl ?? fetch;
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let last = 0;
+
+  async function paced(url: string): Promise<Response> {
+    const wait = last + spacingMs - Date.now();
+    if (wait > 0) await sleep(wait);
+    last = Date.now();
+    return doFetch(url, { headers, signal: AbortSignal.timeout(10_000) });
+  }
+
   return {
     name: "jupiter",
     async quote({ inputMint, outputMint, amount, slippageBps = 50 }) {
       const url =
-        `${baseUrl}/quote?inputMint=${inputMint}&outputMint=${outputMint}` +
+        `${baseUrl}/swap/v1/quote?inputMint=${inputMint}&outputMint=${outputMint}` +
         `&amount=${amount.toString()}&slippageBps=${slippageBps}` +
-        `&swapMode=ExactIn&onlyDirectRoutes=false`;
+        `&swapMode=ExactIn&restrictIntermediateTokens=true`;
 
-      const response = await fetch(url, {
-        headers: { accept: "application/json" },
-        signal: AbortSignal.timeout(10_000),
-      });
+      let response = await paced(url);
+      // One patient retry on a rate limit, then a real failure.
+      if (response.status === 429) {
+        await sleep(5_000);
+        response = await paced(url);
+      }
 
       // 400 from Jupiter is "no route", which is data. Anything else is a
       // failure the caller should hear about.
@@ -94,7 +128,7 @@ export function jupiterRouter(baseUrl = "https://quote-api.jup.ag/v6"): Router {
 
       const body = (await response.json()) as Record<string, any>;
       const outAmount = String(body.outAmount ?? "");
-      if (!/^\d+$/.test(outAmount)) return null;
+      if (!/^\d+$/.test(outAmount) || outAmount === "0") return null;
 
       const routes: string[] = [];
       for (const step of body.routePlan ?? []) {

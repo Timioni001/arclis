@@ -1,10 +1,11 @@
 /**
  * Loading a live registry snapshot, with the modelled dataset as the floor.
  *
- * `pipeline/src/run.ts` writes `public/registry.json` on a schedule. This
- * fetches it and, if it is there and readable, becomes the source. If it is
- * absent, stale beyond usefulness, or malformed, the modelled dataset stands
- * and the interface keeps saying so.
+ * The keeper builds the snapshot every half hour and serves it at
+ * `/registry`; `pipeline/src/run.ts` can also write a static copy to
+ * `public/registry.json`. This tries the keeper, then the static copy. If
+ * neither is there and readable, or both are stale or malformed, the modelled
+ * dataset stands and the interface keeps saying so.
  *
  * The fallback direction matters: a failed pipeline degrades to a page that is
  * clearly labelled a demo, never to an empty page or, worse, to live-looking
@@ -15,6 +16,7 @@ import type { RegistrySource } from "./data";
 import { ISSUERS, modelledRegistry, TOKENIZED_STOCKS } from "./data";
 import type { Issuer, TokenizedStock } from "./types";
 import type { MarketSession } from "../protocol/types";
+import { KEEPER_URL } from "../config";
 
 /**
  * How old a snapshot may be before it is treated as absent.
@@ -28,6 +30,8 @@ const MAX_AGE_SECS = 6 * 60 * 60;
 interface RawToken {
   symbol: string;
   underlying: string;
+  /** Absent on snapshots written before unlisted tokens were supported. */
+  referenceSymbol?: string | null;
   name: string;
   issuerId: string;
   backing: TokenizedStock["backing"];
@@ -82,6 +86,8 @@ function hydrate(raw: RawToken): TokenizedStock {
   return {
     symbol: raw.symbol,
     underlying: raw.underlying,
+    referenceSymbol:
+      raw.referenceSymbol === undefined ? raw.underlying : raw.referenceSymbol,
     name: raw.name,
     issuerId: raw.issuerId,
     backing: raw.backing,
@@ -130,32 +136,47 @@ export interface LiveRegistry extends RegistrySource {
 export async function loadRegistry(
   fetchImpl: typeof fetch = fetch,
   now = Math.floor(Date.now() / 1000),
+  keeperUrl: string = KEEPER_URL,
 ): Promise<LiveRegistry> {
-  const fallback = (): LiveRegistry => ({
-    ...modelledRegistry(),
-    failures: [],
-  });
+  // `BASE_URL` rather than a leading slash. A build served from a
+  // subdirectory - a GitHub Pages project site, a preview path - would ask
+  // the domain root for a file that lives one level down, get the host's 404
+  // page, and fall back to the modelled dataset while looking like it had read
+  // a snapshot and found nothing.
+  const base = import.meta.env.BASE_URL || "/";
+  const sources = [
+    ...(keeperUrl ? [`${keeperUrl}/registry`] : []),
+    `${base}registry.json`.replace("//", "/"),
+  ];
 
+  for (const url of sources) {
+    const loaded = await readSnapshot(fetchImpl, url, now);
+    if (loaded) return loaded;
+  }
+  return { ...modelledRegistry(), failures: [] };
+}
+
+/**
+ * One source, or null. Never throws: offline, blocked, CORS, a 503 while the
+ * keeper's first build runs, malformed JSON, all the same answer.
+ */
+async function readSnapshot(
+  fetchImpl: typeof fetch,
+  url: string,
+  now: number,
+): Promise<LiveRegistry | null> {
   try {
-    // `BASE_URL` rather than a leading slash. A build served from a
-    // subdirectory - a GitHub Pages project site, a preview path - would ask
-    // the domain root for a file that lives one level down, get the host's
-    // 404 page, and fall back to the modelled dataset while looking like it
-    // had read a snapshot and found nothing.
-    const base = import.meta.env.BASE_URL || "/";
-    const response = await fetchImpl(`${base}registry.json`.replace("//", "/"), {
+    const response = await fetchImpl(url, {
       headers: { accept: "application/json" },
       cache: "no-cache",
     });
-    if (!response.ok) return fallback();
+    if (!response.ok) return null;
 
     const raw = (await response.json()) as RawSnapshot;
-    if (!Array.isArray(raw.tokens) || raw.tokens.length === 0)
-      return fallback();
+    if (!Array.isArray(raw.tokens) || raw.tokens.length === 0) return null;
 
     // A snapshot old enough to mislead is worse than no snapshot.
-    if (!raw.generatedAt || now - raw.generatedAt > MAX_AGE_SECS)
-      return fallback();
+    if (!raw.generatedAt || now - raw.generatedAt > MAX_AGE_SECS) return null;
 
     let tokens: TokenizedStock[];
     try {
@@ -163,7 +184,7 @@ export async function loadRegistry(
     } catch {
       // A malformed row means the whole snapshot is suspect: the pipeline
       // writes it atomically, so a bad field is a bug rather than a blip.
-      return fallback();
+      return null;
     }
 
     const issuers = raw.issuers?.length ? raw.issuers : ISSUERS;
@@ -178,8 +199,7 @@ export async function loadRegistry(
       failures: raw.failures ?? [],
     };
   } catch {
-    // Offline, blocked, CORS, malformed JSON. All the same answer.
-    return fallback();
+    return null;
   }
 }
 

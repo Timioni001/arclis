@@ -4,126 +4,81 @@
  *
  *   npx ts-node pipeline/src/run.ts
  *
- * Writes `app/public/registry.json`. The interface fetches that at load and
- * falls back to the modelled dataset when it is absent, so a failed pipeline
- * run degrades to the labelled demo rather than to an empty page.
+ * Writes `app/public/registry.json`, a static copy of what the keeper serves
+ * live at `/registry`. The interface reads the keeper first, then this file,
+ * and falls back to its labelled sample dataset when neither is available.
  *
- * Designed to be run on a schedule (a cron, a GitHub Action, a Cloudflare
- * scheduled worker) rather than per request. The data changes on the timescale
- * of minutes and every visitor triggering a fan-out of Jupiter quotes would be
- * both slow and a good way to get rate limited.
+ * Useful for a one-off check of the curated list (a new token, a moved mint)
+ * before it reaches the keeper. Never run per request: the data changes on the
+ * timescale of minutes, and a fan-out of Jupiter quotes per visitor would be
+ * slow and rate limited.
  */
 
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assemble, type CuratedEntry } from "./assemble";
+import { buildRegistry, type CuratedFile } from "./build";
 import { jupiterRouter } from "./depth";
+import { accountReader } from "./rpc";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const CURATED = join(ROOT, "pipeline/curated.json");
 const OUT = join(ROOT, "app/public/registry.json");
 
 const env = process.env;
-const RPC_URL = env.RPC_URL ?? "https://api.mainnet-beta.solana.com";
+const RPC_URL = env.REGISTRY_RPC_URL ?? env.RPC_URL ?? "https://api.mainnet-beta.solana.com";
 const QUOTE_MINT =
   env.QUOTE_MINT ?? "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
 
 /**
- * Read a mint account over plain JSON-RPC.
- *
- * `fetch` rather than `@solana/web3.js`: this needs one method, and the
- * pipeline is a short-lived script where a 300KB dependency for
- * `getAccountInfo` is not a good trade.
- */
-async function getAccount(address: string) {
-  const response = await fetch(RPC_URL, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "getAccountInfo",
-      params: [address, { encoding: "base64" }],
-    }),
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) throw new Error(`rpc ${response.status}`);
-
-  const body = (await response.json()) as {
-    result?: { value?: { data?: [string, string]; owner?: string } };
-    error?: { message?: string };
-  };
-  if (body.error) throw new Error(body.error.message ?? "rpc error");
-
-  const value = body.result?.value;
-  if (!value?.data) return null;
-
-  return {
-    data: Uint8Array.from(Buffer.from(value.data[0], "base64")),
-    owner: value.owner ?? "",
-  };
-}
-
-/**
  * Reference prices for the underlying stocks.
  *
- * Reuses the keeper's feed rather than adding a second provider integration:
- * the price a registry compares against and the price the perp marks against
- * must be the same price, or the two halves of the product disagree about what
- * AAPL is worth.
+ * Reuses the keeper's providers rather than adding a second integration: the
+ * price a registry compares against and the price the perp marks against
+ * must be the same price, or the two halves of the product disagree about
+ * what AAPL is worth.
  */
 async function referencePrices(symbols: string[]) {
-  const { polygonFeed, finnhubFeed, simulatedFeed } =
+  const { alpacaFeed, polygonFeed, finnhubFeed } =
     await import("../../keeper/src/prices/providers");
   const { sessionAt } = await import("../../keeper/src/calendar");
 
-  const feed = env.POLYGON_API_KEY
-    ? polygonFeed(env.POLYGON_API_KEY)
-    : env.FINNHUB_API_KEY
-      ? finnhubFeed(env.FINNHUB_API_KEY)
-      : null;
+  const feed =
+    env.ALPACA_KEY_ID && env.ALPACA_SECRET_KEY
+      ? alpacaFeed(env.ALPACA_KEY_ID, env.ALPACA_SECRET_KEY, env.ALPACA_DATA_FEED === "sip" ? "sip" : "iex")
+      : env.POLYGON_API_KEY
+        ? polygonFeed(env.POLYGON_API_KEY)
+        : env.FINNHUB_API_KEY
+          ? finnhubFeed(env.FINNHUB_API_KEY)
+          : null;
 
   if (!feed) {
     throw new Error(
-      "No equity price provider configured. Set POLYGON_API_KEY or FINNHUB_API_KEY. " +
-        "The registry compares on-chain prices against the real stock, so there is " +
-        "no meaningful snapshot without one.",
+      "No equity price provider configured. Set ALPACA_KEY_ID and ALPACA_SECRET_KEY, " +
+        "POLYGON_API_KEY or FINNHUB_API_KEY. The registry compares on-chain prices " +
+        "against the real stock, so there is no meaningful snapshot without one.",
     );
   }
-  void simulatedFeed;
 
-  const now = Math.floor(Date.now() / 1000);
-  const session = sessionAt(now);
+  const session = sessionAt(Math.floor(Date.now() / 1000));
   const quotes = await feed.quote(symbols);
-
   return new Map(
     quotes.map((q) => [
       q.symbol.toUpperCase(),
-      {
-        price: q.price,
-        at: q.printedAt,
-        session: q.halted ? "Halted" : session,
-      },
+      { price: q.price, at: q.printedAt, session: q.halted ? "Halted" : session },
     ]),
   );
 }
 
 async function main() {
-  const entries = JSON.parse(readFileSync(CURATED, "utf8")) as {
-    issuers: unknown[];
-    tokens: CuratedEntry[];
-  };
+  const curated = JSON.parse(readFileSync(CURATED, "utf8")) as CuratedFile;
 
-  const underlyings = [...new Set(entries.tokens.map((t) => t.underlying))];
-  const prices = await referencePrices(underlyings);
-
-  const snapshot = await assemble({
-    entries: entries.tokens,
-    getAccount,
-    router: jupiterRouter(env.JUPITER_URL),
+  const snapshot = await buildRegistry({
+    curated,
+    getAccount: accountReader(RPC_URL),
+    router: jupiterRouter({ apiKey: env.JUPITER_API_KEY, spacingMs: 1_100 }),
     quoteMint: QUOTE_MINT,
-    referencePrices: prices,
+    referencePrices,
     log: (level, message, extra) =>
       console[level === "warn" ? "warn" : "log"](
         `[pipeline] ${message}${extra ? ` ${JSON.stringify(extra)}` : ""}`,
@@ -131,10 +86,7 @@ async function main() {
   });
 
   mkdirSync(dirname(OUT), { recursive: true });
-  writeFileSync(
-    OUT,
-    JSON.stringify({ ...snapshot, issuers: entries.issuers }, null, 2),
-  );
+  writeFileSync(OUT, JSON.stringify(snapshot, null, 2));
 
   console.log(
     `[pipeline] wrote ${snapshot.tokens.length} tokens (${snapshot.kind})` +
